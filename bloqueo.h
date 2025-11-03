@@ -94,15 +94,15 @@ public:
         bool cvEntradaPar = index == cvs.size()-1;
         bool cvEntradaImpar = index == 0;
 
-        if (estado == EstadoBloqueo::BloqueoImpar && cvEntradaPar && estado_cvs[id] == EstadoCV::OcupadoImpar && (!ecv.evento || ecv.evento->first == Lado::Par)) liberar = true;
-        else if (estado == EstadoBloqueo::BloqueoPar && cvEntradaImpar && estado_cvs[id] == EstadoCV::OcupadoPar && (!ecv.evento || ecv.evento->first == Lado::Impar)) liberar = true;
+        if (estado == EstadoBloqueo::BloqueoImpar && cvEntradaPar && estado_cvs[id] == EstadoCV::OcupadoImpar && (!ecv.evento || ecv.evento->lado == Lado::Par)) liberar = true;
+        else if (estado == EstadoBloqueo::BloqueoPar && cvEntradaImpar && estado_cvs[id] == EstadoCV::OcupadoPar && (!ecv.evento || ecv.evento->lado == Lado::Impar)) liberar = true;
         
         if (ecv.evento) {
-            bool ocupacion = ecv.evento->second;
-            Lado lado = ecv.evento->first;
+            bool ocupacion = ecv.evento->ocupacion;
+            Lado lado = ecv.evento->lado;
             if (ocupacion && (ecv.estado_previo == EstadoCV::Libre || ecv.estado_previo == EstadoCV::Prenormalizado) && (ecv.estado != EstadoCV::Libre && ecv.estado != EstadoCV::Prenormalizado)) {
                 bool esc=false;
-                if (index == (ecv.evento->first == Lado::Impar ? 0 : cvs.size()-1)) {
+                if (index == (lado == Lado::Impar ? 0 : cvs.size()-1)) {
                     if (ruta[lado] != TipoMovimiento::Maniobra) {
                         esc = lado == Lado::Impar ? (estado != EstadoBloqueo::BloqueoImpar) : (estado != EstadoBloqueo::BloqueoPar);
                     }

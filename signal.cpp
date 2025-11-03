@@ -1,16 +1,11 @@
 #include "signal.h"
 #include "ruta.h"
 #include "items.h"
-señal::señal(const std::string &id, const json &j) : id(id), lado(j["Lado"]), topic("signal/"+id+"/state"), bloqueo_asociado(j["Bloqueo"]), cierre_stick(j["CierreStick"])
+señal::señal(const std::string &id, const json &j) : id(id), lado(j["Lado"]), tipo(j["Tipo"]), pin(0), topic("signal/"+id+"/state"), bloqueo_asociado(j["Bloqueo"]), cierre_stick(j["CierreStick"])
 {
     cv_señal = cvs[j["CV"]];
     for (auto &[est, asp] : j["AspectoCanton"].items()) {
-        EstadoCanton ec;
-        if (est == "Libre") ec = EstadoCanton::Libre;
-        else if (est == "Prenormalizado") ec = EstadoCanton::Prenormalizado;
-        else if (est == "OcupadoMismoSentido") ec = EstadoCanton::OcupadoMismoSentido;
-        else ec = EstadoCanton::Ocupado;
-        aspecto_maximo_ocupacion[ec] = asp;
+        aspecto_maximo_ocupacion[json(est)] = asp;
     }
     for (auto &[asp1, asp2] : j["AspectoAnteriorSeñal"].items()) {
         aspectos_maximos_anterior_señal[json(asp1)] = asp2;
@@ -23,20 +18,24 @@ void señal::update()
 {
     Aspecto prev_aspecto = aspecto;
 
-    auto *cv_act = cv_señal;
-    Lado act_lado = lado;
+    cv* cv_act = cv_señal;
+    cv* cv_prev = cv_act->get_cv_in(lado, pin).first;
+    Lado dir = lado;
     EstadoCanton canton = EstadoCanton::Libre;
-    while (cv_act != nullptr/* && (act_cv->señales[act_lado] == this || act_cv->señales[act_lado] == nullptr)*/) {
-        canton = std::max(cv_act->get_ocupacion(act_lado), canton);
-
-        cv_act = nullptr;
+    señal *sig_señal = nullptr;
+    while (cv_act != nullptr && sig_señal == nullptr) {
+        canton = std::max(cv_act->get_ocupacion(dir), canton);
+        cv_prev = cv_act;
+        cv_act = cv_act->siguiente_cv(cv_act, dir);
+        if (cv_act == cv_señal) break;
+        if (cv_act != nullptr) sig_señal = cv_act->señal_inicio(cv_prev, dir);
     }
-    bool cerrar_itinerario = bloqueo_asociado != "" && (bloqueo_act.estado != (lado == Lado::Impar ? EstadoBloqueo::BloqueoImpar : EstadoBloqueo::BloqueoPar) || bloqueo_act.escape[opp_lado(lado)]);
-    bool cerrar = bloqueo_asociado != "" && bloqueo_act.estado == EstadoBloqueo::SinDatos;
-    bool forbid_open = bloqueo_asociado != "" && bloqueo_act.prohibido[lado];
+    bool cerrar_itinerario = bloqueo_asociado != "" && ((bloqueo_act.estado != (dir == Lado::Impar ? EstadoBloqueo::BloqueoImpar : EstadoBloqueo::BloqueoPar) && tipo != TipoSeñal::Avanzada) || bloqueo_act.escape[opp_lado(dir)]);
+    bool cerrar = bloqueo_asociado != "" && (bloqueo_act.estado == EstadoBloqueo::SinDatos || (bloqueo_act.ruta[opp_lado(dir)] != TipoMovimiento::Ninguno && tipo == TipoSeñal::Avanzada));
+    bool forbid_open = bloqueo_asociado != "" && bloqueo_act.prohibido[dir];
     if ((forbid_open && prev_aspecto == Aspecto::Parada) || 
         cerrar || !clear_request || 
-        (ruta_necesaria && (ruta_activa == nullptr || ruta_activa->dai_activo()))) {
+        (ruta_necesaria && (ruta_activa == nullptr || ruta_activa->dai_activo() || !ruta_activa->is_formada()))) {
         aspecto = Aspecto::Parada;
     } else if (ruta_activa != nullptr && ruta_activa->tipo == TipoMovimiento::Maniobra) {
         aspecto = Aspecto::RebaseAutorizado;
@@ -44,7 +43,7 @@ void señal::update()
         aspecto = Aspecto::Parada;
     } else {
         aspecto = aspecto_maximo_ocupacion[canton];
-        //if (act_cv != nullptr && act_cv.señales[act_lado] != nullptr) aspecto = std::min(aspecto, act_cv.señales[act_lado]->aspecto_maximo_anterior_señal);
+        if (sig_señal != nullptr) aspecto = std::min(aspecto, sig_señal->aspecto_maximo_anterior_señal);
     }
 
     auto it = aspectos_maximos_anterior_señal.upper_bound(aspecto);

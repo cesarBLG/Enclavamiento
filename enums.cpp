@@ -5,6 +5,7 @@ std::string to_string(Lado lado)
         case Lado::Impar: return "Impar";
         case Lado::Par: return "Par";
     }
+    return "";
 }
 std::string to_string(EstadoCV estado)
 {
@@ -15,6 +16,7 @@ std::string to_string(EstadoCV estado)
         case EstadoCV::OcupadoPar: return "OcupadoPar";
         case EstadoCV::Ocupado: return "Ocupado";
     }
+    return "";
 }
 std::string to_string(EstadoCanton estado)
 {
@@ -24,6 +26,7 @@ std::string to_string(EstadoCanton estado)
         case EstadoCanton::OcupadoMismoSentido: return "OcupadoMismoSentido";
         case EstadoCanton::Ocupado: return "Ocupado";
     }
+    return "";
 }
 std::string to_string(Aspecto aspecto)
 {
@@ -33,6 +36,7 @@ std::string to_string(Aspecto aspecto)
         case Aspecto::Precaucion: return "Precaución";
         case Aspecto::ViaLibre: return "VíaLibre";
     }
+    return "";
 }
 std::string to_string(EstadoBloqueo estado)
 {
@@ -42,6 +46,7 @@ std::string to_string(EstadoBloqueo estado)
         case EstadoBloqueo::BloqueoPar: return "BloqueoPar";
         case EstadoBloqueo::SinDatos: return "SinDatos";
     }
+    return "";
 }
 std::string to_string(TipoMovimiento tipo)
 {
@@ -50,6 +55,19 @@ std::string to_string(TipoMovimiento tipo)
         case TipoMovimiento::Itinerario: return "Itinerario";
         case TipoMovimiento::Maniobra: return "Maniobra";
     }
+    return "";
+}
+std::string to_string(TipoSeñal tipo)
+{
+    switch (tipo) {
+        case TipoSeñal::Entrada:     return "Entrada";
+        case TipoSeñal::Salida:      return "Salida";
+        case TipoSeñal::Avanzada:    return "Avanzada";
+        case TipoSeñal::Maniobra:    return "Maniobra";
+        case TipoSeñal::Retroceso:   return "Retroceso";
+        case TipoSeñal::Intermedia:  return "Intermedia";
+    }
+    return "";
 }
 void to_json(json &j, const Lado &lado)
 {
@@ -114,4 +132,17 @@ void from_json(const json &j, TipoMovimiento &tipo)
     if (j == "Ninguno") tipo = TipoMovimiento::Ninguno;
     else if (j == "Itinerario") tipo = TipoMovimiento::Itinerario;
     else if (j == "Maniobra") tipo = TipoMovimiento::Maniobra;
+}
+void to_json(json &j, const TipoSeñal &tipo)
+{
+    j = to_string(tipo);
+}
+void from_json(const json &j, TipoSeñal &tipo)
+{
+    if (j == "Entrada") tipo = TipoSeñal::Entrada;
+    else if (j == "Salida") tipo = TipoSeñal::Salida;
+    else if (j == "Avanzada") tipo = TipoSeñal::Avanzada;
+    else if (j == "Maniobra") tipo = TipoSeñal::Maniobra;
+    else if (j == "Retroceso") tipo = TipoSeñal::Retroceso;
+    else if (j == "Intermedia") tipo = TipoSeñal::Intermedia;
 }

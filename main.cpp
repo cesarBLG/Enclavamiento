@@ -7,9 +7,9 @@
 void event_loop();
 int main(int argc, char **argv)
 {
-    init_mqtt(std::string(argv[1]));
+    init_mqtt(argc > 1 ? std::string(argv[1]) : "main");
 
-    init_items(std::string(argv[2]));
+    init_items(argc > 2 ? std::string(argv[2]) : "");
 
     event_loop();
 

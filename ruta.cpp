@@ -13,16 +13,8 @@ ruta::ruta(const std::string &estacion, const json &j) : estacion(estacion), tip
     señal_inicio = señales[id_señal];
     lado = lado_bloqueo = señal_inicio->lado;
     maniobra_compatible = j.value("Compatible", false);
-    if (j.contains("Proximidad")) {
-        for (auto &cv : j["Proximidad"]) {
-            auto it = ::cvs.find(cv);
-            if (it == ::cvs.end()) {
-                log(id, "proximidad inválida", LOG_ERROR);
-                proximidad.clear();
-                break;
-            } else {
-                proximidad.push_back(it->second);
-            }
-        }
+    if (j.contains("LímiteProximidad")) {
+        ultimos_cvs_proximidad = j["LímiteProximidad"];
+        construir_proximidad();
     }
 }

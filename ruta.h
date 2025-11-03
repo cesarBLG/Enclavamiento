@@ -21,7 +21,8 @@ protected:
     std::set<cv*> cvs_asegurados;
     std::shared_ptr<timer> diferimetro_dai;
     std::shared_ptr<timer> diferimetro_dei;
-    std::vector<cv*> proximidad;
+    std::vector<std::pair<cv*,Lado>> proximidad;
+    std::set<std::string> ultimos_cvs_proximidad;
     señal *señal_inicio;
     señal *señal_fin;
     estado_bloqueo bloqueo_act;
@@ -38,6 +39,7 @@ protected:
     bool bloqueo_señal = false;
 
     bool sucesion_automatica = false;
+    bool fai = false;
 
     void disolver()
     {
@@ -88,16 +90,33 @@ public:
     }
     void update()
     {
+        if (fai) {
+            bool proximidad_ocupada = false;
+            for (auto [cv, dir] : proximidad) {
+                auto e = cv->get_state();
+                if (e > EstadoCV::Prenormalizado && (e != (dir == Lado::Impar ? EstadoCV::OcupadoPar : EstadoCV::OcupadoImpar))) {
+                    proximidad_ocupada = true;
+                    break;
+                }
+            }
+            if (proximidad_ocupada && !mandada) {
+                establecer();
+            }
+        }
         if (!mandada) return;
         if (ocupada && !sucesion_automatica) {
+            if (tipo == TipoMovimiento::Maniobra && proximidad.size() > 0 && (proximidad[0].first->get_state() <= EstadoCV::Prenormalizado || proximidad[0].first->get_state() == (proximidad[0].second == Lado::Impar ? EstadoCV::OcupadoPar : EstadoCV::OcupadoImpar))) {
+                if (señal_inicio->ruta_activa == this) señal_inicio->ruta_activa = nullptr;
+            }
             for (int i=0; i<cvs.size(); i++) {
                 if ((i == 0 || cvs[i-1]->ruta_asegurada == nullptr) && cvs[i]->get_state() <= EstadoCV::Prenormalizado) {
+                    if (i == 0 && señal_inicio->ruta_activa == this) señal_inicio->ruta_activa = nullptr;
                     cvs[i]->ruta_asegurada = nullptr;
                     cvs_asegurados.erase(cvs[i]);
                     if (i == cvs.size() - 1) disolver();
                 }
             }
-            if (cvs.empty()) disolver();
+            if (señal_inicio->ruta_activa != this && cvs.empty()) disolver();
         }
         if (ocupada && sucesion_automatica) {
             bool libre = true;
@@ -126,7 +145,7 @@ public:
             return true;
         }
         bool proximidad_libre = true;
-        for (auto *cv : proximidad) {
+        for (auto [cv, dir] : proximidad) {
             auto e = cv->get_state();
             if (e > EstadoCV::Prenormalizado) {
                 proximidad_libre = false;
@@ -160,6 +179,10 @@ public:
     {
         return mandada;
     }
+    bool is_formada()
+    {
+        return formada;
+    }
     bool dai_activo()
     {
         return diferimetro_dai != nullptr;
@@ -181,6 +204,12 @@ public:
             if (!establecer()) return false;
             sucesion_automatica = true;
             return true;
+        } else if (cmd == "FAI" && tipo == TipoMovimiento::Itinerario) {
+            fai = true;
+            return true;
+        } else if (cmd == "AFA") {
+            fai = false;
+            return true;
         }
         return false;
     }
@@ -194,14 +223,17 @@ public:
             } else if (cmd == "ABS" || cmd == "DS") {
                 bloqueo_señal = false;
                 return true;
-            } else if (cmd == "SA" && !ocupada) {
+            } else if (cmd == "SA" && !ocupada && tipo == TipoMovimiento::Itinerario) {
                 sucesion_automatica = true;
                 return true;
             } else if (cmd == "DASA") {
                 if (!dai()) return false;
                 sucesion_automatica = false;
                 return true;
-            } else if (cmd == "ASA" && !ocupada) sucesion_automatica = true;
+            } else if (cmd == "ASA" && !ocupada) {
+                sucesion_automatica = false;
+                return true;
+            }
         } else if (pos == destino) {
             if (cmd == "DEI") {
                 return dei();
@@ -217,9 +249,8 @@ public:
     }
     void message_cv(const std::string &id, estado_cv ecv)
     {
-        if (id != señal_inicio->get_cv_señal()->id) return;
         if (!mandada) return;
-        if (ecv.evento && ecv.evento->second && ecv.evento->first == lado) {
+        if (id == señal_inicio->get_cv_señal()->id && ecv.evento && ecv.evento->ocupacion && ecv.evento->lado == lado/* && ecv.evento->pin == señal_inicio->pin*/) {
             if (!supervisada) {
                 supervisada = true;
                 log(this->id, "supervisada");
@@ -234,9 +265,28 @@ public:
                 } else {
                     log(this->id, "ocupada");
                 }
-                if (!sucesion_automatica) señal_inicio->ruta_activa = nullptr;
+                if (!sucesion_automatica && tipo != TipoMovimiento::Maniobra) señal_inicio->ruta_activa = nullptr;
             }
         }
+    }
+    void construir_proximidad(cv *inicio, cv *next, Lado dir_fwd, std::vector<std::pair<cv*, Lado>> &cvs)
+    {
+        if (inicio == nullptr) return;
+        if (ultimos_cvs_proximidad.find(inicio->id) != ultimos_cvs_proximidad.end()) return;
+        int i0 = cvs.size();
+        inicio->prev_cvs(next, dir_fwd, cvs);
+        for (int i=i0; i<cvs.size(); i++) {
+            construir_proximidad(cvs[i].first, inicio, cvs[i].second, cvs);
+        }
+    }
+    void construir_proximidad()
+    {
+        proximidad.clear();
+        auto *inicio = señal_inicio->get_cv_señal();
+        auto p = inicio->get_cv_in(lado, señal_inicio->pin);
+        if (p.first == nullptr || ultimos_cvs_proximidad.empty()) return;
+        proximidad.push_back({p.first, opp_lado(p.second)});
+        construir_proximidad(p.first, inicio, opp_lado(p.second), proximidad);
     }
 };
 struct gestor_rutas

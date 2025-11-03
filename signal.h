@@ -8,6 +8,8 @@ public:
     const std::string id;
     const Lado lado;
     const std::string topic;
+    const TipoSeñal tipo;
+    const int pin;
 protected:
     cv *cv_señal;
     Aspecto aspecto;
@@ -46,7 +48,7 @@ public:
         if (id != cv_señal->id) return;
 
         paso_circulacion = false;
-        if (ev.evento && ev.evento->second && ev.evento->first == lado) {
+        if (ev.evento && ev.evento->ocupacion && ev.evento->lado == lado && ev.evento->pin == pin) {
             if (aspecto == Aspecto::Parada && get_milliseconds() - ultimo_paso_abierta > 15000) {
                 rebasada = true;
                 log(this->id, "rebasada", LOG_WARNING);
