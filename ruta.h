@@ -17,11 +17,11 @@ public:
     bool maniobra_compatible = false;
     bool valid = false;
 protected:
-    std::vector<cv*> cvs;
-    std::set<cv*> cvs_asegurados;
+    std::vector<seccion_via*> secciones;
+    std::set<seccion_via*> secciones_aseguradas;
     std::shared_ptr<timer> diferimetro_dai;
     std::shared_ptr<timer> diferimetro_dei;
-    std::vector<std::pair<cv*,Lado>> proximidad;
+    std::vector<std::pair<seccion_via*,Lado>> proximidad;
     std::set<std::string> ultimos_cvs_proximidad;
     señal *señal_inicio;
     señal *señal_fin;
@@ -51,10 +51,10 @@ protected:
         diferimetro_dai = nullptr;
         diferimetro_dei = nullptr;
         diferimetro_cancelado = false;
-        for (auto *cv : cvs_asegurados) {
-            cv->ruta_asegurada = nullptr;
+        for (auto *sec : secciones_aseguradas) {
+            sec->liberar(this);
         }
-        cvs_asegurados.clear();
+        secciones_aseguradas.clear();
         log(id, "disuelta");
     }
 public:
@@ -73,8 +73,8 @@ public:
             return false;
         if (bloqueo_salida != "" && bloqueo_act.ruta[lado] != tipo && bloqueo_act.ruta[lado] != TipoMovimiento::Ninguno)
             return false;
-        for (auto *cv : cvs) {
-            if (cv->ruta_asegurada != this) return false;
+        for (auto *sec : secciones) {
+            if (sec->is_asegurada() && !sec->is_asegurada(this)) return false;
         }
         log(id, "mandada", LOG_DEBUG);
         clear_timer(diferimetro_dei);
@@ -82,9 +82,9 @@ public:
         mandada = formada = true;
         señal_inicio->clear_request = true;
         señal_inicio->ruta_activa = this;
-        for (auto *cv : cvs) {
-            cvs_asegurados.insert(cv);
-            cv->ruta_asegurada = this;
+        for (auto *sec : secciones) {
+            secciones_aseguradas.insert(sec);
+            sec->liberar(this);
         }
         return true;
     }
@@ -92,8 +92,8 @@ public:
     {
         if (fai) {
             bool proximidad_ocupada = false;
-            for (auto [cv, dir] : proximidad) {
-                auto e = cv->get_state();
+            for (auto [sec, dir] : proximidad) {
+                auto e = sec->get_cv()->get_state();
                 if (e > EstadoCV::Prenormalizado && (e != (dir == Lado::Impar ? EstadoCV::OcupadoPar : EstadoCV::OcupadoImpar))) {
                     proximidad_ocupada = true;
                     break;
@@ -105,23 +105,23 @@ public:
         }
         if (!mandada) return;
         if (ocupada && !sucesion_automatica) {
-            if (tipo == TipoMovimiento::Maniobra && proximidad.size() > 0 && (proximidad[0].first->get_state() <= EstadoCV::Prenormalizado || proximidad[0].first->get_state() == (proximidad[0].second == Lado::Impar ? EstadoCV::OcupadoPar : EstadoCV::OcupadoImpar))) {
+            if (tipo == TipoMovimiento::Maniobra && proximidad.size() > 0 && (proximidad[0].first->get_cv()->get_state() <= EstadoCV::Prenormalizado || proximidad[0].first->get_cv()->get_state() == (proximidad[0].second == Lado::Impar ? EstadoCV::OcupadoPar : EstadoCV::OcupadoImpar))) {
                 if (señal_inicio->ruta_activa == this) señal_inicio->ruta_activa = nullptr;
             }
-            for (int i=0; i<cvs.size(); i++) {
-                if ((i == 0 || cvs[i-1]->ruta_asegurada == nullptr) && cvs[i]->get_state() <= EstadoCV::Prenormalizado) {
+            for (int i=0; i<secciones.size(); i++) {
+                if ((i == 0 || !secciones[i-1]->is_asegurada(this)) && secciones[i]->get_cv()->get_state() <= EstadoCV::Prenormalizado) {
                     if (i == 0 && señal_inicio->ruta_activa == this) señal_inicio->ruta_activa = nullptr;
-                    cvs[i]->ruta_asegurada = nullptr;
-                    cvs_asegurados.erase(cvs[i]);
-                    if (i == cvs.size() - 1) disolver();
+                    secciones[i]->liberar(this);
+                    secciones_aseguradas.erase(secciones[i]);
+                    if (i == secciones.size() - 1) disolver();
                 }
             }
-            if (señal_inicio->ruta_activa != this && cvs.empty()) disolver();
+            if (señal_inicio->ruta_activa != this && secciones.empty()) disolver();
         }
         if (ocupada && sucesion_automatica) {
             bool libre = true;
-            for (int i=0; i<cvs.size(); i++) {
-                if (cvs[i]->get_state() > EstadoCV::Prenormalizado) {
+            for (int i=0; i<secciones.size(); i++) {
+                if (secciones[i]->get_cv()->get_state() > EstadoCV::Prenormalizado) {
                     libre = false;
                     break;
                 }
@@ -145,8 +145,8 @@ public:
             return true;
         }
         bool proximidad_libre = true;
-        for (auto [cv, dir] : proximidad) {
-            auto e = cv->get_state();
+        for (auto [sec, dir] : proximidad) {
+            auto e = sec->get_cv()->get_state();
             if (e > EstadoCV::Prenormalizado) {
                 proximidad_libre = false;
                 break;
@@ -250,7 +250,7 @@ public:
     void message_cv(const std::string &id, estado_cv ecv)
     {
         if (!mandada) return;
-        if (id == señal_inicio->get_cv_señal()->id && ecv.evento && ecv.evento->ocupacion && ecv.evento->lado == lado/* && ecv.evento->pin == señal_inicio->pin*/) {
+        if (id == señal_inicio->get_seccion_señal()->get_cv()->id && ecv.evento && ecv.evento->ocupacion && ecv.evento->lado == lado) {
             if (!supervisada) {
                 supervisada = true;
                 log(this->id, "supervisada");
@@ -269,21 +269,21 @@ public:
             }
         }
     }
-    void construir_proximidad(cv *inicio, cv *next, Lado dir_fwd, std::vector<std::pair<cv*, Lado>> &cvs)
+    void construir_proximidad(seccion_via *inicio, seccion_via *next, Lado dir_fwd, std::vector<std::pair<seccion_via*, Lado>> &secciones)
     {
         if (inicio == nullptr) return;
-        if (ultimos_cvs_proximidad.find(inicio->id) != ultimos_cvs_proximidad.end()) return;
-        int i0 = cvs.size();
-        inicio->prev_cvs(next, dir_fwd, cvs);
-        for (int i=i0; i<cvs.size(); i++) {
-            construir_proximidad(cvs[i].first, inicio, cvs[i].second, cvs);
+        if (ultimos_cvs_proximidad.find(inicio->get_cv()->id) != ultimos_cvs_proximidad.end()) return;
+        int i0 = secciones.size();
+        inicio->prev_secciones(next, dir_fwd, secciones);
+        for (int i=i0; i<secciones.size(); i++) {
+            construir_proximidad(secciones[i].first, inicio, secciones[i].second, secciones);
         }
     }
     void construir_proximidad()
     {
         proximidad.clear();
-        auto *inicio = señal_inicio->get_cv_señal();
-        auto p = inicio->get_cv_in(lado, señal_inicio->pin);
+        auto *inicio = señal_inicio->get_seccion_señal();
+        auto p = inicio->get_seccion_in(lado);
         if (p.first == nullptr || ultimos_cvs_proximidad.empty()) return;
         proximidad.push_back({p.first, opp_lado(p.second)});
         construir_proximidad(p.first, inicio, opp_lado(p.second), proximidad);

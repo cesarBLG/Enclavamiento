@@ -12,7 +12,7 @@ struct evento_cv
 {
     Lado lado;
     bool ocupacion;
-    int pin;
+    std::string id;
 };
 struct estado_cv
 {
@@ -31,25 +31,13 @@ class señal;
 class cv
 {
 public:
-    struct conexion_cv
-    {
-        std::string id;
-        bool invertir_paridad;
-    };
     const std::string id;
 protected:
-    lados<std::map<int,std::string>> señales;
-
-    lados<std::vector<conexion_cv>> siguientes_cvs;
-    lados<std::map<int,int>> active_outs;
-    lados<int> route_outs;
-
     EstadoCV estado = EstadoCV::Prenormalizado;
     bool btv = false;
     bool biv = false;
 public:
-    ruta *ruta_asegurada;
-    cv(const std::string &id, const json &j);
+    cv(const std::string &id) : id(id) {} 
 
     EstadoCV get_state()
     {
@@ -71,16 +59,7 @@ public:
         biv = ecv.biv;
         btv = ecv.btv;
     }
-
-    cv* siguiente_cv(cv *prev, Lado &dir);
-    std::pair<cv*,Lado> get_cv_in(Lado dir, int pin);
-    void prev_cvs(cv *next, Lado dir_fwd, std::vector<std::pair<cv*, Lado>> &cvs);
-    señal *señal_inicio(cv *prev, Lado lado);
-protected:
-    int get_in(cv* prev, Lado dir);
-    int get_out(cv* next, Lado dir);
 };
-void from_json(const json &j, cv::conexion_cv &conex);
 class cv_impl
 {
 public:
@@ -88,7 +67,6 @@ public:
     {
         Lado lado;
         bool reverse;
-        int pin;
     };
     const std::string id;
 protected:
@@ -234,7 +212,7 @@ public:
             }, tiempo_auto_prenormalizacion);
             set_timer_auto_prenormalizacion_tren();
             averia_cejes.erase(id);
-            evento_pendiente = {lado, msg == "Nominal", it->second.pin};
+            evento_pendiente = {lado, msg == "Nominal", id};
             update();
         }
     }

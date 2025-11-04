@@ -1,5 +1,5 @@
 #pragma once
-#include "cv.h"
+#include "topology.h"
 #include "bloqueo.h"
 class ruta;
 class señal
@@ -11,7 +11,7 @@ public:
     const TipoSeñal tipo;
     const int pin;
 protected:
-    cv *cv_señal;
+    seccion_via *seccion;
     Aspecto aspecto;
     std::map<Aspecto, Aspecto> aspectos_maximos_anterior_señal;
     std::map<EstadoCanton, Aspecto> aspecto_maximo_ocupacion;
@@ -19,6 +19,8 @@ protected:
 
     std::string bloqueo_asociado;
     estado_bloqueo bloqueo_act;
+
+    std::string cejes;
 
     bool cierre_stick;
     bool cleared = false;
@@ -45,10 +47,10 @@ public:
     }
     void message_cv(const std::string &id, estado_cv ev)
     {
-        if (id != cv_señal->id) return;
+        if (id != seccion->get_cv()->id) return;
 
         paso_circulacion = false;
-        if (ev.evento && ev.evento->ocupacion && ev.evento->lado == lado && ev.evento->pin == pin) {
+        if (ev.evento && ev.evento->ocupacion && ev.evento->lado == lado && (cejes == "" || ev.evento->id == cejes)) {
             if (aspecto == Aspecto::Parada && get_milliseconds() - ultimo_paso_abierta > 15000) {
                 rebasada = true;
                 log(this->id, "rebasada", LOG_WARNING);
@@ -73,8 +75,8 @@ public:
     {
         return aspecto;
     }
-    cv* get_cv_señal()
+    seccion_via* get_seccion_señal()
     {
-        return cv_señal;
+        return seccion;
     }
 };

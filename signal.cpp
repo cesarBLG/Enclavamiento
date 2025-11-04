@@ -3,13 +3,14 @@
 #include "items.h"
 señal::señal(const std::string &id, const json &j) : id(id), lado(j["Lado"]), tipo(j["Tipo"]), pin(0), topic("signal/"+id+"/state"), bloqueo_asociado(j["Bloqueo"]), cierre_stick(j["CierreStick"])
 {
-    cv_señal = cvs[j["CV"]];
+    seccion = secciones[j["Sección"]];
     for (auto &[est, asp] : j["AspectoCanton"].items()) {
         aspecto_maximo_ocupacion[json(est)] = asp;
     }
     for (auto &[asp1, asp2] : j["AspectoAnteriorSeñal"].items()) {
         aspectos_maximos_anterior_señal[json(asp1)] = asp2;
     }
+    cejes = j.value("ContadorEjes", "");
 
     ruta_necesaria = j["RutaNecesaria"];
     clear_request = !cierre_stick;
@@ -18,17 +19,15 @@ void señal::update()
 {
     Aspecto prev_aspecto = aspecto;
 
-    cv* cv_act = cv_señal;
-    cv* cv_prev = cv_act->get_cv_in(lado, pin).first;
+    seccion_via* sec_act = seccion;
     Lado dir = lado;
     EstadoCanton canton = EstadoCanton::Libre;
     señal *sig_señal = nullptr;
-    while (cv_act != nullptr && sig_señal == nullptr) {
-        canton = std::max(cv_act->get_ocupacion(dir), canton);
-        cv_prev = cv_act;
-        cv_act = cv_act->siguiente_cv(cv_act, dir);
-        if (cv_act == cv_señal) break;
-        if (cv_act != nullptr) sig_señal = cv_act->señal_inicio(cv_prev, dir);
+    while (sec_act != nullptr && sig_señal == nullptr) {
+        canton = std::max(sec_act->get_cv()->get_ocupacion(dir), canton);
+        sec_act = sec_act->siguiente_seccion(sec_act, dir);
+        if (sec_act == seccion) break;
+        if (sec_act != nullptr) sig_señal = sec_act->señal_inicio(dir);
     }
     bool cerrar_itinerario = bloqueo_asociado != "" && ((bloqueo_act.estado != (dir == Lado::Impar ? EstadoBloqueo::BloqueoImpar : EstadoBloqueo::BloqueoPar) && tipo != TipoSeñal::Avanzada) || bloqueo_act.escape[opp_lado(dir)]);
     bool cerrar = bloqueo_asociado != "" && (bloqueo_act.estado == EstadoBloqueo::SinDatos || (bloqueo_act.ruta[opp_lado(dir)] != TipoMovimiento::Ninguno && tipo == TipoSeñal::Avanzada));

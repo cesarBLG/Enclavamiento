@@ -9,6 +9,7 @@ std::map<std::string, señal*> señales;
 std::set<bloqueo*> bloqueos;
 std::set<ruta*> rutas;
 std::map<std::string, gestor_rutas*> grutas;
+std::map<std::string, seccion_via*> secciones;
 
 std::set<std::string> comandos_ruta = {"I","R","M","DAI","DEI","BS","ABS","DS","BDE","BD","ABDE","ABD","SA","ASA","FAI","AFA","DEI","BDS","ABDS"};
 std::set<std::string> comandos_señal = {"CS","CSEÑ","NPS"};
@@ -119,42 +120,43 @@ void handle_message(const std::string &topic, const std::string &payload)
 
 void init_items(std::string path)
 {
-    std::ifstream cvs_cfg(path+"cvs.json");
-    if (!cvs_cfg.fail()) {
-        json j;
-        cvs_cfg>>j;
-        for (auto &[estacion, jcvs] : j.items()) {
+    std::ifstream cfg(path+"config.json");
+    if (cfg.fail()) {
+        exit(1);
+    }
+    auto j = json::parse(cfg);
+    if (j.contains("CVs")) {
+        for (auto &[estacion, jcvs] : j["CVs"].items()) {
             for (auto &[id, jcv] : jcvs.items()) {
                 std::string ic = estacion+"/"+id;
-                cvs[ic] = new cv(ic, jcv);
+                cvs[ic] = new cv(ic);
                 if (jcv.contains("ContadoresEjes")) cv_impls[ic] = new cv_impl(ic, jcv);
             }
         }
     }
-    std::ifstream señales_cfg(path+"signals.json");
-    if (!señales_cfg.fail()) {
-        json j;
-        señales_cfg>>j;
-        for (auto &[estacion, jseñales] : j.items()) {
+    if (j.contains("Secciones")) {
+        for (auto &[estacion, jsecs] : j["Secciones"].items()) {
+            for (auto &[id, jsec] : jsecs.items()) {
+                std::string is = estacion+"/"+id;
+                secciones[is] = new seccion_via(is, jsec);
+            }
+        }
+    }
+    if (j.contains("Señales")) {
+        for (auto &[estacion, jseñales] : j["Señales"].items()) {
             for (auto &[id, js] : jseñales.items()) {
                 std::string is = estacion+"/"+id;
                 señales[is] = new señal(is, js);
             }
         }
     }
-    std::ifstream bloqueos_cfg(path+"bloqueos.json");
-    if (!bloqueos_cfg.fail()) {
-        json j;
-        bloqueos_cfg>>j;
-        for (auto &jb : j) {
+    if (j.contains("Bloqueos")) {
+        for (auto &jb : j["Bloqueos"]) {
             bloqueos.insert(new bloqueo(jb));
         }
     }
-    std::ifstream rutas_cfg(path+"rutas.json");
-    if (!rutas_cfg.fail()) {
-        json j;
-        rutas_cfg>>j;
-        for (auto &[estacion, jrutas] : j.items()) {
+    if (j.contains("Rutas")) {
+        for (auto &[estacion, jrutas] : j["Rutas"].items()) {
             if (grutas.find(estacion) == grutas.end()) grutas[estacion] = new gestor_rutas(estacion);
             for (auto &jr : jrutas) {
                 ruta *r = new ruta(estacion, jr);
