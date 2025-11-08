@@ -15,7 +15,7 @@ public:
     const TipoDestino tipo;
     bool bloqueo_destino = false;
     bool sucesion_automatica = false;
-    bool me_pendiente;
+    bool me_pendiente = false;
     ruta *ruta_activa = nullptr;
     destino_ruta(const std::string &id, TipoDestino tipo) : id(id), tipo(tipo) {}
     RespuestaMando mando(const std::string &cmd, int me);

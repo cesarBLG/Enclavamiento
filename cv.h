@@ -17,12 +17,12 @@ struct evento_cv
 };
 struct estado_cv
 {
-    EstadoCV estado;
-    EstadoCV estado_previo;
+    EstadoCV estado = EstadoCV::Prenormalizado;
+    EstadoCV estado_previo = EstadoCV::Prenormalizado;
     std::optional<evento_cv> evento;
-    bool averia;
-    bool btv;
-    bool perdida_secuencia;
+    bool averia=false;
+    bool btv=false;
+    bool perdida_secuencia=false;
     bool sin_datos=false;
     bool me_pendiente=false;
 };

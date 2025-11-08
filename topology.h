@@ -31,7 +31,7 @@ protected:
     lados<std::vector<conexion>> siguientes_secciones;
     lados<std::map<int,int>> active_outs;
     lados<int> route_outs;
-    ruta *ruta_asegurada;
+    ruta *ruta_asegurada = nullptr;
 
     lados<int> ocupacion_outs;
 
