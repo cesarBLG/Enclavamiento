@@ -77,6 +77,8 @@ void señal::update()
     }
     paso_circulacion = false;
 
+    if (aspecto != Aspecto::Parada) rebasada = false;
+
     if (aspecto != prev_aspecto) send_state();
 }
 RespuestaMando señal::mando(const std::string &cmd, int me)
