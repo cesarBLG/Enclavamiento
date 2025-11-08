@@ -7,20 +7,24 @@
 #include "mqtt.h"
 #include "time.h"
 #include "log.h"
+#include "remota.h"
 #include <optional>
 struct evento_cv
 {
     Lado lado;
     bool ocupacion;
-    std::string id;
+    std::string cv_colateral;
 };
 struct estado_cv
 {
     EstadoCV estado;
     EstadoCV estado_previo;
-    bool btv;
-    bool biv;
     std::optional<evento_cv> evento;
+    bool averia;
+    bool btv;
+    bool perdida_secuencia;
+    bool sin_datos=false;
+    bool me_pendiente=false;
 };
 void to_json(json &j, const estado_cv &estado);
 void from_json(const json &j, estado_cv &estado);
@@ -28,17 +32,15 @@ void from_json(const json &j, evento_cv &ev);
 void to_json(json &j, const evento_cv &ev);
 class ruta;
 class señal;
-class cv
+class seccion_via;
+class cv : public estado_cv
 {
 public:
     const std::string id;
-protected:
-    EstadoCV estado = EstadoCV::Prenormalizado;
-    bool btv = false;
-    bool biv = false;
-public:
-    cv(const std::string &id) : id(id) {} 
-
+    std::set<seccion_via*> secciones;
+    bool ocupacion_intempestiva = false;
+    cv(const std::string &id) : id(id) {}
+    
     EstadoCV get_state()
     {
         return estado;
@@ -53,20 +55,28 @@ public:
         else return EstadoCanton::Ocupado;
     }
 
+    bool is_asegurada(ruta *ruta=nullptr);
+    bool is_averia() { return averia; }
+    bool is_btv() { return btv; }
+    bool is_perdida_secuencia() { return perdida_secuencia; }
+
     void message_cv(estado_cv ecv)
     {
-        estado = ecv.estado;
-        biv = ecv.biv;
-        btv = ecv.btv;
+        *((estado_cv*)this) = ecv;
+        remota_cambio_elemento(ElementoRemota::CV, id);
+        if (estado <= EstadoCV::Prenormalizado) ocupacion_intempestiva = false;
     }
+
+    RemotaCV get_estado_remota();
 };
-class cv_impl
+class cv_impl : public estado_cv
 {
 public:
     struct cejes_position
     {
         Lado lado;
         bool reverse;
+        std::string cv_colateral;
     };
     const std::string id;
 protected:
@@ -83,14 +93,9 @@ protected:
     lados<std::vector<int>> num_trenes;
     lados<int64_t> ultimo_eje;
 
-    EstadoCV estado;
-    EstadoCV prev_estado;
     bool normalizado;
 
-    bool btv;
-    bool biv;
-
-    std::optional<evento_cv> evento_pendiente;
+    bool me_pendiente = false;
 
 public:
     const std::string topic;
@@ -113,23 +118,17 @@ public:
         } else {
             estado = normalizado ? EstadoCV::Libre : EstadoCV::Prenormalizado;
         }
+        averia = !averia_cejes.empty();
         send_state();
     }
 
     void send_state()
     {
-        estado_cv ecv;
-        ecv.estado_previo = prev_estado;
-        ecv.estado = estado;
-        ecv.evento = evento_pendiente;
-        ecv.biv = biv;
-        ecv.btv = btv;
-    
-        json msg(ecv);
-        send_message(topic, msg.dump(), ecv.evento ? 2 : 1);
+        json msg(*this);
+        send_message(topic, msg.dump(), evento ? 2 : 1);
 
-        evento_pendiente = {};
-        prev_estado = estado;
+        evento = {};
+        estado_previo = estado;
     }
 
     void message_cejes(const std::string &id, std::string msg)
@@ -162,9 +161,9 @@ public:
                             }
                         }
                     }
+                    if (now - ultimo_eje[lado] < tiempo_auto_prenormalizacion_tren) arr.pop_back();
                 }
                 ++num_ejes[lado];
-                if (now - ultimo_eje[lado] < tiempo_auto_prenormalizacion_tren) arr.pop_back();
                 arr.push_back(num_ejes[lado]);
                 ultimo_eje[lado] = now;
             } else if (msg == "Reverse") {
@@ -212,9 +211,16 @@ public:
             }, tiempo_auto_prenormalizacion);
             set_timer_auto_prenormalizacion_tren();
             averia_cejes.erase(id);
-            evento_pendiente = {lado, msg == "Nominal", id};
+            evento = {lado, msg == "Nominal", it->second.cv_colateral};
             update();
         }
+    }
+
+    void message_cv(const std::string &msg)
+    {
+        if (msg == "Normalizar") normalizar();
+        else if (msg == "NormalizarSecuencia") perdida_secuencia = false;
+        else if (msg == "PérdidaSecuencia") perdida_secuencia = true;
     }
 
     void prenormalizar()
@@ -227,15 +233,46 @@ public:
         update();
     }
 
-    bool mando(const std::string &cmd)
+    void normalizar()
     {
-        if (cmd == "BV" || cmd == "BIV") biv = true;
-        else if (cmd == "ABV" || cmd == "DIV") biv = false;
-        else if (cmd == "BTV") btv = true;
-        else if (cmd == "ABTV" || cmd == "DTV") btv = false;
-        else if (cmd == "LC") prenormalizar();
-        else return false;
-        return true;
+        if (normalizado) return;
+        normalizado = true;
+        update();
+    }
+
+    RespuestaMando mando(const std::string &cmd, int me)
+    {
+        RespuestaMando aceptado = RespuestaMando::OrdenRechazada;
+        if (me_pendiente && me == 0) return RespuestaMando::MandoEspecialEnCurso;
+        bool pend = me_pendiente;
+        me_pendiente = false;
+        if (me < 0) return pend ? RespuestaMando::Aceptado : RespuestaMando::OrdenRechazada;
+        if (cmd == "LC" && estado > EstadoCV::Prenormalizado) {
+            if (me) {
+                averia_cejes.clear();
+                prenormalizar();
+                aceptado = RespuestaMando::Aceptado;
+            } else {
+                me_pendiente = true;
+                aceptado = RespuestaMando::MandoEspecialNecesario;
+            }
+        } else if (cmd == "BTV") {
+            if (!btv) {
+                btv = true;
+                aceptado = RespuestaMando::Aceptado;
+            }
+        } else if (cmd == "ABTV" || cmd == "DTV") {
+            if (btv) {
+                if (me) {
+                    btv = false;
+                    aceptado = RespuestaMando::Aceptado;
+                } else {
+                    me_pendiente = true;
+                    aceptado = RespuestaMando::MandoEspecialNecesario;
+                }
+            }
+        }
+        return aceptado;
     }
 
     void set_timer_auto_prenormalizacion_tren()
@@ -264,6 +301,20 @@ public:
                 update();
             }
         }, tiempo_auto_prenormalizacion_tren);
+    }
+
+    void asignar_cejes(std::map<std::string,std::vector<std::string>> &cejes_to_cvs)
+    {
+        for (auto &[idce, pos] : cejes) {
+            auto it = cejes_to_cvs.find(idce);
+            if (it != cejes_to_cvs.end()) {
+                for (auto &idcv : it->second) {
+                    if (idcv != id) {
+                        pos.cv_colateral = idcv;
+                    }
+                }
+            }
+        }
     }
 };
 void from_json(const json &j, cv_impl::cejes_position &position);

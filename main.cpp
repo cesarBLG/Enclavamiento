@@ -1,15 +1,23 @@
 
 #include <regex>
 #include <set>
+#include <fstream>
 #include "time.h"
 #include "items.h"
 #include "mqtt.h"
 void event_loop();
 int main(int argc, char **argv)
 {
-    init_mqtt(argc > 1 ? std::string(argv[1]) : "main");
+    std::string cfg_path = argc > 1 ? std::string(argv[1]) : "config.json";
+    std::ifstream cfg(cfg_path);
+    if (cfg.fail()) {
+        log("config", "file not found", LOG_ERROR);
+        exit(1);
+    }
+    auto j = json::parse(cfg);
+    init_mqtt(j["MQTT"]);
 
-    init_items(argc > 2 ? std::string(argv[2]) : "");
+    init_items(j);
 
     event_loop();
 

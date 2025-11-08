@@ -1,28 +1,89 @@
 #include "topology.h"
 #include "ruta.h"
 #include "items.h"
-seccion_via::seccion_via(const std::string &id, const json &j) : id(id)
+seccion_via::seccion_via(const std::string &id, const json &j) : id(id), bloqueo(j.value("Bloqueo", ""))
 {
     active_outs[Lado::Impar][0] = 0;
     active_outs[Lado::Par][0] = 0;
     route_outs = {-1, -1};
     cv_seccion = cvs[j.value("CV", id)];
+    cv_seccion->secciones.insert(this);
     if (j.contains("Conexiones")) {
         siguientes_secciones = j["Conexiones"];
     }
+    trayecto = bloqueo != "" || (id.size() > 2 && id.substr(0, 3) == "PV:");
 }
 void seccion_via::asegurar(ruta *ruta, seccion_via *prev, seccion_via *next, Lado dir)
 {
+    if (ruta_asegurada != nullptr || ruta == nullptr) return;
     int in = get_in(prev, dir);
     int out = get_out(next, dir);
     if (in < 0 || out < 0) return;
     ruta_asegurada = ruta;
     route_outs[dir] = out;
     route_outs[opp_lado(dir)] = in;
+    remota_cambio_elemento(ElementoRemota::CV, cv_seccion->id);
 }
-señal *seccion_via::señal_inicio(Lado lado)
+TipoMovimiento seccion_via::get_tipo_movimiento()
 {
-    if (señales[lado] != "") return ::señales[señales[lado]];
+    if (ruta_asegurada != nullptr)
+        return ruta_asegurada->tipo;
+    if (bloqueo != "" && (bloqueo_act.estado != EstadoBloqueo::Desbloqueo && bloqueo_act.estado != EstadoBloqueo::SinDatos))
+        return TipoMovimiento::Itinerario;
+    return TipoMovimiento::Ninguno;
+}
+void seccion_via::message_cv(const std::string &id, estado_cv ev)
+{
+    if (id != cv_seccion->id) return;
+    if (ev.evento && ev.evento->ocupacion && ocupacion_outs[Lado::Impar] < 0 && ocupacion_outs[Lado::Par] < 0) {
+        if (trayecto) {
+            ocupacion_outs = {0, 0};
+        } else {
+            ocupacion_outs = route_outs;
+        }
+    }
+    if (ev.estado <= EstadoCV::Prenormalizado)
+        ocupacion_outs = {-1, -1};
+
+    if (ev.evento && ev.evento->ocupacion) {
+        bool intempestiva = false;
+        if (trayecto) {
+            if (bloqueo != "" && bloqueo_act.estado != (ev.evento->lado == Lado::Impar ? EstadoBloqueo::BloqueoImpar : EstadoBloqueo::BloqueoPar) && bloqueo_act.ruta[ev.evento->lado] != TipoMovimiento::Maniobra) {
+                intempestiva = true;
+            }
+        } else {
+            if (ruta_asegurada == nullptr) {
+                intempestiva = true;
+            } else if (ev.evento->cv_colateral != "") {
+                Lado l = opp_lado(ev.evento->lado);
+                auto &sigs = siguientes_secciones[l];
+                for (int i=0; i<sigs.size(); i++) {
+                    if (secciones[sigs[i].id]->cv_seccion->id == ev.evento->cv_colateral && route_outs[l] != i) {
+                        intempestiva = true;
+                        break;
+                    }
+                }
+            }
+        }
+        if (intempestiva) {
+            cv_seccion->ocupacion_intempestiva = true;
+        }
+    }
+    remota_cambio_elemento(ElementoRemota::CV, cv_seccion->id);
+}
+EstadoCanton seccion_via::get_ocupacion(seccion_via* prev, Lado dir)
+{
+    EstadoCanton estado = cv_seccion->get_ocupacion(dir);
+    if (estado != EstadoCanton::OcupadoMismoSentido) return estado;
+    if (cv_seccion->ocupacion_intempestiva) return EstadoCanton::Ocupado;
+    auto *in_ocupacion = get_seccion_in(dir, ocupacion_outs[opp_lado(dir)]).first;
+    if (in_ocupacion != prev) return EstadoCanton::Ocupado;
+    return EstadoCanton::OcupadoMismoSentido;
+}
+señal *seccion_via::señal_inicio(Lado lado, int pin)
+{
+    auto it = señales[lado].find(pin);
+    if (it != señales[lado].end()) return ::señales[it->second];
     return nullptr;
 }
 seccion_via* seccion_via::siguiente_seccion(seccion_via *prev, Lado &dir)
@@ -41,7 +102,7 @@ std::pair<seccion_via*,Lado> seccion_via::get_seccion_in(Lado dir, int pin)
 {
     Lado lado = opp_lado(dir);
     auto &sigs = siguientes_secciones[lado];
-    if (pin >= sigs.size()) return {nullptr, Lado::Impar};
+    if (pin < 0 || pin >= sigs.size()) return {nullptr, Lado::Impar};
     return {secciones[sigs[pin].id],sigs[pin].invertir_paridad ? lado : dir};
 }
 
@@ -68,6 +129,7 @@ void seccion_via::prev_secciones(seccion_via *next, Lado dir_fwd, std::vector<st
 int seccion_via::get_in(seccion_via* prev, Lado dir)
 {
     Lado lado = opp_lado(dir);
+    if (prev == nullptr && siguientes_secciones[lado].empty()) return 0;
     for (int i=0; i<siguientes_secciones[lado].size(); i++) {
         auto p = siguientes_secciones[lado][i];
         if ((prev != nullptr && p.id == prev->id) || (i == 0 && siguientes_secciones[lado].size() == 1)) {
@@ -78,6 +140,7 @@ int seccion_via::get_in(seccion_via* prev, Lado dir)
 }
 int seccion_via::get_out(seccion_via* next, Lado dir)
 {
+    if (next == nullptr && siguientes_secciones[dir].empty()) return 0;
     for (int i=0; i<siguientes_secciones[dir].size(); i++) {
         auto p = siguientes_secciones[dir][i];
         if ((next != nullptr && p.id == next->id) || (i == 0 && siguientes_secciones[dir].size() == 1)) {

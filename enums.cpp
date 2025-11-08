@@ -69,6 +69,15 @@ std::string to_string(TipoSeñal tipo)
     }
     return "";
 }
+std::string to_string(ACTC actc)
+{
+    switch (actc) {
+        case ACTC::NoNecesaria: return "NoNecesaria";
+        case ACTC::Concedida: return "Concedida";
+        case ACTC::Denegada: return "NoConcedida";
+    }
+    return "";
+}
 void to_json(json &j, const Lado &lado)
 {
     j = to_string(lado);
@@ -145,4 +154,20 @@ void from_json(const json &j, TipoSeñal &tipo)
     else if (j == "Maniobra") tipo = TipoSeñal::Maniobra;
     else if (j == "Retroceso") tipo = TipoSeñal::Retroceso;
     else if (j == "Intermedia") tipo = TipoSeñal::Intermedia;
+}
+void to_json(json &j, const ACTC &actc)
+{
+    j = to_string(actc);
+}
+void from_json(const json &j, ACTC &actc)
+{
+    if (j == "NoNecesaria") actc = ACTC::NoNecesaria;
+    else if (j == "Concedida") actc = ACTC::Concedida;
+    else if (j == "NoConcedida") actc = ACTC::Denegada;
+}
+void from_json(const json &j, TipoDestino &tipo)
+{
+    if (j == "FinalVía") tipo = TipoDestino::FinalVia;
+    else if (j == "Colateral") tipo = TipoDestino::Colateral;
+    else if (j == "Señal") tipo = TipoDestino::Señal;
 }

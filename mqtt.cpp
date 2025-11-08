@@ -19,11 +19,12 @@ void on_connect(struct mosquitto *mosq, void *userdata, int rc)
         connected = true;
         mosquitto_subscribe(mosq, nullptr, "desconexion", 1);
         mosquitto_subscribe(mosq, nullptr, "desconexion/+", 1);
-        mosquitto_subscribe(mosq, nullptr, "mando", 2);
+        mosquitto_subscribe(mosq, nullptr, "mando/+", 2);
         mosquitto_subscribe(mosq, nullptr, "cejes/+/+/event", 2);
         mosquitto_subscribe(mosq, nullptr, "cv/+/+/state", 2);
         mosquitto_subscribe(mosq, nullptr, "bloqueo/+/state", 1);
         mosquitto_subscribe(mosq, nullptr, "bloqueo/+/ruta/+", 1);
+        mosquitto_subscribe(mosq, nullptr, "remota/fec", 0);
         mosquitto_will_set(mosq, "desconexion", name.size(), name.c_str(), 1, false);
     } else {
         log("mqtt", "connection failed", LOG_DEBUG);
@@ -87,14 +88,14 @@ std::vector<std::string> split(const std::string& str, char delimiter)
     return result;
 }
 
-void init_mqtt(std::string name)
+void init_mqtt(const json &j)
 {
     mosquitto_lib_init();
 
-    mosq = mosquitto_new(name.c_str(), true, nullptr);
+    mosq = mosquitto_new(j["Name"].get<std::string>().c_str(), true, nullptr);
     mosquitto_connect_callback_set(mosq, on_connect);
 
-    mosquitto_connect(mosq, "server.int.vtrains.es", 1883, 15);
+    mosquitto_connect(mosq, j["Host"].get<std::string>().c_str(), 1883, 15);
 
     mosquitto_message_callback_set(mosq, on_message);
     mosquitto_disconnect_callback_set(mosq, on_disconnect);
@@ -118,4 +119,21 @@ void exit_mqtt()
     mosquitto_disconnect(mosq);
     mosquitto_destroy(mosq);
     mosquitto_lib_cleanup();
+}
+
+std::string id_to_mqtt(std::string id)
+{
+    for (int i=0; i<id.size(); i++) {
+        if (id[i] == '/') id[i] = '_';
+        else if (id[i] == ':') id[i] = '/';
+    }
+    return id;
+}
+std::string id_from_mqtt(std::string id)
+{
+    for (int i=0; i<id.size(); i++) {
+        if (id[i] == '_') id[i] = '/';
+        else if (id[i] == '/') id[i] = ':';
+    }
+    return id;
 }
