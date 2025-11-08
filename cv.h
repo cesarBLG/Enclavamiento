@@ -131,71 +131,82 @@ public:
         estado_previo = estado;
     }
 
-    void message_cejes(const std::string &id, std::string msg)
+    void message_cejes(const std::string &id, std::string payload)
     {
         auto it = cejes.find(id);
         if (it == cejes.end()) return;
-        if (msg == "Error" || msg == "desconexion") {
+        if (payload == "Error" || payload == "desconexion") {
             averia_cejes.insert(id);
             normalizado = false;
             update();
         } else {
-            EstadoCV prev = estado;
+            std::string msg;
+            int num;
+            size_t pos = payload.find(':');
+            if (pos != std::string::npos) { // if ':' was found
+                msg = payload.substr(0, pos);
+                num = atoi(payload.substr(pos + 1).c_str());
+            } else {
+                msg = payload;
+                num = 1;
+            }
             Lado lado = it->second.lado;
             if (it->second.reverse != (lado == Lado::Par)) {
                 if (msg == "Nominal") msg = "Reverse";
                 else if (msg == "Reverse") msg = "Nominal";
             }
             auto now = get_milliseconds();
-            if (msg == "Nominal") {
-                auto &arr = num_trenes[lado];
-                if (!arr.empty()) {
-                    int diff = arr[arr.size()-1] - num_ejes[lado];
-                    if (diff > 0) {
-                        for (auto it2 = arr.begin(); it2 != arr.end(); ) {
-                            if (*it2 <= diff) {
-                                it2 = arr.erase(it2);
-                            } else {
-                                *it2 -= diff;
-                                ++it2;
-                            }
-                        }
-                    }
-                    if (now - ultimo_eje[lado] < tiempo_auto_prenormalizacion_tren) arr.pop_back();
-                }
-                ++num_ejes[lado];
-                arr.push_back(num_ejes[lado]);
-                ultimo_eje[lado] = now;
-            } else if (msg == "Reverse") {
-                if (num_ejes[lado] > 0) {
-                    --num_ejes[lado];
+            for (int i=0; i<num; i++) {
+                if (msg == "Nominal") {
                     auto &arr = num_trenes[lado];
                     if (!arr.empty()) {
-                        int prev = arr.size() > 1 ? arr[arr.size() - 2] : 0;
-                        int ejes = num_ejes[lado] - prev;
-                        if (ejes <= 0) arr.pop_back();
-                    }
-                } else {
-                    Lado opLado = opp_lado(lado);
-                    if (num_ejes[opLado] > 0) {
-                        --num_ejes[opLado];
-                        if (num_ejes[opLado] == 0/* && num_ejes[lado] == 0*/) normalizado = true;
-                        auto &arr = num_trenes[opLado];
-                        if (!arr.empty()) {
-                            int diff = arr[arr.size()-1] - num_ejes[opLado];
-                            if (diff >= arr[0]) {
-                                int val0 = arr[0];
-                                arr.erase(arr.begin());
-                                for (int &n : arr) {
-                                    n -= val0;
+                        int diff = arr[arr.size()-1] - num_ejes[lado];
+                        if (diff > 0) {
+                            for (auto it2 = arr.begin(); it2 != arr.end(); ) {
+                                if (*it2 <= diff) {
+                                    it2 = arr.erase(it2);
+                                } else {
+                                    *it2 -= diff;
+                                    ++it2;
                                 }
                             }
                         }
+                        if (now - ultimo_eje[lado] < tiempo_auto_prenormalizacion_tren) arr.pop_back();
                     }
-                    //else normalizado = false;
+                    ++num_ejes[lado];
+                    arr.push_back(num_ejes[lado]);
+                    ultimo_eje[lado] = now;
+                } else if (msg == "Reverse") {
+                    if (num_ejes[lado] > 0) {
+                        --num_ejes[lado];
+                        auto &arr = num_trenes[lado];
+                        if (!arr.empty()) {
+                            int prev = arr.size() > 1 ? arr[arr.size() - 2] : 0;
+                            int ejes = num_ejes[lado] - prev;
+                            if (ejes <= 0) arr.pop_back();
+                        }
+                    } else {
+                        Lado opLado = opp_lado(lado);
+                        if (num_ejes[opLado] > 0) {
+                            --num_ejes[opLado];
+                            if (num_ejes[opLado] == 0/* && num_ejes[lado] == 0*/) normalizado = true;
+                            auto &arr = num_trenes[opLado];
+                            if (!arr.empty()) {
+                                int diff = arr[arr.size()-1] - num_ejes[opLado];
+                                if (diff >= arr[0]) {
+                                    int val0 = arr[0];
+                                    arr.erase(arr.begin());
+                                    for (int &n : arr) {
+                                        n -= val0;
+                                    }
+                                }
+                            }
+                        }
+                        //else normalizado = false;
+                    }
+                } else {
+                    return;
                 }
-            } else {
-                return;
             }
             if (num_ejes[Lado::Impar] == 0) num_trenes[Lado::Impar].clear();
             if (num_ejes[Lado::Par] == 0) num_trenes[Lado::Par].clear();
