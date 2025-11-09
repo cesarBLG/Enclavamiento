@@ -29,11 +29,11 @@ void remota_sendall()
 {
     sendall = true;
 }
-RespuestaMando procesar_mando(const std::string &client, std::string payload);
+RespuestaMando procesar_mando(const std::string &client, std::string payload, bool from_ctc);
 void handle_message_fec(const json &j)
 {
     if (j["Tipo"] == "EnvíoÓrdenes") {
-        RespuestaMando res = procesar_mando("fec", j["Mensaje"]);
+        RespuestaMando res = procesar_mando("fec", j["Mensaje"], true);
         json j1;
         switch (res) {
             case RespuestaMando::Aceptado:
@@ -66,9 +66,9 @@ void handle_message_fec(const json &j)
     } else if (j["Tipo"] == "PeticiónEstadoCompleto") {
         sendall = true;
     } else if (j["Tipo"] == "ConfirmaciónMandoEspecial") {
-        procesar_mando("fec", "ME");
+        procesar_mando("fec", "ME", true);
     } else if (j["Tipo"] == "CancelaciónMandoEspecial") {
-        procesar_mando("fec", "");
+        procesar_mando("fec", "", true);
     }
 }
 void update_remota()
@@ -79,7 +79,7 @@ void update_remota()
         if (sendall || r != fmvs[id]) push(j, {ElementoRemota::FMV, id}, r);
         fmvs[id] = r;
     }
-    for (auto &[id, sig] : señales) {
+    for (auto &[id, sig] : señal_impls) {
         auto p = sig->get_estado_remota();
         auto r = json(p.first);
         if (sendall || r != sigs[id]) push(j, {ElementoRemota::SIG, id}, r);

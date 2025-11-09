@@ -136,6 +136,7 @@ public:
         auto it = cejes.find(id);
         if (it == cejes.end()) return;
         if (payload == "Error" || payload == "desconexion") {
+            log(id, "avería contador ejes", LOG_DEBUG);
             averia_cejes.insert(id);
             normalizado = false;
             update();
@@ -260,6 +261,7 @@ public:
         if (me < 0) return pend ? RespuestaMando::Aceptado : RespuestaMando::OrdenRechazada;
         if (cmd == "LC" && estado > EstadoCV::Prenormalizado) {
             if (me) {
+                log(id, "prenormalizar", LOG_DEBUG);
                 averia_cejes.clear();
                 prenormalizar();
                 aceptado = RespuestaMando::Aceptado;
@@ -269,12 +271,14 @@ public:
             }
         } else if (cmd == "BTV") {
             if (!btv) {
+                log(id, "btv", LOG_DEBUG);
                 btv = true;
                 aceptado = RespuestaMando::Aceptado;
             }
         } else if (cmd == "ABTV" || cmd == "DTV") {
             if (btv) {
                 if (me) {
+                    log(id, "anulación btv", LOG_DEBUG);
                     btv = false;
                     aceptado = RespuestaMando::Aceptado;
                 } else {

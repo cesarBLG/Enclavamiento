@@ -22,7 +22,7 @@ public:
     };
     const std::string id;
 protected:
-    lados<std::map<int,std::string>> señales;
+    lados<std::map<int,señal*>> señales;
     cv *cv_seccion;
     bool trayecto;
     std::string bloqueo;
@@ -80,12 +80,14 @@ public:
         RespuestaMando aceptado = RespuestaMando::OrdenRechazada;
         if (cmd == "BV" || cmd == "BIV") {
             if (!bloqueo_seccion && !trayecto) {
+                log(id, "biv", LOG_DEBUG);
                 bloqueo_seccion = true;
                 aceptado = RespuestaMando::Aceptado;
             }
         } else if (cmd == "ABV" || cmd == "DIV") {
             if (bloqueo_seccion) {
                 if (me) {
+                    log(id, "anular biv", LOG_DEBUG);
                     bloqueo_seccion = false;
                     aceptado = RespuestaMando::Aceptado;
                 } else {
@@ -97,6 +99,10 @@ public:
         if (aceptado != RespuestaMando::OrdenRechazada)
             remota_cambio_elemento(ElementoRemota::CV, cv_seccion->id);
         return aceptado;
+    }
+    void vincular_señal(señal *sig, Lado lado, int pin)
+    {
+        señales[lado][pin] = sig;
     }
     EstadoCanton get_ocupacion(seccion_via* prev, Lado dir);
 protected:

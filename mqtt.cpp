@@ -24,6 +24,7 @@ void on_connect(struct mosquitto *mosq, void *userdata, int rc)
         mosquitto_subscribe(mosq, nullptr, "cv/+/+/state", 2);
         mosquitto_subscribe(mosq, nullptr, "bloqueo/+/state", 1);
         mosquitto_subscribe(mosq, nullptr, "bloqueo/+/ruta/+", 1);
+        mosquitto_subscribe(mosq, nullptr, "signal/+/+/state", 1);
         mosquitto_subscribe(mosq, nullptr, "remota/fec", 0);
         mosquitto_will_set(mosq, "desconexion", name.size(), name.c_str(), 1, false);
     } else {

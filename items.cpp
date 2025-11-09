@@ -7,24 +7,23 @@
 std::map<std::string, cv*> cvs;
 std::map<std::string, cv_impl*> cv_impls;
 std::map<std::string, señal*> señales;
+std::map<std::string, señal_impl*> señal_impls;
 std::set<bloqueo*> bloqueos;
 std::set<ruta*> rutas;
 std::map<std::string, destino_ruta*> destinos_ruta;
-std::map<std::string, gestor_rutas*> grutas;
 std::map<std::string, seccion_via*> secciones;
+std::map<std::string, dependencia*> dependencias;
 
 std::set<std::string> comandos_ruta = {"I","R","M","FAI","AFA"};
-std::set<std::string> comandos_señal = {"CS","CSEÑ","NPS","BS","ABS","DS","SA","ASA","DAI"};
+std::set<std::string> comandos_señal = {"CS","CSEÑ","NPS","BS","ABS","DS","SA","ASA","DAI", "DAB"};
 std::set<std::string> comandos_destino = {"BDE","BD","ABDE","ABD","SA","ASA","BDS","ABDS","DEI"};
 std::set<std::string> comandos_bloqueo = {"B","AB","CSB","NSB","PB","APB","NB","AS","AAS"};
 std::set<std::string> comandos_seccion = {"BV","BIV","ABV","DIV","FO","AFO"};
 std::set<std::string> comandos_cv = {"BTV","ABTV","DTV","LC"};
-
-std::map<std::string, std::string> mandos_especiales_pendientes;
+std::set<std::string> comandos_estacion = {"C", "TML", "TME"};
 
 RespuestaMando mando(const std::vector<std::string> &ordenes, int me)
 {
-    if (ordenes.size() <= 0) return RespuestaMando::OrdenDesconocida;
     std::string cmd = ordenes[0];
     if (comandos_cv.find(cmd) != comandos_cv.end()) {
         if (ordenes.size() == 3) {
@@ -42,9 +41,9 @@ RespuestaMando mando(const std::vector<std::string> &ordenes, int me)
         }
     }
     if (comandos_ruta.find(cmd) != comandos_ruta.end()) {
-        auto it = grutas.find(ordenes[1]);
-        if (it != grutas.end()) {
-            if (ordenes.size() == 4) return it->second->mando(ordenes[2] ,ordenes[3], ordenes[0]);
+        auto it = dependencias.find(ordenes[1]);
+        if (it != dependencias.end()) {
+            if (ordenes.size() == 4) return it->second->mando_ruta(ordenes[2] ,ordenes[3], ordenes[0]);
         }
     }
     if (comandos_destino.find(cmd) != comandos_destino.end()) {
@@ -54,8 +53,8 @@ RespuestaMando mando(const std::vector<std::string> &ordenes, int me)
     }
     if (comandos_señal.find(cmd) != comandos_señal.end()) {
         if (ordenes.size() == 3) {
-            auto it = señales.find(ordenes[1]+":"+ordenes[2]);
-            if (it != señales.end()) return it->second->mando(ordenes[0], me);
+            auto it = señal_impls.find(ordenes[1]+":"+ordenes[2]);
+            if (it != señal_impls.end()) return it->second->mando(ordenes[0], me);
         }
     }
     if (comandos_seccion.find(cmd)  != comandos_seccion.end()) {
@@ -66,26 +65,76 @@ RespuestaMando mando(const std::vector<std::string> &ordenes, int me)
     }
     return RespuestaMando::OrdenRechazada;
 }
-RespuestaMando procesar_mando(const std::string &client, std::string payload)
+RespuestaMando procesar_mando(const std::string &client, std::string payload, bool from_ctc)
 {
-    bool me = false;
-    if (mandos_especiales_pendientes[client] != "") {
-        if (payload == "ME") {
-            payload = mandos_especiales_pendientes[client];
-            me = true;
-        } else {
-            mando(split(mandos_especiales_pendientes[client], ' '), -1);
-        }
-        mandos_especiales_pendientes[client] = "";
-    }
     auto ordenes = split(payload, ' ');
-    if (ordenes.empty()) return RespuestaMando::OrdenDesconocida;
-    RespuestaMando res = mando(ordenes, me ? 1 : 0);
+    if (ordenes.size() < 2) return RespuestaMando::OrdenDesconocida;
+
+    auto it_dep = dependencias.find(ordenes[1]);
+    if (it_dep == dependencias.end()) return RespuestaMando::OrdenDesconocida;
+    bool toma_mando = false;
+    if (ordenes[0] == "C" || (ordenes[0] == "TML" && it_dep->second->mando_cedido) || ordenes[0] == "TME") {
+        toma_mando = true;
+    }
+    if (it_dep->second->mando_actual != estado_mando({from_ctc, client}) && !toma_mando) {
+        log(payload, "no tiene el mando", LOG_WARNING);
+        //return RespuestaMando::OrdenDesconocida;
+    }
+
+    bool me = false;
+    if (ordenes[0] == "ME") {
+        if (it_dep->second->mando_especial_pendiente != "") {
+            payload = it_dep->second->mando_especial_pendiente;
+            me = true;
+            it_dep->second->mando_especial_pendiente = "";
+        } else {
+            return RespuestaMando::MandoEspecialNoPermitido;
+        }
+    } else if (it_dep->second->mando_especial_pendiente != "") {
+        mando(split(it_dep->second->mando_especial_pendiente, ' '), -1);
+        it_dep->second->mando_especial_pendiente = "";
+        return RespuestaMando::MandoEspecialEnCurso;
+    }
+
+    RespuestaMando res = RespuestaMando::OrdenRechazada;
+    if (ordenes[0] == "C") {
+        if (from_ctc) {
+            it_dep->second->mando_cedido = false;
+            it_dep->second->mando_actual = {true, client};
+            log(ordenes[1], "mando central");
+            res = RespuestaMando::Aceptado;
+        }
+    } else if (ordenes[0] == "TML") {
+        if (!from_ctc && it_dep->second->mando_cedido) {
+            it_dep->second->mando_cedido = false;
+            it_dep->second->mando_actual = {false, client};
+            log(ordenes[1], "mando local");
+            res = RespuestaMando::Aceptado;
+        }
+    } else if (ordenes[0] == "TME") {
+        if (from_ctc) {
+        } else if (me) {
+            it_dep->second->mando_cedido = false;
+            it_dep->second->mando_actual = {false, client};
+            log(ordenes[1], "mando local por emergencia");
+            res = RespuestaMando::Aceptado;
+        } else {
+            res = RespuestaMando::MandoEspecialNecesario;
+        }
+    } else if (ordenes[0] == "L") {
+        if (from_ctc && !it_dep->second->mando_cedido) {
+            it_dep->second->mando_cedido = true;
+            res = RespuestaMando::Aceptado;
+        }
+    } else {
+        res = mando(ordenes, me ? 1 : 0);
+    }
+
     if (res == RespuestaMando::Aceptado) {
         if (me) log(payload, "mando especial confirmado", LOG_WARNING);
     } else if (res == RespuestaMando::MandoEspecialNecesario) {
         log(payload, "mando especial necesario", LOG_INFO);
-        mandos_especiales_pendientes[client] = payload;
+        it_dep->second->mando_especial_pendiente = payload;
     } else if (res == RespuestaMando::MandoEspecialEnCurso) {
         log(payload, "mando especial en curso", LOG_WARNING);
     } else {
@@ -100,11 +149,11 @@ void handle_message(const std::string &topic, const std::string &payload)
 
     std::regex mandoPattern(R"(^mando/([a-zA-Z0-9_-]+)$)");
     if (std::regex_match(topic, match, mandoPattern)) {
-        procesar_mando(match[1], payload);
+        procesar_mando(match[1], payload, false);
         return;
     }
 
-    std::regex cejesEventPattern(R"(^cejes/([a-zA-Z0-9_-]+/[a-zA-Z0-9_-]+)/event$)");
+    std::regex cejesEventPattern(R"(^cejes/([a-zA-Z0-9_-]+/[a-zA-Z0-9_'-]+)/event$)");
     if (std::regex_match(topic, match, cejesEventPattern)) {
         std::string id = id_from_mqtt(match[1]);
         for (auto &kvp : cv_impls) {
@@ -112,21 +161,21 @@ void handle_message(const std::string &topic, const std::string &payload)
         }
         return;
     }
-    std::regex cvStatePattern(R"(^cv/([a-zA-Z0-9_-]+/[a-zA-Z0-9_-]+)/state$)");
+    std::regex cvStatePattern(R"(^cv/([a-zA-Z0-9_-]+/[a-zA-Z0-9_'-]+)/state$)");
     if (std::regex_match(topic, match, cvStatePattern)) {
         std::string id = id_from_mqtt(match[1]);
         estado_cv ecv(json::parse(payload));
         for (auto &kvp : cvs) {
             if (id == kvp.first) kvp.second->message_cv(ecv);
         }
-        for (auto *bloqueo : bloqueos) {
-            bloqueo->message_cv(id, ecv);
-        }
         for (auto &kvp : secciones) {
             kvp.second->message_cv(id, ecv);
         }
+        for (auto *bloqueo : bloqueos) {
+            bloqueo->message_cv(id, ecv);
+        }
         if (ecv.evento) {
-            for (auto &kvp : señales) {
+            for (auto &kvp : señal_impls) {
                 kvp.second->message_cv(id, ecv);
             }
             for (auto *ruta : rutas) {
@@ -135,10 +184,17 @@ void handle_message(const std::string &topic, const std::string &payload)
         }
         return;
     }
+    std::regex signalStatePattern(R"(^signal/([a-zA-Z0-9_-]+/[a-zA-Z0-9_'-]+)/state$)");
+    if (std::regex_match(topic, match, signalStatePattern)) {
+        std::string id = id_from_mqtt(match[1]);
+        auto it = señales.find(id);
+        if (it != señales.end()) it->second->message_señal(json::parse(payload));
+        return;
+    }
     std::regex bloqueoStatePattern(R"(^bloqueo/([a-zA-Z0-9_-]+)/state$)");
     if (std::regex_match(topic, match, bloqueoStatePattern)) {
         estado_bloqueo eb(json::parse(payload));
-        for (auto &kvp : señales) {
+        for (auto &kvp : señal_impls) {
             kvp.second->message_bloqueo(match[1], eb);
         }
         for (auto *ruta : rutas) {
@@ -170,6 +226,11 @@ void handle_message(const std::string &topic, const std::string &payload)
 
 void init_items(const json &j)
 {
+    if (j.contains("Dependencias")) {
+        for (auto &dep : j["Dependencias"]) {
+            dependencias[dep] = new dependencia(dep);
+        }
+    }
     if (j.contains("CVs")) {
         std::map<std::string,std::vector<std::string>> cejes_to_cvs;
         for (auto &[estacion, jcvs] : j["CVs"].items()) {
@@ -200,7 +261,9 @@ void init_items(const json &j)
         for (auto &[estacion, jseñales] : j["Señales"].items()) {
             for (auto &[id, js] : jseñales.items()) {
                 std::string is = estacion+":"+id;
-                señales[is] = new señal(is, js);
+                auto *señ = new señal_impl(is, js);
+                señales[is] = señ;
+                señal_impls[is] = señ;
             }
         }
     }
@@ -219,13 +282,12 @@ void init_items(const json &j)
     }
     if (j.contains("Rutas")) {
         for (auto &[estacion, jrutas] : j["Rutas"].items()) {
-            if (grutas.find(estacion) == grutas.end()) grutas[estacion] = new gestor_rutas(estacion);
             for (auto &jr : jrutas) {
                 ruta *r = new ruta(estacion, jr);
-                if (r->valid) grutas[estacion]->rutas.insert(r);
+                if (r->valid) dependencias[estacion]->rutas.insert(r);
             }
         }
-        for (auto &kvp : grutas) {
+        for (auto &kvp : dependencias) {
             for (auto *ruta : kvp.second->rutas) {
                 rutas.insert(ruta);
             }
@@ -236,7 +298,7 @@ void init_items(const json &j)
     for (auto &kvp : cv_impls) {
         managed_topics<<kvp.second->topic<<'\n';
     }
-    for (auto &kvp : señales) {
+    for (auto &kvp : señal_impls) {
         managed_topics<<kvp.second->topic<<'\n';
     }
     for (auto *b : bloqueos) {
@@ -247,10 +309,10 @@ void init_items(const json &j)
 int64_t last_sent_state;
 void loop_items()
 {
-    for (auto &kvp : señales) {
+    for (auto &kvp : señal_impls) {
         kvp.second->update();
     }
-    for (auto &kvp : grutas) {
+    for (auto &kvp : dependencias) {
         kvp.second->update();
     }
     int64_t now = get_milliseconds();
@@ -258,7 +320,7 @@ void loop_items()
         for (auto &kvp : cv_impls) {
             kvp.second->send_state();
         }
-        for (auto &kvp : señales) {
+        for (auto &kvp : señal_impls) {
             kvp.second->send_state();
         }
         for (auto *b : bloqueos) {

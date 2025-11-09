@@ -1,7 +1,11 @@
 #include "signal.h"
 #include "ruta.h"
 #include "items.h"
-señal::señal(const std::string &id, const json &j) : id(id), lado(j["Lado"]), tipo(j["Tipo"]), pin(j.value("Pin", 0)), topic("signal/"+id_to_mqtt(id)+"/state"), bloqueo_asociado(j.value("Bloqueo", "")), cierre_stick(j["CierreStick"]), seccion(secciones[j["Sección"]]), seccion_prev(seccion->get_seccion_in(lado, pin).first)
+señal::señal(const std::string &id, const json &j) : id(id), lado(j["Lado"]), tipo(j["Tipo"]), pin(j.value("Pin", 0)), bloqueo_asociado(j.value("Bloqueo", "")), seccion(secciones[j["Sección"]]), seccion_prev(seccion->get_seccion_in(lado, pin).first)
+{
+    seccion->vincular_señal(this, lado, pin);
+}
+señal_impl::señal_impl(const std::string &id, const json &j) : señal(id, j), topic("signal/"+id_to_mqtt(id)+"/state")
 {
     for (auto &[est, asp] : j["AspectoCanton"].items()) {
         aspecto_maximo_ocupacion[json(est)] = asp;
@@ -9,10 +13,11 @@ señal::señal(const std::string &id, const json &j) : id(id), lado(j["Lado"]), 
     for (auto &[asp1, asp2] : j["AspectoAnteriorSeñal"].items()) {
         aspectos_maximos_anterior_señal[json(asp1)] = asp2;
     }
-    ruta_necesaria = j["RutaNecesaria"];
+    ruta_necesaria = tipo != TipoSeñal::Intermedia && tipo != TipoSeñal::Avanzada;
+    cierre_stick = ruta_necesaria;
     clear_request = !cierre_stick;
 }
-void señal::update()
+void señal_impl::update()
 {
     Aspecto prev_aspecto = aspecto;
 
@@ -21,7 +26,7 @@ void señal::update()
     Lado dir = lado;
     EstadoCanton canton = EstadoCanton::Libre;
     señal *sig_señal = nullptr;
-    bool btv = false;;
+    bool btv = false;
     while (sec_act != nullptr && sig_señal == nullptr) {
         canton = std::max(sec_act->get_ocupacion(sec_prv, dir), canton);
         if (sec_act->get_cv()->is_btv()) btv = true;
@@ -32,16 +37,16 @@ void señal::update()
         if (sec_act == seccion) break;
         if (ruta_activa != nullptr && ruta_activa->get_ultima_seccion_señal() == sec_prv) break;
     }
+    if (bloqueo_asociado != "" && tipo == TipoSeñal::Salida) canton = std::max(bloqueo_act.estado_cantones_inicio[dir], canton);
     bool cerrar_itinerario = bloqueo_asociado != "" && 
         ((bloqueo_act.estado != (dir == Lado::Impar ? EstadoBloqueo::BloqueoImpar : EstadoBloqueo::BloqueoPar) && tipo != TipoSeñal::Avanzada) || 
         bloqueo_act.cierre_señales[dir] ||
         bloqueo_act.escape[lado]);
     bool cerrar = bloqueo_asociado != "" && 
-        (bloqueo_act.estado == EstadoBloqueo::SinDatos|| 
+        (bloqueo_act.estado == EstadoBloqueo::SinDatos || 
         (bloqueo_act.ruta[opp_lado(dir)] != TipoMovimiento::Ninguno && tipo == TipoSeñal::Avanzada) || 
         bloqueo_act.escape[opp_lado(dir)] || 
-        (bloqueo_act.escape[lado] && ruta_activa != nullptr && !ruta_activa->maniobra_compatible) ||
-        (bloqueo_act.ruta[opp_lado(dir)] == TipoMovimiento::Maniobra) && ruta_activa != nullptr && !ruta_activa->maniobra_simultanea);
+        (bloqueo_act.escape[lado] && ruta_activa != nullptr && !ruta_activa->maniobra_compatible));
     bool prohibir_abrir = btv;
     bool prohibir_abrir_itinerario = bloqueo_asociado != "" && (bloqueo_act.prohibido[dir] || bloqueo_act.actc[dir] == ACTC::Denegada);
     if ((prohibir_abrir && prev_aspecto == Aspecto::Parada) || 
@@ -64,7 +69,7 @@ void señal::update()
         aspecto_maximo_anterior_señal = (--it)->second;
     }
 
-    if (cierre_stick) {
+    if (cierre_stick && !sucesion_automatica) {
         if (aspecto == Aspecto::Parada) {
             if (cleared) {
                 cleared = false;
@@ -81,7 +86,7 @@ void señal::update()
 
     if (aspecto != prev_aspecto) send_state();
 }
-RespuestaMando señal::mando(const std::string &cmd, int me)
+RespuestaMando señal_impl::mando(const std::string &cmd, int me)
 {
     if (me_pendiente && me == 0) return RespuestaMando::MandoEspecialEnCurso;
     bool pend = me_pendiente;
@@ -89,22 +94,26 @@ RespuestaMando señal::mando(const std::string &cmd, int me)
     if (me < 0) return pend ? RespuestaMando::Aceptado : RespuestaMando::OrdenRechazada;
     if (cmd == "CS" || cmd == "CSEÑ") {
         if (clear_request) {
+            log(id, "cierre señal", LOG_DEBUG);
             clear_request = false;
             return RespuestaMando::Aceptado;
         }
     } else if (cmd == "NPS" && !cierre_stick) {
         if (!clear_request) {
+            log(id, "normalizar señal", LOG_DEBUG);
             clear_request = true;
             return RespuestaMando::Aceptado;
         }
     } else if (cmd == "BS") {
         if (!bloqueo_señal) {
+            log(id, "bloqueo señal", LOG_DEBUG);
             bloqueo_señal = true;
             return RespuestaMando::Aceptado;
         }
     } else if (cmd == "ABS" || cmd == "DS") {
         if (bloqueo_señal) {
             if (me) {
+                log(id, "anular bloqueo señal", LOG_DEBUG);
                 bloqueo_señal = false;
                 return RespuestaMando::Aceptado;
             } else {
@@ -114,11 +123,13 @@ RespuestaMando señal::mando(const std::string &cmd, int me)
         } 
     } else if (cmd == "SA") {
         if (!sucesion_automatica) {
+            log(id, "sucesión automática", LOG_DEBUG);
             sucesion_automatica = true;
             return RespuestaMando::Aceptado;
         }
     } else if (cmd == "ASA") {
         if (sucesion_automatica) {
+            log(id, "anular sucesión automática", LOG_DEBUG);
             sucesion_automatica = false;
             return RespuestaMando::Aceptado;
         }
@@ -126,10 +137,14 @@ RespuestaMando señal::mando(const std::string &cmd, int me)
         if (ruta_activa != nullptr) {
             return ruta_activa->dai() ? RespuestaMando::Aceptado : RespuestaMando::OrdenRechazada;
         }
+    } else if (cmd == "DAB") {
+        if (ruta_activa != nullptr) {
+            return ruta_activa->dai(true) ? RespuestaMando::Aceptado : RespuestaMando::OrdenRechazada;
+        }
     }
     return RespuestaMando::OrdenRechazada;
 }
-std::pair<RemotaSIG, RemotaIMV> señal::get_estado_remota()
+std::pair<RemotaSIG, RemotaIMV> señal_impl::get_estado_remota()
 {
     RemotaSIG r;
     r.SIG_DAT = 1;
@@ -174,4 +189,21 @@ std::pair<RemotaSIG, RemotaIMV> señal::get_estado_remota()
         i.IMV_EST = rebasada ? 7 : 0;
     }
     return {r, i};
+}
+
+void to_json(json &j, const estado_señal &estado)
+{
+    j["Aspecto"] = estado.aspecto;
+    j["AspectoAnterior"] = estado.aspecto_maximo_anterior_señal;
+}
+void from_json(const json &j, estado_señal &estado)
+{
+    if (j == "desconexion") {
+        estado.sin_datos = true;
+        estado.aspecto = Aspecto::Parada;
+        estado.aspecto_maximo_anterior_señal = Aspecto::Parada;
+        return;
+    }
+    estado.aspecto = j["Aspecto"];
+    estado.aspecto_maximo_anterior_señal = j["AspectoAnterior"];
 }

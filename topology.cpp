@@ -83,7 +83,7 @@ EstadoCanton seccion_via::get_ocupacion(seccion_via* prev, Lado dir)
 señal *seccion_via::señal_inicio(Lado lado, int pin)
 {
     auto it = señales[lado].find(pin);
-    if (it != señales[lado].end()) return ::señales[it->second];
+    if (it != señales[lado].end()) return it->second;
     return nullptr;
 }
 seccion_via* seccion_via::siguiente_seccion(seccion_via *prev, Lado &dir)

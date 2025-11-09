@@ -6,6 +6,7 @@
 #include "mqtt.h"
 #include "cv.h"
 #include "log.h"
+#include "mando.h"
 struct estado_bloqueo
 {
     EstadoBloqueo estado;
@@ -15,38 +16,46 @@ struct estado_bloqueo
     lados<bool> escape;
     lados<ACTC> actc;
     lados<bool> cierre_señales;
+    lados<EstadoCanton> estado_cantones_inicio;
     lados<TipoMovimiento> ruta;
+    lados<bool> maniobra_compatible;
+    lados<estado_mando> mando_estacion;
+};
+struct estado_colateral_bloqueo
+{
+    bool sin_datos = false;
+    TipoMovimiento ruta;
+    bool anular_bloqueo;
+    bool maniobra_compatible;
+    estado_mando mando;
+    estado_colateral_bloqueo() {}
+    estado_colateral_bloqueo(TipoMovimiento ruta, bool maniobra_compatible, estado_mando mando) : ruta(ruta), maniobra_compatible(maniobra_compatible), mando(mando)
+    {
+        anular_bloqueo = false;
+    }
+    bool operator==(const estado_colateral_bloqueo &o) const
+    {
+        return sin_datos == o.sin_datos && ruta == o.ruta && anular_bloqueo == o.anular_bloqueo && maniobra_compatible == o.maniobra_compatible && mando == o.mando;
+    }
 };
 void to_json(json &j, const estado_bloqueo &estado);
 void from_json(const json &j, estado_bloqueo &estado);
+void to_json(json &j, const estado_colateral_bloqueo &col);
+void from_json(const json &j, estado_colateral_bloqueo &col);
 class bloqueo : estado_bloqueo
 {
-    std::vector<std::string> cvs;
-    std::map<std::string, EstadoCV> estado_cvs;
-    lados<bool> maniobra_compatible;
+    std::vector<seccion_via*> cvs;
 
     Lado ultimo_lado;
 
     bool me_pendiente = false;
+    lados<bool> datos_estaciones;
 public:
     const lados<std::string> estaciones;
     const std::string via;
     const std::string id;
     const std::string topic;
-    bloqueo(const json &j) : estaciones(j["Estaciones"]), via(j.value("Vía", "")), cvs(j["CVs"]), id(estaciones[Lado::Impar]+"-"+estaciones[Lado::Par]+(via != "" ? "_" : "")+via), topic("bloqueo/"+id+"/state")
-    {
-        ocupado = false;
-        normalizado = true;
-        for (auto lado : {Lado::Impar, Lado::Par}) {
-            prohibido[lado] = false;
-            escape[lado] = false;
-            ruta[lado] = TipoMovimiento::Ninguno;
-            maniobra_compatible[lado] = false;
-            estado = EstadoBloqueo::Desbloqueo;
-            actc[lado] = ACTC::NoNecesaria;
-            cierre_señales[lado] = false;
-        }
-    }
+    bloqueo(const json &j);
 
     estado_bloqueo get_state()
     {
@@ -75,7 +84,7 @@ public:
                 if (escape[ol]) r.BLQ_EST_ENT = 3;
                 else r.BLQ_EST_ENT = 0;
             } else if (estado == (l == Lado::Impar ? EstadoBloqueo::BloqueoImpar : EstadoBloqueo::BloqueoPar)) {
-                if (ocupado) r.BLQ_EST_SAL = 2;
+                if (estado_cantones_inicio[l] > EstadoCanton::Prenormalizado) r.BLQ_EST_SAL = 2;
                 else r.BLQ_EST_SAL = 1;
                 if (escape[ol]) r.BLQ_EST_ENT = 2;
                 else r.BLQ_EST_ENT = 0;
@@ -106,6 +115,24 @@ public:
         return false;
     }
 
+    bool desbloquear(Lado lado, bool normalizar_escape=true)
+    {
+        bool aceptado = false;
+        if (ruta[lado] == TipoMovimiento::Ninguno && !ocupado && !cierre_señales[lado]) {
+            if (escape[opp_lado(lado)]) {
+                escape[opp_lado(lado)] = false;
+                aceptado = true;
+                log(id, "escape normalizado", LOG_INFO);
+            }
+            if (estado == (lado == Lado::Impar ? EstadoBloqueo::BloqueoImpar : EstadoBloqueo::BloqueoPar)) {
+                estado = EstadoBloqueo::Desbloqueo;
+                log(id, "desbloqueo", LOG_DEBUG);
+                aceptado = true;
+            }
+        }
+        return aceptado;
+    }
+
     void update()
     {
         if (ruta[Lado::Impar] == TipoMovimiento::Itinerario) establecer(Lado::Impar);
@@ -113,72 +140,7 @@ public:
         send_state();
     }
 
-    void message_cv(const std::string &id, estado_cv ecv)
-    {
-        int index = -1;
-        for (int i=0; i<cvs.size(); i++) {
-            if (cvs[i] == id) {
-                index = i;
-                break;
-            }
-        }
-        if (index < 0) return;
-        EstadoCV est_cv = ecv.estado;
-        if (estado_cvs[id] == est_cv) return;
-
-        bool ocupado = false;
-        bool liberar = false;
-        
-        bool cvEntradaPar = index == cvs.size()-1;
-        bool cvEntradaImpar = index == 0;
-
-        if (est_cv == EstadoCV::Prenormalizado) normalizado = false;
-
-        if (estado == EstadoBloqueo::BloqueoImpar && cvEntradaPar && estado_cvs[id] == EstadoCV::OcupadoImpar && (!ecv.evento || ecv.evento->lado == Lado::Par)) liberar = true;
-        else if (estado == EstadoBloqueo::BloqueoPar && cvEntradaImpar && estado_cvs[id] == EstadoCV::OcupadoPar && (!ecv.evento || ecv.evento->lado == Lado::Impar)) liberar = true;
-        
-        if (ecv.evento) {
-            bool ocupacion = ecv.evento->ocupacion;
-            Lado lado = ecv.evento->lado;
-            if (ocupacion && (ecv.estado_previo == EstadoCV::Libre || ecv.estado_previo == EstadoCV::Prenormalizado) && (ecv.estado != EstadoCV::Libre && ecv.estado != EstadoCV::Prenormalizado)) {
-                bool esc=false;
-                if (index == (lado == Lado::Impar ? 0 : cvs.size()-1)) {
-                    if (ruta[lado] != TipoMovimiento::Maniobra) {
-                        esc = lado == Lado::Impar ? (estado != EstadoBloqueo::BloqueoImpar) : (estado != EstadoBloqueo::BloqueoPar);
-                    }
-                }
-                if (index == (lado == Lado::Impar ? 1 : cvs.size()-2)) {
-                    if (ruta[lado] == TipoMovimiento::Maniobra) {
-                        esc = true;
-                    }
-                }
-                if (esc) {
-                    escape[lado] = true;
-                    log(this->id, lado == Lado::Impar ? "escape impar" : "escape par", LOG_WARNING);
-                }
-            }
-        }
-
-        estado_cvs[id] = est_cv;
-        for (auto &kvp : estado_cvs) {
-            if (kvp.second > EstadoCV::Prenormalizado) {
-                ocupado = true;
-                break;
-            }
-        }
-
-        liberar = liberar && !ocupado && !cierre_señales[estado == EstadoBloqueo::BloqueoImpar ? Lado::Impar : Lado::Par];
-        if (estado == EstadoBloqueo::BloqueoImpar && !ocupado && ruta[Lado::Impar] == TipoMovimiento::Itinerario && !prohibido[Lado::Impar]) liberar = false;
-        if (estado == EstadoBloqueo::BloqueoPar && !ocupado && ruta[Lado::Par] == TipoMovimiento::Itinerario && !prohibido[Lado::Par]) liberar = false;
-        if (liberar) {
-            estado = EstadoBloqueo::Desbloqueo;
-            log(this->id, "desbloqueo");
-        }
-    
-        if (ocupado && !this->ocupado) log(this->id, "ocupado");
-        this->ocupado = ocupado;
-        update();
-    }
+    void message_cv(const std::string &id, estado_cv ecv);
 
     RespuestaMando mando(const std::string &est1, const std::string &est2, const std::string &cmd, int me)
     {
@@ -193,29 +155,18 @@ public:
         if (me < 0) return pend ? RespuestaMando::Aceptado : RespuestaMando::OrdenRechazada;
         if (cmd == "B") {
             if (establecer(lado)) aceptado = RespuestaMando::Aceptado;
-        } else if (cmd == "AB" && !cierre_señales[lado]) {
-            if (lado == Lado::Impar && estado == EstadoBloqueo::BloqueoImpar && ruta[Lado::Impar] != TipoMovimiento::Itinerario) {
-                estado = EstadoBloqueo::Desbloqueo;
-                aceptado = RespuestaMando::Aceptado;
-                log(id, "desbloqueo", LOG_DEBUG);
-            } else if (lado == Lado::Par && estado == EstadoBloqueo::BloqueoPar && ruta[Lado::Par] != TipoMovimiento::Itinerario) {
-                estado = EstadoBloqueo::Desbloqueo;
-                aceptado = RespuestaMando::Aceptado;
-                log(id, "desbloqueo", LOG_DEBUG);
-            }
-            if (!ocupado && escape[opp_lado(lado)]) {
-                escape[opp_lado(lado)] = false;
-                aceptado = RespuestaMando::Aceptado;
-                log(id, "escape normalizado", LOG_INFO);
-            }
+        } else if (cmd == "AB") {
+            if (desbloquear(lado))  aceptado = RespuestaMando::Aceptado;
         } else if (cmd == "PB") {
             if (!prohibido[opp_lado(lado)]) {
+                log(id, "prohibido", LOG_DEBUG);
                 prohibido[opp_lado(lado)] = true;
                 aceptado = RespuestaMando::Aceptado;
             }
         } else if (cmd == "APB") {
             if (prohibido[opp_lado(lado)]) {
                 if (me == 1) {
+                    log(id, "anulación prohibición", LOG_DEBUG);
                     prohibido[opp_lado(lado)] = false;
                     aceptado = RespuestaMando::Aceptado;
                 } else {
@@ -224,28 +175,34 @@ public:
                 }
             }
         } else if (cmd == "AS" && actc[opp_lado(lado)] == ACTC::Denegada) {
+            log(id, "a/ctc concedida", LOG_DEBUG);
             actc[opp_lado(lado)] = ACTC::Concedida;
             aceptado = RespuestaMando::Aceptado;
         } else if (cmd == "AAS" && actc[opp_lado(lado)] == ACTC::Concedida) {
+            log(id, "a/ctc denegada", LOG_DEBUG);
             actc[opp_lado(lado)] = ACTC::Denegada;
             aceptado = RespuestaMando::Aceptado;
         } else if (cmd == "CSB" && estado == (lado == Lado::Impar ? EstadoBloqueo::BloqueoPar : EstadoBloqueo::BloqueoImpar)) {
             if (!cierre_señales[opp_lado(lado)]) {
+                log(id, "cierre señales", LOG_DEBUG);
                 cierre_señales[opp_lado(lado)] = true;
                 aceptado = RespuestaMando::Aceptado;
             }
         } else if (cmd == "NSB") {
             if (cierre_señales[opp_lado(lado)]) {
                 if (me == 1) {
+                    log(id, "cierre señales normalizado", LOG_DEBUG);
                     cierre_señales[opp_lado(lado)] = false;
                     aceptado = RespuestaMando::Aceptado;
                 } else {
+                    me_pendiente = true;
                     return RespuestaMando::MandoEspecialNecesario;
                 }
             }
         } else if (cmd == "NB") {
             if (!normalizado && !ocupado) {
                 if (me == 1) {
+                    log(id, "normalizado", LOG_DEBUG);
                     normalizado = true;
                     aceptado = RespuestaMando::Aceptado;
                 } else {
@@ -257,13 +214,33 @@ public:
         return aceptado;
     }
 
-    void message_ruta(const std::string &estacion, TipoMovimiento tipo)
+    void message_ruta(const std::string &estacion, estado_colateral_bloqueo est)
     {
         Lado lado;
         if (estacion == estaciones[Lado::Impar]) lado = Lado::Impar;
         else if (estacion == estaciones[Lado::Par]) lado = Lado::Par;
         else return;
-        ruta[lado] = tipo;
+        if (est.sin_datos) {
+            datos_estaciones[lado] = false;
+            return;
+        }
+        datos_estaciones[lado] = true;
+        ruta[lado] = est.ruta;
+        maniobra_compatible[lado] = est.maniobra_compatible;
+        if (mando_estacion[lado] != est.mando) {
+            estado_mando &mando_colateral = mando_estacion[opp_lado(lado)];
+            if (!est.mando.central && mando_estacion[lado].central) {
+                if (mando_colateral.central) actc[lado] = ACTC::Concedida;
+                else if (mando_colateral == mando_estacion[lado]) actc[opp_lado(lado)] = ACTC::NoNecesaria;
+            } else if (est.mando.central && !mando_estacion[lado].central) {
+                if (mando_colateral.central) actc[lado] = ACTC::NoNecesaria;
+                else actc[opp_lado(lado)] = ACTC::Concedida;
+            } else if (est.mando.central && mando_colateral.central) {
+                if (mando_colateral == est.mando) actc[lado] = actc[opp_lado(lado)] = ACTC::NoNecesaria;
+                else if (mando_colateral == mando_estacion[lado]) actc[lado] = actc[opp_lado(lado)] = ACTC::Concedida;
+            }
+        }
+        if (est.anular_bloqueo) desbloquear(lado);
         update();
     }
 };

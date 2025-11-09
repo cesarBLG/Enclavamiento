@@ -31,8 +31,9 @@ public:
     const std::string id;
     const std::string bloqueo_salida;
     bool maniobra_compatible;
-    bool maniobra_simultanea;
     bool valid = false;
+
+    bool anulacion_bloqueo_pendiente = false;
 protected:
     std::vector<std::pair<seccion_via*,Lado>> secciones;
     std::set<seccion_via*> secciones_aseguradas;
@@ -41,7 +42,7 @@ protected:
     std::vector<std::pair<seccion_via*,Lado>> proximidad;
     std::set<std::string> ultimos_cvs_proximidad;
     seccion_via *ultima_seccion_señal;
-    señal *señal_inicio;
+    señal_impl *señal_inicio;
     destino_ruta *destino;
     estado_bloqueo bloqueo_act;
     Lado lado;
@@ -55,6 +56,7 @@ protected:
 
     bool sucesion_automatica = false;
     bool fai = false;
+    bool fai_lanzado = false;
 
     void disolver()
     {
@@ -63,6 +65,7 @@ protected:
         formada = false;
         supervisada = false;
         ocupada = false;
+        fai_lanzado = false;
         clear_timer(diferimetro_dai);
         clear_timer(diferimetro_dei);
         diferimetro_dai = nullptr;
@@ -74,13 +77,15 @@ protected:
         secciones_aseguradas.clear();
         log(id, "disuelta");
     }
-    void disolucion_parcial()
+    void disolucion_parcial(bool anular_bloqueo=false)
     {
         if (!ocupada) {
+            anulacion_bloqueo_pendiente = anular_bloqueo;
             disolver();
             return;
         }
         if (señal_inicio->ruta_activa == this) señal_inicio->ruta_activa = nullptr;
+        fai_lanzado = false;
         clear_timer(diferimetro_dai);
         diferimetro_dai = nullptr;
         diferimetro_cancelado = false;
@@ -110,8 +115,6 @@ public:
             if ((tipo == TipoMovimiento::Itinerario || (tipo == TipoMovimiento::Maniobra && !maniobra_compatible)) && bloqueo_act.estado == (lado_bloqueo == Lado::Par ? EstadoBloqueo::BloqueoImpar : EstadoBloqueo::BloqueoPar))
                 return false;
             if (bloqueo_act.ruta[lado] != tipo && bloqueo_act.ruta[lado] != TipoMovimiento::Ninguno)
-                return false;
-            if (!maniobra_simultanea && bloqueo_act.ruta[opp_lado(lado)] == TipoMovimiento::Maniobra)
                 return false;
         }
         for (int i=0; i<secciones.size(); i++) {
@@ -178,18 +181,29 @@ public:
     }
     void update()
     {
+        bool fai_activo = false;
         if (fai) {
             bool proximidad_ocupada = false;
             for (auto [sec, dir] : proximidad) {
                 auto e = sec->get_cv()->get_state();
-                if (e != EstadoCV::Libre && (e != (dir == Lado::Impar ? EstadoCV::OcupadoPar : EstadoCV::OcupadoImpar))) {
+                if (e > EstadoCV::Prenormalizado && (e != (dir == Lado::Impar ? EstadoCV::OcupadoPar : EstadoCV::OcupadoImpar))) {
                     proximidad_ocupada = true;
                     break;
                 }
             }
-            if (proximidad_ocupada && !mandada) {
-                establecer();
-            }
+            bool aut_salida = bloqueo_salida == "" || 
+                (!bloqueo_act.cierre_señales[lado] && !bloqueo_act.prohibido[lado] && bloqueo_act.actc[lado] != ACTC::Denegada);
+            if (aut_salida && proximidad_ocupada)
+                fai_activo = true;
+            else if ((!aut_salida || !proximidad_ocupada) && señal_inicio->ruta_activa == this && diferimetro_dai == nullptr && fai_lanzado)
+                dai(true);
+        }
+        if (fai_activo && señal_inicio->ruta_activa != this) {
+            fai_lanzado = true;
+            establecer();
+        }
+        if (fai_activo && señal_inicio->ruta_activa == this && !señal_inicio->clear_request) {
+            señal_inicio->clear_request = true;
         }
         if (!mandada) return;
         if (ocupada && !sucesion_automatica) {
@@ -197,16 +211,23 @@ public:
                 if (señal_inicio->ruta_activa == this) señal_inicio->ruta_activa = nullptr;
             }
             for (int i=0; i<secciones.size(); i++) {
-                if ((i == 0 || !secciones[i-1].first->is_asegurada(this)) && secciones[i].first->get_cv()->get_state() <= EstadoCV::Prenormalizado) {
-                    if (i == 0 && señal_inicio->ruta_activa == this) señal_inicio->ruta_activa = nullptr;
-                    secciones[i].first->liberar(this);
-                    secciones_aseguradas.erase(secciones[i].first);
-                    if (i == secciones.size() - 1) disolver();
+                if (secciones[i].first->get_cv()->get_state() <= EstadoCV::Prenormalizado) {
+                    bool liberar = false;
+                    if (i == 0) {
+                        if (señal_inicio->ruta_activa == nullptr || tipo == TipoMovimiento::Maniobra) liberar = true;
+                    } else if (!secciones[i-1].first->is_asegurada(this)) {
+                        liberar = true;
+                    }
+                    if (liberar) {
+                        secciones[i].first->liberar(this);
+                        secciones_aseguradas.erase(secciones[i].first);
+                        if (i == secciones.size() - 1) disolver();
+                    }
                 }
             }
             if (señal_inicio->ruta_activa != this && secciones.empty()) disolver();
         }
-        if (ocupada && sucesion_automatica) {
+        if (ocupada && señal_inicio->ruta_activa == this) {
             bool libre = true;
             for (int i=0; i<secciones.size(); i++) {
                 if (secciones[i].first->get_cv()->get_state() > EstadoCV::Prenormalizado) {
@@ -224,12 +245,12 @@ public:
             log(id, "supervisada");
         }
     }
-    bool dai()
+    bool dai(bool anular_bloqueo=false)
     {
         if (!mandada) return false;
         log(id, "dai", LOG_DEBUG);
         if (!supervisada) {
-            disolucion_parcial();
+            disolucion_parcial(anular_bloqueo);
             return true;
         }
         bool proximidad_libre = true;
@@ -241,11 +262,11 @@ public:
             }
         }
         if (proximidad_libre && proximidad.size() > 0) {
-            disolucion_parcial();
+            disolucion_parcial(anular_bloqueo);
         } else if (diferimetro_dai == nullptr) {
-            diferimetro_dai = set_timer([this]() {
+            diferimetro_dai = set_timer([this, anular_bloqueo]() {
                 diferimetro_dai = nullptr;
-                disolucion_parcial();
+                disolucion_parcial(anular_bloqueo);
             }, 15000);
         }
         return true;
@@ -287,7 +308,8 @@ public:
         update();
     }
 
-    RespuestaMando mando(const std::string &inicio, const std::string &fin, const std::string &cmd) {
+    RespuestaMando mando(const std::string &inicio, const std::string &fin, const std::string &cmd)
+    {
         if (inicio != id_inicio || fin != id_destino) return RespuestaMando::OrdenNoAplicable;
         if ((cmd == "I" || cmd == "FAI" || cmd == "AFA") && tipo != TipoMovimiento::Itinerario) return RespuestaMando::OrdenNoAplicable;
         if (cmd == "M" && tipo != TipoMovimiento::Maniobra) return RespuestaMando::OrdenNoAplicable;
@@ -325,8 +347,9 @@ public:
                 } else {
                     log(this->id, "ocupada");
                 }
-                if (!sucesion_automatica && tipo != TipoMovimiento::Maniobra) señal_inicio->ruta_activa = nullptr;
             }
+            fai_lanzado = false;
+            if (!sucesion_automatica && tipo != TipoMovimiento::Maniobra) señal_inicio->ruta_activa = nullptr;
         }
     }
 protected:
@@ -348,41 +371,5 @@ protected:
         if (p.first == nullptr || ultimos_cvs_proximidad.empty()) return;
         proximidad.push_back({p.first, p.second});
         construir_proximidad(p.first, inicio, p.second, proximidad);
-    }
-};
-struct gestor_rutas
-{
-    const std::string estacion;
-    std::set<ruta*> rutas;
-    std::map<std::string, TipoMovimiento> movimiento_bloqueos;
-    gestor_rutas(std::string estacion) : estacion(estacion)
-    {
-
-    }
-    void update()
-    {
-        std::map<std::string, TipoMovimiento> movimiento_bloqueos_new;
-        for (auto *ruta : rutas) {
-            movimiento_bloqueos_new[ruta->bloqueo_salida] = TipoMovimiento::Ninguno;
-        }
-        for (auto *ruta : rutas) {
-            ruta->update();
-            if (ruta->is_mandada()) {
-                movimiento_bloqueos_new[ruta->bloqueo_salida] = ruta->tipo;
-            }
-        }
-        for (auto &kvp : movimiento_bloqueos_new) {
-            if (kvp.first == "" || movimiento_bloqueos[kvp.first] == kvp.second) continue;
-            json j = kvp.second;
-            send_message("bloqueo/"+kvp.first+"/ruta/"+estacion, j.dump());
-        }
-        movimiento_bloqueos = movimiento_bloqueos_new;
-    }
-    RespuestaMando mando(const std::string &inicio, const std::string &fin, const std::string &cmd) {
-        for (auto *ruta : rutas) {
-            auto resp = ruta->mando(inicio, fin, cmd);
-            if (resp != RespuestaMando::OrdenNoAplicable) return resp;
-        }
-        return RespuestaMando::OrdenNoAplicable;
     }
 };
