@@ -25,8 +25,7 @@ void on_connect(struct mosquitto *mosq, void *userdata, int rc)
         mosquitto_subscribe(mosq, nullptr, "bloqueo/+/state", 1);
         mosquitto_subscribe(mosq, nullptr, "bloqueo/+/ruta/+", 1);
         mosquitto_subscribe(mosq, nullptr, "signal/+/+/state", 1);
-        mosquitto_subscribe(mosq, nullptr, "remota/fec", 0);
-        mosquitto_will_set(mosq, "desconexion", name.size(), name.c_str(), 1, false);
+        mosquitto_subscribe(mosq, nullptr, "fec/+", 0);
     } else {
         log("mqtt", "connection failed", LOG_DEBUG);
     }
@@ -42,19 +41,10 @@ void on_message(struct mosquitto *mosq, void *obj, const struct mosquitto_messag
     std::string topic(message->topic);
     std::string payload((const char*)message->payload, message->payloadlen);
     if (topic == "desconexion") {
-        if (name == "main") {
-            auto &tops = handled_topics[payload];
-            for (auto &t : tops) {
-                mosquitto_publish(mosq, nullptr, t.c_str(), 13, "\"desconexion\"", 1, false);
-            }
-        } else if (payload == "main") {
-            for (auto &kvp : handled_topics) {
-                if (kvp.first == name) continue;
-                for (const auto &t : kvp.second) {
-                    if (t == "") continue;
-                    handle_message(t, "\"desconexion\"");
-                }
-            }
+        auto &tops = handled_topics[payload];
+        for (auto &t : tops) {
+            //mosquitto_publish(mosq, nullptr, t.c_str(), 13, "\"desconexion\"", 1, false);
+            handle_message(t, "\"desconexion\"");
         }
     } else if (topic.size() > 12 && topic.substr(0, 11) == "desconexion") {
         std::string cl = topic.substr(12);
@@ -93,9 +83,12 @@ void init_mqtt(const json &j)
 {
     mosquitto_lib_init();
 
-    mosq = mosquitto_new(j["Name"].get<std::string>().c_str(), true, nullptr);
+    name = j["Name"].get<std::string>();
+
+    mosq = mosquitto_new(name.c_str(), true, nullptr);
     mosquitto_connect_callback_set(mosq, on_connect);
 
+    mosquitto_will_set(mosq, "desconexion", name.size(), name.c_str(), 1, false);
     mosquitto_connect(mosq, j["Host"].get<std::string>().c_str(), 1883, 15);
 
     mosquitto_message_callback_set(mosq, on_message);

@@ -35,7 +35,7 @@ TipoMovimiento seccion_via::get_tipo_movimiento()
 void seccion_via::message_cv(const std::string &id, estado_cv ev)
 {
     if (id != cv_seccion->id) return;
-    if (ev.evento && ev.evento->ocupacion && ocupacion_outs[Lado::Impar] < 0 && ocupacion_outs[Lado::Par] < 0) {
+    if (ev.evento && ev.evento->ocupacion && ev.estado > EstadoCV::Prenormalizado && ocupacion_outs[Lado::Impar] < 0 && ocupacion_outs[Lado::Par] < 0) {
         if (trayecto) {
             ocupacion_outs = {0, 0};
         } else {
@@ -45,7 +45,7 @@ void seccion_via::message_cv(const std::string &id, estado_cv ev)
     if (ev.estado <= EstadoCV::Prenormalizado)
         ocupacion_outs = {-1, -1};
 
-    if (ev.evento && ev.evento->ocupacion) {
+    if (ev.evento && ev.evento->ocupacion && ev.estado > EstadoCV::Prenormalizado) {
         bool intempestiva = false;
         if (trayecto) {
             if (bloqueo != "" && bloqueo_act.estado != (ev.evento->lado == Lado::Impar ? EstadoBloqueo::BloqueoImpar : EstadoBloqueo::BloqueoPar) && bloqueo_act.ruta[ev.evento->lado] != TipoMovimiento::Maniobra) {

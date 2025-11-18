@@ -33,53 +33,16 @@ cv_impl::cv_impl(const std::string &id, const json &j) : id(id), topic("cv/"+id_
 {
     num_ejes = {0, 0};
     ultimo_eje = {0, 0};
+    tiempo_auto_prenormalizacion = parametros.diferimetro_prenormalizacion_cv;
+    tiempo_auto_prenormalizacion_tren = parametros.diferimetro_prenormalizacion_cv_tren;
     normalizado = false;
     perdida_secuencia = false;
     estado = estado_previo = EstadoCV::Prenormalizado;
-}
-void to_json(json &j, const estado_cv &estado)
-{
-    j["Estado"] = estado.estado;
-    j["EstadoPrevio"] = estado.estado_previo;
-    j["Avería"] = estado.averia;
-    j["PérdidaSecuencia"] = estado.perdida_secuencia;
-    j["BTV"] = estado.btv;
-    j["ME"] = estado.me_pendiente;
-    if (estado.evento) {
-        j["Evento"] = *estado.evento;
-    }
-}
-void from_json(const json &j, estado_cv &estado)
-{
-    if (j == "desconexion") {
-        estado.estado = estado.estado_previo = EstadoCV::Ocupado;
-        estado.sin_datos = true;
-        return;
-    }
-    estado.estado = j["Estado"];
-    estado.estado_previo = j["EstadoPrevio"];
-    estado.averia = j["Avería"];
-    estado.perdida_secuencia = j["PérdidaSecuencia"];
-    estado.btv = j["BTV"];
-    estado.me_pendiente = j["ME"];
-    if (j.contains("Evento")) {
-        estado.evento = j["Evento"];
-    }
 }
 void from_json(const json &j, cv_impl::cejes_position &position)
 {
     position.lado = j["Lado"];
     position.reverse = j.value("Reverse", false);
-}
-void from_json(const json &j, evento_cv &ev)
-{
-    ev.lado = j["Lado"];
-    ev.ocupacion = j["Ocupación"];
-    ev.cv_colateral = j["CVColateral"];
-}
-void to_json(json &j, const evento_cv &ev)
-{
-    j["Lado"] = ev.lado;
-    j["Ocupación"] = ev.ocupacion;
-    j["CVColateral"] = ev.cv_colateral;
+    position.liberar = j.value("Liberar", true);
+    position.ocupar = j.value("Ocupar", true);
 }

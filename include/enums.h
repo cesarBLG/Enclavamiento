@@ -1,7 +1,5 @@
 #pragma once
 #include <string>
-#include "nlohmann/json.hpp"
-using json = nlohmann::json;
 enum struct Lado
 {
     Par,
@@ -26,6 +24,7 @@ enum struct Aspecto
 {
     Parada,
     RebaseAutorizado,
+    ParadaDiferida,
     Precaucion,
     ViaLibre,
 };
@@ -50,6 +49,7 @@ enum struct TipoSeñal
     Maniobra,
     Retroceso,
     Intermedia,
+    PostePuntoProtegido,
 };
 enum struct ACTC
 {
@@ -72,6 +72,16 @@ enum struct RespuestaMando
     OrdenNoAplicable,
     OrdenRechazada,
     OrdenDesconocida,
+    NoMando,
+};
+enum struct TipoBloqueo
+{
+    BAU,
+    BAD,
+    BAB,
+    BLAU,
+    BLAD,
+    BLAB,
 };
 inline Lado opp_lado(Lado lado)
 {
@@ -85,6 +95,9 @@ std::string to_string(EstadoCanton estado);
 std::string to_string(TipoMovimiento tipo);
 std::string to_string(TipoSeñal tipo);
 std::string to_string(ACTC actc);
+std::string to_string(TipoBloqueo tipo);
+#ifndef WITHOUT_JSON
+#include "json.h"
 void to_json(json &j, const Lado &lado);
 void from_json(const json &j, Lado &lado);
 void to_json(json &j, const EstadoCV &estado);
@@ -102,3 +115,6 @@ void from_json(const json &j, Aspecto &asp);
 void to_json(json &j, const ACTC &actc);
 void from_json(const json &j, ACTC &actc);
 void from_json(const json &j, TipoDestino &tipo);
+void to_json(json &j, const TipoBloqueo &tipo);
+void from_json(const json &j, TipoBloqueo &tipo);
+#endif

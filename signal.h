@@ -1,17 +1,8 @@
 #pragma once
+#include <enclavamiento.h>
 #include "topology.h"
-#include "bloqueo.h"
 #include "remota.h"
 class ruta;
-struct estado_señal
-{
-    Aspecto aspecto;
-    Aspecto aspecto_maximo_anterior_señal;
-    bool rebasada;
-    bool sin_datos = false;
-};
-void to_json(json &j, const estado_señal &estado);
-void from_json(const json &j, estado_señal &estado);
 class señal : public estado_señal
 {
 public:
@@ -56,6 +47,8 @@ protected:
 public:
     bool clear_request=false;
     ruta *ruta_activa=nullptr;
+    ruta *ruta_fin=nullptr;
+    ruta *ruta_fai=nullptr;
     bool bloqueo_señal = false;
     bool sucesion_automatica = false;
     señal_impl(const std::string &estacion, const json &j);
@@ -63,6 +56,7 @@ public:
     {
         send_message(topic, json(*(estado_señal*)this).dump(), 1);
     }
+    void determinar_aspecto();
     void update();
     void message_bloqueo(const std::string &id, const estado_bloqueo &estado)
     {
@@ -77,8 +71,10 @@ public:
         paso_circulacion = false;
         if (ev.evento && ev.evento->ocupacion && ev.evento->lado == lado && (ev.evento->cv_colateral == "" || seccion_prev == nullptr || ev.evento->cv_colateral == seccion_prev->get_cv()->id)) {
             if (aspecto == Aspecto::Parada && get_milliseconds() - ultimo_paso_abierta > 30000) {
-                rebasada = true;
-                log(this->id, "rebasada", LOG_WARNING);
+                if (tipo != TipoSeñal::PostePuntoProtegido) {
+                    rebasada = true;
+                    log(this->id, "rebasada", LOG_WARNING);
+                }
             } else {
                 ultimo_paso_abierta = get_milliseconds();
                 paso_circulacion = true;
@@ -88,4 +84,8 @@ public:
     void message_señal(estado_señal est) override {}
     RespuestaMando mando(const std::string &cmd, int me);
     std::pair<RemotaSIG, RemotaIMV> get_estado_remota();
+    bool condiciona_anteriores()
+    {
+        return aspectos_maximos_anterior_señal.size() > 1;
+    }
 };

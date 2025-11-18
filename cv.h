@@ -2,38 +2,16 @@
 #include <set>
 #include <map>
 #include <vector>
-#include "lado.h"
-#include "enums.h"
+#include <enclavamiento.h>
 #include "mqtt.h"
 #include "time.h"
 #include "log.h"
 #include "remota.h"
 #include <optional>
-struct evento_cv
-{
-    Lado lado;
-    bool ocupacion;
-    std::string cv_colateral;
-};
-struct estado_cv
-{
-    EstadoCV estado = EstadoCV::Prenormalizado;
-    EstadoCV estado_previo = EstadoCV::Prenormalizado;
-    std::optional<evento_cv> evento;
-    bool averia=false;
-    bool btv=false;
-    bool perdida_secuencia=false;
-    bool sin_datos=false;
-    bool me_pendiente=false;
-};
-void to_json(json &j, const estado_cv &estado);
-void from_json(const json &j, estado_cv &estado);
-void from_json(const json &j, evento_cv &ev);
-void to_json(json &j, const evento_cv &ev);
 class ruta;
 class señal;
 class seccion_via;
-class cv : public estado_cv
+class cv : protected estado_cv
 {
 public:
     const std::string id;
@@ -69,13 +47,15 @@ public:
 
     RemotaCV get_estado_remota();
 };
-class cv_impl : public estado_cv
+class cv_impl : protected estado_cv
 {
 public:
     struct cejes_position
     {
         Lado lado;
         bool reverse;
+        bool ocupar=true;
+        bool liberar=true;
         std::string cv_colateral;
     };
     const std::string id;
@@ -83,19 +63,19 @@ protected:
     std::map<std::string, cejes_position> cejes;
     std::set<std::string> averia_cejes;
 
-    int64_t tiempo_auto_prenormalizacion = 180000;
-    int64_t tiempo_auto_prenormalizacion_tren = 20000;
+    int64_t tiempo_auto_prenormalizacion;
+    int64_t tiempo_auto_prenormalizacion_tren;
 
     std::shared_ptr<timer> timer_auto_prenormalizacion;
     std::shared_ptr<timer> timer_auto_prenormalizacion_tren;
+
+    std::shared_ptr<timer> timer_liberacion;
 
     lados<int> num_ejes;
     lados<std::vector<int>> num_trenes;
     lados<int64_t> ultimo_eje;
 
     bool normalizado;
-
-    bool me_pendiente = false;
 
 public:
     const std::string topic;
@@ -119,12 +99,20 @@ public:
             estado = normalizado ? EstadoCV::Libre : EstadoCV::Prenormalizado;
         }
         averia = !averia_cejes.empty();
-        send_state();
+        if (estado_previo > estado) {
+            set_timer([this]() {
+                send_state();
+            }, 1000);
+        } else {
+            send_state();
+        }
     }
 
     void send_state()
     {
-        json msg(*this);
+        clear_timer(timer_liberacion);
+        timer_liberacion = nullptr;
+        json msg(*((estado_cv*)this));
         send_message(topic, msg.dump(), evento ? 2 : 1);
 
         evento = {};
@@ -136,10 +124,12 @@ public:
         auto it = cejes.find(id);
         if (it == cejes.end()) return;
         if (payload == "Error" || payload == "desconexion") {
-            log(id, "avería contador ejes", LOG_DEBUG);
-            averia_cejes.insert(id);
-            normalizado = false;
-            update();
+            if (it->second.ocupar) {
+                log(id, "avería contador ejes", LOG_DEBUG);
+                averia_cejes.insert(id);
+                normalizado = false;
+                update();
+            }
         } else {
             std::string msg;
             int num;
@@ -158,7 +148,7 @@ public:
             }
             auto now = get_milliseconds();
             for (int i=0; i<num; i++) {
-                if (msg == "Nominal") {
+                if (msg == "Nominal" && it->second.ocupar) {
                     auto &arr = num_trenes[lado];
                     if (!arr.empty()) {
                         int diff = arr[arr.size()-1] - num_ejes[lado];
@@ -177,7 +167,7 @@ public:
                     ++num_ejes[lado];
                     arr.push_back(num_ejes[lado]);
                     ultimo_eje[lado] = now;
-                } else if (msg == "Reverse") {
+                } else if (msg == "Reverse" && it->second.liberar) {
                     if (num_ejes[lado] > 0) {
                         --num_ejes[lado];
                         auto &arr = num_trenes[lado];
@@ -205,8 +195,6 @@ public:
                         }
                         //else normalizado = false;
                     }
-                } else {
-                    return;
                 }
             }
             if (num_ejes[Lado::Impar] == 0) num_trenes[Lado::Impar].clear();
@@ -268,12 +256,14 @@ public:
             } else {
                 me_pendiente = true;
                 aceptado = RespuestaMando::MandoEspecialNecesario;
+                send_state();
             }
         } else if (cmd == "BTV") {
             if (!btv) {
                 log(id, "btv", LOG_DEBUG);
                 btv = true;
                 aceptado = RespuestaMando::Aceptado;
+                send_state();
             }
         } else if (cmd == "ABTV" || cmd == "DTV") {
             if (btv) {
@@ -281,9 +271,11 @@ public:
                     log(id, "anulación btv", LOG_DEBUG);
                     btv = false;
                     aceptado = RespuestaMando::Aceptado;
+                    send_state();
                 } else {
                     me_pendiente = true;
                     aceptado = RespuestaMando::MandoEspecialNecesario;
+                    send_state();
                 }
             }
         }

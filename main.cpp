@@ -2,6 +2,7 @@
 #include <regex>
 #include <set>
 #include <fstream>
+#include <iostream>
 #include "time.h"
 #include "items.h"
 #include "mqtt.h"
@@ -26,6 +27,7 @@ int main(int argc, char **argv)
 }
 bool running = true;
 std::set<std::shared_ptr<timer>> timer_queue;
+std::set<std::shared_ptr<timer>> remove_timer_queue;
 std::shared_ptr<timer> set_timer(std::function<void()> action, int64_t delay)
 {
     auto t = std::make_shared<timer>(timer({get_milliseconds()+delay, action}));
@@ -34,13 +36,17 @@ std::shared_ptr<timer> set_timer(std::function<void()> action, int64_t delay)
 }
 void clear_timer(std::shared_ptr<timer> timer)
 {
-    timer_queue.erase(timer);
+    remove_timer_queue.insert(timer);
 }
 void event_loop()
 {
     while (running) {
 		int64_t now = get_milliseconds();
         int64_t wait_time = 1000;
+        for (auto &t : remove_timer_queue) {
+            timer_queue.erase(t);
+        }
+        remove_timer_queue.clear();
         for (auto it=timer_queue.begin(); it!=timer_queue.end(); ) {
             if ((*it)->time <= now) {
                 (*it)->action();

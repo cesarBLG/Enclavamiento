@@ -14,7 +14,6 @@ public:
     const std::string id;
     const TipoDestino tipo;
     bool bloqueo_destino = false;
-    bool sucesion_automatica = false;
     bool me_pendiente = false;
     ruta *ruta_activa = nullptr;
     destino_ruta(const std::string &id, TipoDestino tipo) : id(id), tipo(tipo) {}
@@ -54,9 +53,18 @@ protected:
     bool ocupada = false;
     bool diferimetro_cancelado = false;
 
+    int64_t temporizador_dai1;
+    int64_t temporizador_dai2;
+    int64_t temporizador_dei;
+
     bool sucesion_automatica = false;
     bool fai = false;
+    bool fai_activo = false;
     bool fai_lanzado = false;
+    bool fai_cancelado = false;
+    bool fai_disparo_unico = false;
+    int64_t inicio_espera_fai = 0;
+    int64_t tiempo_espera_fai;
 
     void disolver()
     {
@@ -112,9 +120,27 @@ public:
             return true;
         }
         if (bloqueo_salida != "") {
-            if ((tipo == TipoMovimiento::Itinerario || (tipo == TipoMovimiento::Maniobra && !maniobra_compatible)) && bloqueo_act.estado == (lado_bloqueo == Lado::Par ? EstadoBloqueo::BloqueoImpar : EstadoBloqueo::BloqueoPar))
-                return false;
-            if (bloqueo_act.ruta[lado] != tipo && bloqueo_act.ruta[lado] != TipoMovimiento::Ninguno)
+            bool bloqueo_receptor = bloqueo_act.estado == (lado_bloqueo == Lado::Par ? EstadoBloqueo::BloqueoImpar : EstadoBloqueo::BloqueoPar);
+            if (bloqueo_receptor) {
+                if (tipo == TipoMovimiento::Maniobra && maniobra_compatible) {
+                    seccion_via *sec = nullptr;
+                    seccion_via *sig = nullptr;
+                    Lado l;
+                    if (secciones.size() < 2) {
+                        sec = señal_inicio->seccion;
+                        l = lado;
+                        sig = sec->siguiente_seccion(señal_inicio->seccion_prev, l);
+                    } else {
+                        sec = secciones[secciones.size()-1].first;
+                        l = lado;
+                        sig = sec->siguiente_seccion(secciones[secciones.size()-2].first, l);
+                    }
+                    if (sig != nullptr && sig->get_ocupacion(sec, l) == EstadoCanton::Ocupado) return false;
+                } else {
+                    return false;
+                }
+            }
+            if (bloqueo_act.ruta[lado_bloqueo] != tipo && bloqueo_act.ruta[lado_bloqueo] != TipoMovimiento::Ninguno)
                 return false;
         }
         for (int i=0; i<secciones.size(); i++) {
@@ -181,7 +207,9 @@ public:
     }
     void update()
     {
-        bool fai_activo = false;
+        fai_activo = false;
+        bool aut_salida = bloqueo_salida == "" || 
+            (!bloqueo_act.cierre_señales[lado] && !bloqueo_act.prohibido[lado] && bloqueo_act.actc[lado] != ACTC::Denegada);
         if (fai) {
             bool proximidad_ocupada = false;
             for (auto [sec, dir] : proximidad) {
@@ -191,14 +219,24 @@ public:
                     break;
                 }
             }
-            bool aut_salida = bloqueo_salida == "" || 
-                (!bloqueo_act.cierre_señales[lado] && !bloqueo_act.prohibido[lado] && bloqueo_act.actc[lado] != ACTC::Denegada);
-            if (aut_salida && proximidad_ocupada)
+            bool cv_anterior_ocupado = proximidad.size() > 0 && proximidad[0].first->get_cv()->get_state() > EstadoCV::Prenormalizado;
+            if (!cv_anterior_ocupado) inicio_espera_fai = 0;
+            if (aut_salida && proximidad_ocupada && get_milliseconds() - inicio_espera_fai > tiempo_espera_fai)
                 fai_activo = true;
             else if ((!aut_salida || !proximidad_ocupada) && señal_inicio->ruta_activa == this && diferimetro_dai == nullptr && fai_lanzado)
                 dai(true);
         }
-        if (fai_activo && señal_inicio->ruta_activa != this) {
+        if (fai_disparo_unico) {
+            if (señal_inicio->ruta_activa == this && señal_inicio->clear_request) {
+                fai_disparo_unico = false;
+                if (!fai && señal_inicio->ruta_fai == this) señal_inicio->ruta_fai = nullptr;
+            } else if (aut_salida) {
+                fai_activo = true;
+            }
+        }
+        if (!fai_activo && fai_cancelado) fai_cancelado = false;
+        if (!fai_activo && fai_lanzado) fai_lanzado = false;
+        if (fai_activo && !fai_cancelado && (señal_inicio->ruta_activa != this || diferimetro_dai != nullptr)) {
             fai_lanzado = true;
             establecer();
         }
@@ -264,12 +302,32 @@ public:
         if (proximidad_libre && proximidad.size() > 0) {
             disolucion_parcial(anular_bloqueo);
         } else if (diferimetro_dai == nullptr) {
+            int64_t temporizador = temporizador_dai1;
+            if (tipo == TipoMovimiento::Itinerario && señal_inicio->condiciona_anteriores() && 
+            (señal_inicio->tipo == TipoSeñal::Entrada || señal_inicio->tipo == TipoSeñal::PostePuntoProtegido || señal_inicio->ruta_fin != nullptr)
+            && (proximidad.empty() || proximidad[0].first->get_cv()->get_state() <= EstadoCV::Prenormalizado)) {
+                temporizador = temporizador_dai2;
+            }
             diferimetro_dai = set_timer([this, anular_bloqueo]() {
                 diferimetro_dai = nullptr;
                 disolucion_parcial(anular_bloqueo);
-            }, 15000);
+            }, temporizador);
         }
         return true;
+    }
+    bool cancelar_fai()
+    {
+        bool aceptado = false;
+        if (fai_disparo_unico) {
+            fai_disparo_unico = false;
+            if (!fai && señal_inicio->ruta_fai == this) señal_inicio->ruta_fai = nullptr;
+            aceptado = true;
+        }
+        if (fai_lanzado && !fai_cancelado) {
+            fai_cancelado = true;
+            aceptado = true;
+        }
+        return aceptado;
     }
     bool dei()
     {
@@ -279,7 +337,7 @@ public:
             diferimetro_dei = set_timer([this]() {
                 diferimetro_dei = nullptr;
                 disolver();
-            }, 60*1000);
+            }, temporizador_dei);
         }
         return true;
     } 
@@ -300,6 +358,12 @@ public:
     {
         return ultima_seccion_señal;
     }
+    int get_estado_fai()
+    {
+        if (fai_cancelado) return 2;
+        if (fai_activo && (señal_inicio->ruta_activa != this || señal_inicio->aspecto == Aspecto::Parada)) return 1;
+        return 0;
+    }
 
     void message_bloqueo(std::string id, estado_bloqueo estado)
     {
@@ -311,18 +375,27 @@ public:
     RespuestaMando mando(const std::string &inicio, const std::string &fin, const std::string &cmd)
     {
         if (inicio != id_inicio || fin != id_destino) return RespuestaMando::OrdenNoAplicable;
-        if ((cmd == "I" || cmd == "FAI" || cmd == "AFA") && tipo != TipoMovimiento::Itinerario) return RespuestaMando::OrdenNoAplicable;
+        if ((cmd == "I" || cmd == "FAI" || cmd == "AFA" || cmd == "ID") && tipo != TipoMovimiento::Itinerario) return RespuestaMando::OrdenNoAplicable;
         if (cmd == "M" && tipo != TipoMovimiento::Maniobra) return RespuestaMando::OrdenNoAplicable;
         if (cmd == "I") return establecer() ? RespuestaMando::Aceptado : RespuestaMando::OrdenRechazada;
         else if (cmd == "M") return establecer() ? RespuestaMando::Aceptado : RespuestaMando::OrdenRechazada;
-        else if (cmd == "FAI") {
-            if (!fai) {
+        else if (cmd == "ID") {
+            if (!establecer() && !fai_disparo_unico && (señal_inicio->ruta_fai == nullptr || señal_inicio->ruta_fai == this)) {
+                fai_disparo_unico = true;
+                señal_inicio->ruta_fai = this;
+                return RespuestaMando::Aceptado;
+            }
+        } else if (cmd == "FAI") {
+            if (!fai && señal_inicio->ruta_fai == nullptr) {
                 fai = true;
+                señal_inicio->ruta_fai = this;
                 return RespuestaMando::Aceptado;
             }
         } else if (cmd == "AFA") {
-            if (fai) {
+            if ((fai || fai_disparo_unico) && señal_inicio->ruta_fai == this) {
                 fai = false;
+                fai_disparo_unico = false;
+                señal_inicio->ruta_fai = nullptr;
                 return RespuestaMando::Aceptado;
             }
         }
@@ -337,7 +410,7 @@ public:
                 log(this->id, "supervisada");
             }
             if (!ocupada) {
-                sucesion_automatica = tipo == TipoMovimiento::Itinerario && señal_inicio->sucesion_automatica && destino->sucesion_automatica;
+                sucesion_automatica = tipo == TipoMovimiento::Itinerario && señal_inicio->sucesion_automatica;
                 ocupada = true;
                 if (diferimetro_dai != nullptr) {
                     clear_timer(diferimetro_dai);
@@ -348,7 +421,9 @@ public:
                     log(this->id, "ocupada");
                 }
             }
-            fai_lanzado = false;
+            if (fai_lanzado) fai_lanzado = false;
+            inicio_espera_fai = get_milliseconds();
+
             if (!sucesion_automatica && tipo != TipoMovimiento::Maniobra) señal_inicio->ruta_activa = nullptr;
         }
     }

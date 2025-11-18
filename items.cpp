@@ -13,14 +13,17 @@ std::set<ruta*> rutas;
 std::map<std::string, destino_ruta*> destinos_ruta;
 std::map<std::string, seccion_via*> secciones;
 std::map<std::string, dependencia*> dependencias;
+parametros_predeterminados parametros;
 
-std::set<std::string> comandos_ruta = {"I","R","M","FAI","AFA"};
-std::set<std::string> comandos_señal = {"CS","CSEÑ","NPS","BS","ABS","DS","SA","ASA","DAI", "DAB"};
-std::set<std::string> comandos_destino = {"BDE","BD","ABDE","ABD","SA","ASA","BDS","ABDS","DEI"};
+std::set<std::string> comandos_ruta = {"I","R","M","FAI","ID"};
+std::set<std::string> comandos_señal = {"CS","CSEÑ","NPS","BS","ABS","DS","SA","ASA","DAI","DAB","AFA"};
+std::set<std::string> comandos_destino = {"BDE","BD","ABDE","ABD","BDS","ABDS","DEI"};
 std::set<std::string> comandos_bloqueo = {"B","AB","CSB","NSB","PB","APB","NB","AS","AAS"};
 std::set<std::string> comandos_seccion = {"BV","BIV","ABV","DIV","FO","AFO"};
 std::set<std::string> comandos_cv = {"BTV","ABTV","DTV","LC"};
-std::set<std::string> comandos_estacion = {"C", "TML", "TME"};
+std::set<std::string> comandos_ignorar_mando = {"C", "TML", "TME", "CML", "RML", "ME"};
+std::set<std::string> comandos_ctc = {"C", "L", "AS", "AAS"};
+std::set<std::string> comandos_local = {"TML", "TME", "CML", "RML"};
 
 RespuestaMando mando(const std::vector<std::string> &ordenes, int me)
 {
@@ -67,24 +70,39 @@ RespuestaMando mando(const std::vector<std::string> &ordenes, int me)
 }
 RespuestaMando procesar_mando(const std::string &client, std::string payload, bool from_ctc)
 {
+    if (payload == "desconexion") {
+        /*for (auto &[id, dep] : dependencias) {
+            estado_mando est = dep->mando_actual;
+            if (est.central == from_ctc && est.puesto == client && !est.cedido) {
+                est.cedido = "";
+                dep->set_mando(est);
+                log(id, "mando cedido a local por desconexion");
+            }
+        }*/
+        return RespuestaMando::Aceptado;
+    }
     auto ordenes = split(payload, ' ');
     if (ordenes.size() < 2) return RespuestaMando::OrdenDesconocida;
 
     auto it_dep = dependencias.find(ordenes[1]);
     if (it_dep == dependencias.end()) return RespuestaMando::OrdenDesconocida;
-    bool toma_mando = false;
-    if (ordenes[0] == "C" || (ordenes[0] == "TML" && it_dep->second->mando_cedido) || ordenes[0] == "TME") {
-        toma_mando = true;
-    }
-    if (it_dep->second->mando_actual != estado_mando({from_ctc, client}) && !toma_mando) {
+    log(client, payload, LOG_DEBUG);
+    bool ignorar_mando = comandos_ignorar_mando.find(ordenes[0]) != comandos_ignorar_mando.end();
+    if ((it_dep->second->mando_actual.central != from_ctc || it_dep->second->mando_actual.puesto != client) && !ignorar_mando) {
         log(payload, "no tiene el mando", LOG_WARNING);
-        //return RespuestaMando::OrdenDesconocida;
+        return RespuestaMando::NoMando;
+    }
+
+    if ((from_ctc && comandos_local.find(ordenes[0]) != comandos_local.end()) || (!from_ctc && comandos_ctc.find(ordenes[0]) != comandos_ctc.end())) {
+        log(payload, "mando rechazado", LOG_WARNING);
+        return RespuestaMando::OrdenRechazada;
     }
 
     bool me = false;
     if (ordenes[0] == "ME") {
         if (it_dep->second->mando_especial_pendiente != "") {
             payload = it_dep->second->mando_especial_pendiente;
+            ordenes = split(payload, ' ');
             me = true;
             it_dep->second->mando_especial_pendiente = "";
         } else {
@@ -99,31 +117,54 @@ RespuestaMando procesar_mando(const std::string &client, std::string payload, bo
     RespuestaMando res = RespuestaMando::OrdenRechazada;
     if (ordenes[0] == "C") {
         if (from_ctc) {
-            it_dep->second->mando_cedido = false;
-            it_dep->second->mando_actual = {true, client};
+            it_dep->second->set_mando({true, client, std::nullopt, false});
             log(ordenes[1], "mando central");
             res = RespuestaMando::Aceptado;
         }
     } else if (ordenes[0] == "TML") {
-        if (!from_ctc && it_dep->second->mando_cedido) {
-            it_dep->second->mando_cedido = false;
-            it_dep->second->mando_actual = {false, client};
+        if (!from_ctc && (it_dep->second->mando_actual.cedido == "" || it_dep->second->mando_actual.cedido == client)) {
+            it_dep->second->set_mando({false, client, std::nullopt, false});
             log(ordenes[1], "mando local");
             res = RespuestaMando::Aceptado;
         }
     } else if (ordenes[0] == "TME") {
-        if (from_ctc) {
-        } else if (me) {
-            it_dep->second->mando_cedido = false;
-            it_dep->second->mando_actual = {false, client};
-            log(ordenes[1], "mando local por emergencia");
-            res = RespuestaMando::Aceptado;
-        } else {
-            res = RespuestaMando::MandoEspecialNecesario;
+        if (!from_ctc && (it_dep->second->mando_actual.central || it_dep->second->mando_actual.puesto != client)) {
+            if (me) {
+                it_dep->second->set_mando({false, client, std::nullopt, true});
+                log(ordenes[1], "mando local por emergencia");
+                res = RespuestaMando::Aceptado;
+            } else {
+                res = RespuestaMando::MandoEspecialNecesario;
+            }
         }
     } else if (ordenes[0] == "L") {
-        if (from_ctc && !it_dep->second->mando_cedido) {
-            it_dep->second->mando_cedido = true;
+        if (from_ctc && !it_dep->second->mando_actual.cedido) {
+            estado_mando est = it_dep->second->mando_actual;
+            est.cedido = ordenes.size() > 2 ? ordenes[2] : "";
+            it_dep->second->set_mando(est);
+            log(ordenes[1], "mando cedido");
+            res = RespuestaMando::Aceptado;
+        }
+    } else if (ordenes[0] == "CML") {
+        if (from_ctc) {
+        } else if (it_dep->second->mando_actual.central || it_dep->second->mando_actual.puesto != client) {
+            log(payload, "no tiene el mando", LOG_WARNING);
+            return RespuestaMando::NoMando;
+        } else if(!it_dep->second->mando_actual.cedido) {
+            estado_mando est = it_dep->second->mando_actual;
+            est.cedido = ordenes.size() > 2 ? ordenes[2] : "";
+            it_dep->second->set_mando(est);
+            log(ordenes[1], "mando cedido");
+            res = RespuestaMando::Aceptado;
+        }
+    } else if (ordenes[0] == "RML") {
+        if (from_ctc) {
+        } else if (it_dep->second->mando_actual.central) {
+            log(payload, "no tiene el mando", LOG_WARNING);
+            return RespuestaMando::NoMando;
+        } else if (it_dep->second->mando_actual.puesto != client) {
+            it_dep->second->set_mando({false, client, std::nullopt, false});
+            log(ordenes[1], "mando local");
             res = RespuestaMando::Aceptado;
         }
     } else {
@@ -149,7 +190,10 @@ void handle_message(const std::string &topic, const std::string &payload)
 
     std::regex mandoPattern(R"(^mando/([a-zA-Z0-9_-]+)$)");
     if (std::regex_match(topic, match, mandoPattern)) {
-        procesar_mando(match[1], payload, false);
+        auto ordenes = split(payload, '\n');
+        for (auto &orden : ordenes) {
+            procesar_mando(match[1], orden, false);
+        }
         return;
     }
 
@@ -216,16 +260,17 @@ void handle_message(const std::string &topic, const std::string &payload)
         return;
     }
 
-    if (topic == "remota/fec")
-    {
+    std::regex fecPattern(R"(^fec/([a-zA-Z0-9_-]+)$)");
+    if (std::regex_match(topic, match, fecPattern)) {
         json j = json::parse(payload);
-        handle_message_fec(j);
+        handle_message_fec(match[1], j);
         return;
     }
 }
 
 void init_items(const json &j)
 {
+    parametros = j["ParámetrosPredeterminados"];
     if (j.contains("Dependencias")) {
         for (auto &dep : j["Dependencias"]) {
             dependencias[dep] = new dependencia(dep);
@@ -304,6 +349,7 @@ void init_items(const json &j)
     for (auto *b : bloqueos) {
         managed_topics<<b->topic<<'\n';
     }
+    managed_topics<<"remota/"<<name<<'\n';
     send_message("desconexion/main", managed_topics.str(), 1, true);
 }
 int64_t last_sent_state;
@@ -325,6 +371,9 @@ void loop_items()
         }
         for (auto *b : bloqueos) {
             b->send_state();
+        }
+        for (auto &kvp : dependencias) {
+            kvp.second->send_state();
         }
         remota_sendall();
         last_sent_state = now;

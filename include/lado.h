@@ -18,6 +18,8 @@ struct lados
         return par == o.par && impar == o.impar;
     }
 };
+#ifndef WITHOUT_JSON
+#include "json.h"
 template<class T>
 void to_json(json &j, const lados<T> &l)
 {
@@ -30,3 +32,4 @@ void from_json(const json &j, lados<T> &l)
     l.impar = j["Impar"];
     l.par = j["Par"];
 }
+#endif

@@ -22,16 +22,6 @@ RespuestaMando destino_ruta::mando(const std::string &cmd, int me)
                 return RespuestaMando::MandoEspecialNecesario;
             }
         }
-    } else if (cmd == "SA") {
-        if (!sucesion_automatica) {
-            sucesion_automatica = true;
-            return RespuestaMando::Aceptado;
-        }
-    } else if (cmd == "ASA") {
-        if (sucesion_automatica) {
-            sucesion_automatica = false;
-            return RespuestaMando::Aceptado;
-        }
     } else if (cmd == "DEI" && ruta_activa != nullptr) {
         if (me) {
             return ruta_activa->dei() ? RespuestaMando::Aceptado : RespuestaMando::OrdenRechazada;
@@ -63,6 +53,12 @@ ruta::ruta(const std::string &estacion, const json &j) : estacion(estacion), tip
         log(id, "señal de inicio inválida", LOG_ERROR);
         return;
     }
+
+    tiempo_espera_fai = parametros.tiempo_espera_fai;
+    temporizador_dai1 = parametros.diferimetro_dai1;
+    temporizador_dai2 = parametros.diferimetro_dai2;
+    temporizador_dei = parametros.diferimetro_dei;
+
     señal_inicio = señal_impls[id_señal];
     lado = señal_inicio->lado;
     if (secciones.empty()) lado_bloqueo = lado;

@@ -1,52 +1,17 @@
 #pragma once
-#include "enums.h"
+#include <enclavamiento.h>
 #include <vector>
 #include <map>
-#include "lado.h"
+#include "remota.h"
+#include "topology.h"
 #include "mqtt.h"
-#include "cv.h"
 #include "log.h"
-#include "mando.h"
-struct estado_bloqueo
-{
-    EstadoBloqueo estado;
-    bool ocupado;
-    bool normalizado;
-    lados<bool> prohibido;
-    lados<bool> escape;
-    lados<ACTC> actc;
-    lados<bool> cierre_señales;
-    lados<EstadoCanton> estado_cantones_inicio;
-    lados<TipoMovimiento> ruta;
-    lados<bool> maniobra_compatible;
-    lados<estado_mando> mando_estacion;
-};
-struct estado_colateral_bloqueo
-{
-    bool sin_datos = false;
-    TipoMovimiento ruta;
-    bool anular_bloqueo;
-    bool maniobra_compatible;
-    estado_mando mando;
-    estado_colateral_bloqueo() {}
-    estado_colateral_bloqueo(TipoMovimiento ruta, bool maniobra_compatible, estado_mando mando) : ruta(ruta), maniobra_compatible(maniobra_compatible), mando(mando)
-    {
-        anular_bloqueo = false;
-    }
-    bool operator==(const estado_colateral_bloqueo &o) const
-    {
-        return sin_datos == o.sin_datos && ruta == o.ruta && anular_bloqueo == o.anular_bloqueo && maniobra_compatible == o.maniobra_compatible && mando == o.mando;
-    }
-};
-void to_json(json &j, const estado_bloqueo &estado);
-void from_json(const json &j, estado_bloqueo &estado);
-void to_json(json &j, const estado_colateral_bloqueo &col);
-void from_json(const json &j, estado_colateral_bloqueo &col);
 class bloqueo : estado_bloqueo
 {
     std::vector<seccion_via*> cvs;
 
-    Lado ultimo_lado;
+    TipoBloqueo tipo;
+    Lado sentido_preferente;
 
     bool me_pendiente = false;
     lados<bool> datos_estaciones;
@@ -108,7 +73,6 @@ public:
     {
         if (estado == EstadoBloqueo::Desbloqueo && !ocupado && !escape[Lado::Impar] && !escape[Lado::Par] && !prohibido[lado] && ruta[opp_lado(lado)] != TipoMovimiento::Itinerario && (ruta[opp_lado(lado)] != TipoMovimiento::Maniobra || maniobra_compatible[opp_lado(lado)])) {
             estado = lado == Lado::Impar ? EstadoBloqueo::BloqueoImpar : EstadoBloqueo::BloqueoPar;
-            ultimo_lado = lado;
             log(id, "establecido", LOG_DEBUG);
             return true;
         }
@@ -118,7 +82,7 @@ public:
     bool desbloquear(Lado lado, bool normalizar_escape=true)
     {
         bool aceptado = false;
-        if (ruta[lado] == TipoMovimiento::Ninguno && !ocupado && !cierre_señales[lado]) {
+        if (ruta[lado] != TipoMovimiento::Itinerario && !ocupado && !cierre_señales[lado]) {
             if (escape[opp_lado(lado)]) {
                 escape[opp_lado(lado)] = false;
                 aceptado = true;
@@ -156,9 +120,9 @@ public:
         if (cmd == "B") {
             if (establecer(lado)) aceptado = RespuestaMando::Aceptado;
         } else if (cmd == "AB") {
-            if (desbloquear(lado))  aceptado = RespuestaMando::Aceptado;
+            if (desbloquear(lado)) aceptado = RespuestaMando::Aceptado;
         } else if (cmd == "PB") {
-            if (!prohibido[opp_lado(lado)]) {
+            if (!prohibido[opp_lado(lado)] && tipo != TipoBloqueo::BAD && tipo != TipoBloqueo::BLAD) {
                 log(id, "prohibido", LOG_DEBUG);
                 prohibido[opp_lado(lado)] = true;
                 aceptado = RespuestaMando::Aceptado;
@@ -182,7 +146,7 @@ public:
             log(id, "a/ctc denegada", LOG_DEBUG);
             actc[opp_lado(lado)] = ACTC::Denegada;
             aceptado = RespuestaMando::Aceptado;
-        } else if (cmd == "CSB" && estado == (lado == Lado::Impar ? EstadoBloqueo::BloqueoPar : EstadoBloqueo::BloqueoImpar)) {
+        } else if (cmd == "CSB" && estado == (lado == Lado::Impar ? EstadoBloqueo::BloqueoPar : EstadoBloqueo::BloqueoImpar) && ((tipo != TipoBloqueo::BAD && tipo != TipoBloqueo::BLAD) || lado != sentido_preferente)) {
             if (!cierre_señales[opp_lado(lado)]) {
                 log(id, "cierre señales", LOG_DEBUG);
                 cierre_señales[opp_lado(lado)] = true;
@@ -239,6 +203,7 @@ public:
                 if (mando_colateral == est.mando) actc[lado] = actc[opp_lado(lado)] = ACTC::NoNecesaria;
                 else if (mando_colateral == mando_estacion[lado]) actc[lado] = actc[opp_lado(lado)] = ACTC::Concedida;
             }
+            mando_estacion[lado] = est.mando;
         }
         if (est.anular_bloqueo) desbloquear(lado);
         update();

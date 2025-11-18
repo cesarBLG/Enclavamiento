@@ -16,5 +16,6 @@ extern std::map<std::string, destino_ruta*> destinos_ruta;
 extern std::set<std::string> managed_topics;
 extern std::map<std::string, seccion_via*> secciones;
 extern std::map<std::string, dependencia*> dependencias;
+extern parametros_predeterminados parametros;
 void init_items(const json &j);
 void loop_items();
