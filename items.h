@@ -10,7 +10,7 @@ using json = nlohmann::json;
 extern std::map<std::string, cv*> cvs;
 extern std::map<std::string, señal*> señales;
 extern std::map<std::string, señal_impl*> señal_impls;
-extern std::set<bloqueo*> bloqueos;
+extern std::map<std::string, bloqueo*> bloqueos;
 extern std::set<ruta*> rutas;
 extern std::map<std::string, destino_ruta*> destinos_ruta;
 extern std::set<std::string> managed_topics;

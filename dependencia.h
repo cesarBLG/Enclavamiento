@@ -1,6 +1,7 @@
 #pragma once
 #include <string>
 #include "ruta.h"
+#include "bloqueo.h"
 #include <enclavamiento.h>
 #include "nlohmann/json.hpp"
 using json = nlohmann::json;
@@ -10,31 +11,29 @@ struct dependencia
     estado_mando mando_actual;
     std::string mando_especial_pendiente;
     std::set<ruta*> rutas;
-    std::map<std::string, estado_colateral_bloqueo> movimiento_bloqueos;
+    std::map<std::string, bloqueo*> bloqueos;
     dependencia(const std::string id) : id(id), mando_actual({false, "PLO_"+id, std::nullopt, false}) {}
     void update()
     {
-        std::map<std::string, estado_colateral_bloqueo> movimiento_bloqueos_new;
-        for (auto *ruta : rutas) {
-            movimiento_bloqueos_new[ruta->bloqueo_salida] = estado_colateral_bloqueo(TipoMovimiento::Ninguno, false, mando_actual);
-        }
+        std::map<std::string, ruta*> movimiento_bloqueos;
+        std::set<std::string> anular_bloqueos;
         for (auto *ruta : rutas) {
             ruta->update();
-            auto it = movimiento_bloqueos_new.find(ruta->bloqueo_salida);
             if (ruta->is_mandada()) {
-                it->second.ruta = ruta->tipo;
-                it->second.maniobra_compatible = ruta->maniobra_compatible;
+                movimiento_bloqueos[ruta->bloqueo_salida] = ruta;
             } else if (ruta->anulacion_bloqueo_pendiente) {
                 ruta->anulacion_bloqueo_pendiente = false;
-                if (it->second.ruta == TipoMovimiento::Ninguno) it->second.anular_bloqueo = true;
+                anular_bloqueos.insert(ruta->bloqueo_salida);
             }
         }
-        for (auto &kvp : movimiento_bloqueos_new) {
-            if (kvp.first == "" || movimiento_bloqueos[kvp.first] == kvp.second) continue;
-            json j = kvp.second;
-            send_message("bloqueo/"+kvp.first+"/ruta/"+id, j.dump());
+        for (auto &[id, bloq] : bloqueos) {
+            auto it = movimiento_bloqueos.find(id);
+            if (it == movimiento_bloqueos.end()) {
+                bloq->set_ruta(TipoMovimiento::Ninguno, false, anular_bloqueos.find(id) != anular_bloqueos.end());
+            } else {
+                bloq->set_ruta(it->second->tipo, it->second->maniobra_compatible, false);
+            }
         }
-        movimiento_bloqueos = movimiento_bloqueos_new;
     }
     void send_state()
     {
@@ -44,6 +43,9 @@ struct dependencia
     void set_mando(estado_mando estado)
     {
         mando_actual = estado;
+        for (auto &[id, bloqueo] : bloqueos) {
+            bloqueo->cambio_mando(estado);
+        }
         send_state();
     }
     RespuestaMando mando_ruta(const std::string &inicio, const std::string &fin, const std::string &cmd) {

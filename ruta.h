@@ -43,9 +43,9 @@ protected:
     seccion_via *ultima_seccion_señal;
     señal_impl *señal_inicio;
     destino_ruta *destino;
-    estado_bloqueo bloqueo_act;
     Lado lado;
     Lado lado_bloqueo;
+    estado_bloqueo bloqueo_act;
 
     bool mandada = false;
     bool formada = false;
@@ -208,8 +208,10 @@ public:
     void update()
     {
         fai_activo = false;
-        bool aut_salida = bloqueo_salida == "" || 
-            (!bloqueo_act.cierre_señales[lado] && !bloqueo_act.prohibido[lado] && bloqueo_act.actc[lado] != ACTC::Denegada);
+        bool aut_salida = true;
+        if (bloqueo_salida != "") {
+            aut_salida &= !bloqueo_act.cierre_señales[lado] && !bloqueo_act.prohibido[lado] && bloqueo_act.actc[lado] != ACTC::Denegada;
+        }
         if (fai) {
             bool proximidad_ocupada = false;
             for (auto [sec, dir] : proximidad) {
@@ -365,13 +367,6 @@ public:
         return 0;
     }
 
-    void message_bloqueo(std::string id, estado_bloqueo estado)
-    {
-        if (id != bloqueo_salida) return;
-        bloqueo_act = estado;
-        update();
-    }
-
     RespuestaMando mando(const std::string &inicio, const std::string &fin, const std::string &cmd)
     {
         if (inicio != id_inicio || fin != id_destino) return RespuestaMando::OrdenNoAplicable;
@@ -401,6 +396,7 @@ public:
         }
         return RespuestaMando::OrdenRechazada;
     }
+
     void message_cv(const std::string &id, estado_cv ecv)
     {
         if (!mandada) return;
@@ -426,6 +422,11 @@ public:
 
             if (!sucesion_automatica && tipo != TipoMovimiento::Maniobra) señal_inicio->ruta_activa = nullptr;
         }
+    }
+    void message_bloqueo(const std::string &id, estado_bloqueo eb)
+    {
+        if (id != bloqueo_salida) return;
+        bloqueo_act = eb;
     }
 protected:
     void construir_proximidad(seccion_via *inicio, seccion_via *next, Lado dir_fwd, std::vector<std::pair<seccion_via*, Lado>> &secciones)

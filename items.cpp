@@ -8,7 +8,7 @@ std::map<std::string, cv*> cvs;
 std::map<std::string, cv_impl*> cv_impls;
 std::map<std::string, señal*> señales;
 std::map<std::string, señal_impl*> señal_impls;
-std::set<bloqueo*> bloqueos;
+std::map<std::string, bloqueo*> bloqueos;
 std::set<ruta*> rutas;
 std::map<std::string, destino_ruta*> destinos_ruta;
 std::map<std::string, seccion_via*> secciones;
@@ -37,10 +37,9 @@ RespuestaMando mando(const std::vector<std::string> &ordenes, int me)
     }
     if (comandos_bloqueo.find(cmd) != comandos_bloqueo.end()) {
         if (ordenes.size() == 3) {
-            for (auto *b : bloqueos) {
-                auto resp = b->mando(ordenes[1], ordenes[2], ordenes[0], me);
-                if (resp != RespuestaMando::OrdenNoAplicable) return resp;
-            }
+            std::string id = ordenes[1]+":"+ordenes[2];
+            auto it = bloqueos.find(id);
+            if (it != bloqueos.end()) return it->second->mando(ordenes[0], me);
         }
     }
     if (comandos_ruta.find(cmd) != comandos_ruta.end()) {
@@ -215,8 +214,8 @@ void handle_message(const std::string &topic, const std::string &payload)
         for (auto &kvp : secciones) {
             kvp.second->message_cv(id, ecv);
         }
-        for (auto *bloqueo : bloqueos) {
-            bloqueo->message_cv(id, ecv);
+        for (auto &kvp : bloqueos) {
+            kvp.second->message_cv(id, ecv);
         }
         if (ecv.evento) {
             for (auto &kvp : señal_impls) {
@@ -235,28 +234,26 @@ void handle_message(const std::string &topic, const std::string &payload)
         if (it != señales.end()) it->second->message_señal(json::parse(payload));
         return;
     }
-    std::regex bloqueoStatePattern(R"(^bloqueo/([a-zA-Z0-9_-]+)/state$)");
+    std::regex bloqueoStatePattern(R"(^bloqueo/([a-zA-Z0-9_-]+/[a-zA-Z0-9_'-]+)/state$)");
     if (std::regex_match(topic, match, bloqueoStatePattern)) {
         estado_bloqueo eb(json::parse(payload));
+        std::string id = id_from_mqtt(match[1]);
         for (auto &kvp : señal_impls) {
-            kvp.second->message_bloqueo(match[1], eb);
+            kvp.second->message_bloqueo(id, eb);
         }
         for (auto *ruta : rutas) {
-            ruta->message_bloqueo(match[1], eb);
+            ruta->message_bloqueo(id, eb);
         }
         for (auto &kvp : secciones) {
-            kvp.second->message_bloqueo(match[1], eb);
+            kvp.second->message_bloqueo(id, eb);
         }
         return;
     }
-    std::regex bloqueoRutaPattern(R"(^bloqueo/([a-zA-Z0-9_-]+)/ruta/([a-zA-Z0-9_-]+)$)");
-    if (std::regex_match(topic, match, bloqueoRutaPattern)) {
-        for (auto *bloqueo : bloqueos) {
-            if (bloqueo->id == match[1]) {
-                json j = json::parse(payload);
-                bloqueo->message_ruta(match[2], j);
-            }
-        }
+    std::regex bloqueoColateralPattern(R"(^bloqueo/([a-zA-Z0-9_-]+/[a-zA-Z0-9_'-]+)/colateral$)");
+    if (std::regex_match(topic, match, bloqueoColateralPattern)) {
+        std::string id = id_from_mqtt(match[1]);
+        auto it = bloqueos.find(id);
+        if (it != bloqueos.end()) it->second->message_colateral(json::parse(payload));
         return;
     }
 
@@ -267,19 +264,13 @@ void handle_message(const std::string &topic, const std::string &payload)
         return;
     }
 }
-
-void init_items(const json &j)
+std::map<std::string,std::vector<std::string>> cejes_to_cvs;
+void init_items_ordered(const json &j, std::string tipo)
 {
-    parametros = j["ParámetrosPredeterminados"];
-    if (j.contains("Dependencias")) {
-        for (auto &dep : j["Dependencias"]) {
-            dependencias[dep] = new dependencia(dep);
-        }
-    }
-    if (j.contains("CVs")) {
-        std::map<std::string,std::vector<std::string>> cejes_to_cvs;
-        for (auto &[estacion, jcvs] : j["CVs"].items()) {
-            for (auto &[id, jcv] : jcvs.items()) {
+    for (auto &[estacion, jdep] : j.items()) {
+        if (!jdep.contains(tipo)) return;
+        if (tipo == "CVs") {
+            for (auto &[id, jcv] : jdep["CVs"].items()) {
                 std::string ic = estacion+":"+id;
                 cvs[ic] = new cv(ic);
                 if (jcv.contains("ContadoresEjes")) {
@@ -290,52 +281,62 @@ void init_items(const json &j)
                 }
             }
         }
-        for (auto &[id, cv] : cv_impls) {
-            cv->asignar_cejes(cejes_to_cvs);
-        }
-    }
-    if (j.contains("Secciones")) {
-        for (auto &[estacion, jsecs] : j["Secciones"].items()) {
-            for (auto &[id, jsec] : jsecs.items()) {
+        if (tipo == "Secciones") {
+            for (auto &[id, jsec] : jdep["Secciones"].items()) {
                 std::string is = estacion+":"+id;
                 secciones[is] = new seccion_via(is, jsec);
             }
         }
-    }
-    if (j.contains("Señales")) {
-        for (auto &[estacion, jseñales] : j["Señales"].items()) {
-            for (auto &[id, js] : jseñales.items()) {
+        if (tipo == "Señales") {
+            for (auto &[id, js] : jdep["Señales"].items()) {
                 std::string is = estacion+":"+id;
                 auto *señ = new señal_impl(is, js);
                 señales[is] = señ;
                 señal_impls[is] = señ;
             }
         }
-    }
-    if (j.contains("Bloqueos")) {
-        for (auto &jb : j["Bloqueos"]) {
-            bloqueos.insert(new bloqueo(jb));
+        if (tipo == "Bloqueos") {
+            for (auto &jb : jdep["Bloqueos"]) {
+                auto *b = new bloqueo(estacion, jb);
+                bloqueos[b->id] = b;
+                dependencias[estacion]->bloqueos[b->id] = b;
+            }
         }
-    }
-    if (j.contains("DestinosRuta")) {
-        for (auto &[estacion, jdestinos] : j["DestinosRuta"].items()) {
-            for (auto &[id, tipo] : jdestinos.items()) {
+        if (tipo == "DestinosRuta") {
+            for (auto &[id, tipo] : jdep["DestinosRuta"].items()) {
                 std::string idd = estacion+":"+id;
                 destinos_ruta[idd] = new destino_ruta(idd, tipo);
             }
         }
-    }
-    if (j.contains("Rutas")) {
-        for (auto &[estacion, jrutas] : j["Rutas"].items()) {
-            for (auto &jr : jrutas) {
+        if (tipo == "Rutas") {
+            for (auto &jr : jdep["Rutas"]) {
                 ruta *r = new ruta(estacion, jr);
                 if (r->valid) dependencias[estacion]->rutas.insert(r);
             }
         }
-        for (auto &kvp : dependencias) {
-            for (auto *ruta : kvp.second->rutas) {
-                rutas.insert(ruta);
-            }
+    }
+}
+void init_items(const json &j)
+{
+    parametros = j["ParámetrosPredeterminados"];
+    if (j.contains("Dependencias")) {
+        auto jdeps = j["Dependencias"];
+        for (auto &[estacion, jdep] : jdeps.items()) {
+            dependencias[estacion] = new dependencia(estacion);
+        }
+        init_items_ordered(jdeps, "CVs");
+        init_items_ordered(jdeps, "Secciones");
+        init_items_ordered(jdeps, "Señales");
+        init_items_ordered(jdeps, "Bloqueos");
+        init_items_ordered(jdeps, "DestinosRuta");
+        init_items_ordered(jdeps, "Rutas");
+    }
+    for (auto &[id, cv] : cv_impls) {
+        cv->asignar_cejes(cejes_to_cvs);
+    }
+    for (auto &kvp : dependencias) {
+        for (auto *ruta : kvp.second->rutas) {
+            rutas.insert(ruta);
         }
     }
 
@@ -346,8 +347,9 @@ void init_items(const json &j)
     for (auto &kvp : señal_impls) {
         managed_topics<<kvp.second->topic<<'\n';
     }
-    for (auto *b : bloqueos) {
-        managed_topics<<b->topic<<'\n';
+    for (auto &kvp : bloqueos) {
+        managed_topics<<kvp.second->topic<<'\n';
+        managed_topics<<kvp.second->topic_colateral<<'\n';
     }
     managed_topics<<"remota/"<<name<<'\n';
     send_message("desconexion/main", managed_topics.str(), 1, true);
@@ -369,8 +371,8 @@ void loop_items()
         for (auto &kvp : señal_impls) {
             kvp.second->send_state();
         }
-        for (auto *b : bloqueos) {
-            b->send_state();
+        for (auto &kvp : bloqueos) {
+            kvp.second->send_state();
         }
         for (auto &kvp : dependencias) {
             kvp.second->send_state();

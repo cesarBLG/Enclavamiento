@@ -262,23 +262,37 @@ void from_json(const json &j, estado_bloqueo &estado)
     estado.maniobra_compatible = j["ManiobraCompatible"];
     estado.mando_estacion = j["MandoEstación"];
 }
-void to_json(json &j, const estado_colateral_bloqueo &col)
+void to_json(json &j, const estado_bloqueo_lado &estado)
 {
-    j["Ruta"] = col.ruta;
-    if (col.anular_bloqueo) j["AnularBloqueo"] = true;
-    j["ManiobraCompatible"] = col.maniobra_compatible;
-    j["Mando"] = col.mando;
+    j["Estado"] = estado.estado;
+    j["EstadoObjetivo"] = estado.estado_objetivo;
+    j["EstadoCVs"] = estado.estado_cvs;
+    j["Prohibido"] = estado.prohibido;
+    j["Ruta"] = estado.ruta;
+    j["Escape"] = estado.escape;
+    j["CierreSeñales"] = estado.cierre_señales;
+    j["A/CTC"] = estado.actc;
+    j["ManiobraCompatible"] = estado.maniobra_compatible;
+    j["MandoEstación"] = estado.mando_estacion;
+    j["NormalizarEscape"] = estado.normalizar_escape;
 }
-void from_json(const json &j, estado_colateral_bloqueo &col)
+void from_json(const json &j, estado_bloqueo_lado &estado)
 {
     if (j == "desconexion") {
-        col.sin_datos = true;
+        estado.estado = estado.estado_objetivo = EstadoBloqueo::SinDatos;
         return;
     }
-    col.ruta = j["Ruta"];
-    col.anular_bloqueo = j.value("AnularBloqueo", false);
-    col.maniobra_compatible = j["ManiobraCompatible"];
-    col.mando = j["Mando"];
+    estado.estado = j["Estado"];
+    estado.estado_objetivo = j["EstadoObjetivo"];
+    estado.estado_cvs = j["EstadoCVs"];
+    estado.prohibido = j["Prohibido"];
+    estado.ruta = j["Ruta"];
+    estado.escape = j["Escape"];
+    estado.cierre_señales = j["CierreSeñales"];
+    estado.actc = j["A/CTC"];
+    estado.maniobra_compatible = j["ManiobraCompatible"];
+    estado.mando_estacion = j["MandoEstación"];
+    estado.normalizar_escape = j.value("NormalizarEscape", false);
 }
 void to_json(json &j, const estado_mando &estado)
 {

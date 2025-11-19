@@ -25,7 +25,7 @@ protected:
     lados<std::map<int,señal*>> señales;
     cv *cv_seccion;
     bool trayecto;
-    std::string bloqueo;
+    std::string bloqueo_asociado;
     estado_bloqueo bloqueo_act;
 
     lados<std::vector<conexion>> siguientes_secciones;
@@ -67,7 +67,7 @@ public:
     void message_cv(const std::string &id, estado_cv ev);
     void message_bloqueo(const std::string &id, estado_bloqueo eb)
     {
-        if (id != bloqueo) return;
+        if (id != bloqueo_asociado) return;
         bloqueo_act = eb;
         remota_cambio_elemento(ElementoRemota::CV, cv_seccion->id);
     }

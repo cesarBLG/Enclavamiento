@@ -99,14 +99,11 @@ void update_remota()
             push(j, comp, r);
         }
     }
-    for (auto *bloq : bloqueos) {
+    for (auto &[id, bloq] : bloqueos) {
         std::pair<ElementoRemota,std::string> comp(ElementoRemota::BLQ, bloq->id);
         if (sendall || update_components.find(comp) != update_components.end()) {
-            auto eb = bloq->get_estado_remota();
-            for (auto &lado : {Lado::Impar, Lado::Par}) {
-                auto r = json(eb[lado]);
-                push(j, {ElementoRemota::BLQ, bloq->estaciones[lado]+":"+bloq->estaciones[opp_lado(lado)]+bloq->via}, r);
-            }
+            auto eb = json(bloq->get_estado_remota());
+            push(j, {ElementoRemota::BLQ, id}, eb);
         }
     }
     for (auto &[id, dep] : dependencias) {

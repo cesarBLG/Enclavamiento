@@ -2,6 +2,7 @@
 #include "enums.h"
 #include "lado.h"
 #include "estado_mando.h"
+
 struct estado_bloqueo
 {
     EstadoBloqueo estado;
@@ -16,27 +17,28 @@ struct estado_bloqueo
     lados<bool> maniobra_compatible;
     lados<estado_mando> mando_estacion;
 };
-struct estado_colateral_bloqueo
+struct estado_bloqueo_lado
 {
-    bool sin_datos = false;
-    TipoMovimiento ruta;
-    bool anular_bloqueo;
-    bool maniobra_compatible;
-    estado_mando mando;
-    estado_colateral_bloqueo() {}
-    estado_colateral_bloqueo(TipoMovimiento ruta, bool maniobra_compatible, estado_mando mando) : ruta(ruta), maniobra_compatible(maniobra_compatible), mando(mando)
+    std::map<std::string,EstadoCV> estado_cvs;
+    bool prohibido=false;
+    bool escape=false;
+    ACTC actc=ACTC::NoNecesaria;
+    bool cierre_señales=false;
+    TipoMovimiento ruta=TipoMovimiento::Ninguno;
+    bool maniobra_compatible=false;
+    estado_mando mando_estacion;
+    EstadoBloqueo estado=EstadoBloqueo::SinDatos;
+    EstadoBloqueo estado_objetivo=EstadoBloqueo::SinDatos;
+    bool normalizar_escape;
+    bool operator==(const estado_bloqueo_lado &o) const
     {
-        anular_bloqueo = false;
-    }
-    bool operator==(const estado_colateral_bloqueo &o) const
-    {
-        return sin_datos == o.sin_datos && ruta == o.ruta && anular_bloqueo == o.anular_bloqueo && maniobra_compatible == o.maniobra_compatible && mando == o.mando;
+        return estado_cvs == o.estado_cvs && prohibido == o.prohibido && escape == o.escape && actc == o.actc && cierre_señales == o.cierre_señales && ruta == o.ruta && maniobra_compatible == o.maniobra_compatible && mando_estacion == o.mando_estacion && estado == o.estado && estado_objetivo == o.estado_objetivo && normalizar_escape == o.normalizar_escape;
     }
 };
 #ifndef WITHOUT_JSON
 #include "json.h"
 void to_json(json &j, const estado_bloqueo &estado);
 void from_json(const json &j, estado_bloqueo &estado);
-void to_json(json &j, const estado_colateral_bloqueo &col);
-void from_json(const json &j, estado_colateral_bloqueo &col);
+void to_json(json &j, const estado_bloqueo_lado &estado);
+void from_json(const json &j, estado_bloqueo_lado &estado);
 #endif

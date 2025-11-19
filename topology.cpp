@@ -1,7 +1,7 @@
 #include "topology.h"
 #include "ruta.h"
 #include "items.h"
-seccion_via::seccion_via(const std::string &id, const json &j) : id(id), bloqueo(j.value("Bloqueo", ""))
+seccion_via::seccion_via(const std::string &id, const json &j) : id(id), bloqueo_asociado(j.value("Bloqueo", ""))
 {
     active_outs[Lado::Impar][0] = 0;
     active_outs[Lado::Par][0] = 0;
@@ -11,7 +11,7 @@ seccion_via::seccion_via(const std::string &id, const json &j) : id(id), bloqueo
     if (j.contains("Conexiones")) {
         siguientes_secciones = j["Conexiones"];
     }
-    trayecto = bloqueo != "" || (id.size() > 2 && id.substr(0, 3) == "PV:");
+    trayecto = bloqueo_asociado != "" || (id.size() > 2 && id.substr(0, 3) == "PV:");
 }
 void seccion_via::asegurar(ruta *ruta, seccion_via *prev, seccion_via *next, Lado dir)
 {
@@ -28,8 +28,10 @@ TipoMovimiento seccion_via::get_tipo_movimiento()
 {
     if (ruta_asegurada != nullptr)
         return ruta_asegurada->tipo;
-    if (bloqueo != "" && (bloqueo_act.estado != EstadoBloqueo::Desbloqueo && bloqueo_act.estado != EstadoBloqueo::SinDatos))
-        return TipoMovimiento::Itinerario;
+    if (bloqueo_asociado != "") {
+        if (bloqueo_act.estado != EstadoBloqueo::Desbloqueo && bloqueo_act.estado != EstadoBloqueo::SinDatos)
+            return TipoMovimiento::Itinerario;
+    }
     return TipoMovimiento::Ninguno;
 }
 void seccion_via::message_cv(const std::string &id, estado_cv ev)
@@ -48,7 +50,7 @@ void seccion_via::message_cv(const std::string &id, estado_cv ev)
     if (ev.evento && ev.evento->ocupacion && ev.estado > EstadoCV::Prenormalizado) {
         bool intempestiva = false;
         if (trayecto) {
-            if (bloqueo != "" && bloqueo_act.estado != (ev.evento->lado == Lado::Impar ? EstadoBloqueo::BloqueoImpar : EstadoBloqueo::BloqueoPar) && bloqueo_act.ruta[ev.evento->lado] != TipoMovimiento::Maniobra) {
+            if (bloqueo_asociado != "" && bloqueo_act.estado != (ev.evento->lado == Lado::Impar ? EstadoBloqueo::BloqueoImpar : EstadoBloqueo::BloqueoPar) && bloqueo_act.ruta[ev.evento->lado] != TipoMovimiento::Maniobra) {
                 intempestiva = true;
             }
         } else {

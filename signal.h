@@ -7,10 +7,10 @@ class señal : public estado_señal
 {
 public:
     const std::string id;
+    const std::string bloqueo_asociado;
     const Lado lado;
     const TipoSeñal tipo;
     const int pin;
-    const std::string bloqueo_asociado;
     seccion_via * const seccion;
     seccion_via * const seccion_prev;
     señal(const std::string &estacion, const json &j);
@@ -58,12 +58,6 @@ public:
     }
     void determinar_aspecto();
     void update();
-    void message_bloqueo(const std::string &id, const estado_bloqueo &estado)
-    {
-        if (id != bloqueo_asociado) return;
-        bloqueo_act = estado;
-        update();
-    }
     void message_cv(const std::string &id, estado_cv ev)
     {
         if (id != seccion->get_cv()->id) return;
@@ -80,6 +74,11 @@ public:
                 paso_circulacion = true;
             }
         }
+    }
+    void message_bloqueo(const std::string &id, estado_bloqueo eb)
+    {
+        if (id != bloqueo_asociado) return;
+        bloqueo_act = eb;
     }
     void message_señal(estado_señal est) override {}
     RespuestaMando mando(const std::string &cmd, int me);

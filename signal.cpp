@@ -36,17 +36,20 @@ void señal_impl::determinar_aspecto()
         if (sec_act == seccion) break;
         if (ruta_activa != nullptr && ruta_activa->get_ultima_seccion_señal() == sec_prv) break;
     }
-    bool cerrar_itinerario = bloqueo_asociado != "" && 
-        ((bloqueo_act.estado != (dir == Lado::Impar ? EstadoBloqueo::BloqueoImpar : EstadoBloqueo::BloqueoPar) && tipo != TipoSeñal::Avanzada) || 
-        bloqueo_act.cierre_señales[dir]);
-    bool cerrar = bloqueo_asociado != "" && 
-        (bloqueo_act.estado == EstadoBloqueo::SinDatos || 
-        (bloqueo_act.ruta[opp_lado(dir)] != TipoMovimiento::Ninguno && tipo == TipoSeñal::Avanzada) || 
-        bloqueo_act.escape[opp_lado(dir)] || 
-        (bloqueo_act.escape[lado] && ruta_activa != nullptr && !ruta_activa->maniobra_compatible));
-    cerrar |= canton == EstadoCanton::Ocupado;
+    bool cerrar_itinerario = false;
+    bool cerrar = false;
     bool prohibir_abrir = btv;
-    bool prohibir_abrir_itinerario = bloqueo_asociado != "" && (bloqueo_act.prohibido[dir] || bloqueo_act.actc[dir] == ACTC::Denegada);
+    bool prohibir_abrir_itinerario = false;
+    if (bloqueo_asociado != "") {
+        cerrar |= bloqueo_act.estado == EstadoBloqueo::SinDatos;
+        cerrar |= bloqueo_act.ruta[opp_lado(dir)] != TipoMovimiento::Ninguno && tipo == TipoSeñal::Avanzada;
+        cerrar |= bloqueo_act.escape[opp_lado(dir)];
+        cerrar |= bloqueo_act.escape[lado] && ruta_activa != nullptr && (!ruta_activa->maniobra_compatible || ruta_activa->tipo != TipoMovimiento::Maniobra);
+        cerrar_itinerario |= (bloqueo_act.estado != (dir == Lado::Impar ? EstadoBloqueo::BloqueoImpar : EstadoBloqueo::BloqueoPar) && tipo != TipoSeñal::Avanzada);
+        cerrar_itinerario |= bloqueo_act.cierre_señales[dir];
+        prohibir_abrir_itinerario |= bloqueo_act.prohibido[dir] || bloqueo_act.actc[dir] == ACTC::Denegada;
+    }
+    cerrar |= canton == EstadoCanton::Ocupado;
     if ((prohibir_abrir && prev_aspecto == Aspecto::Parada) || 
         cerrar || !clear_request || 
         (ruta_necesaria && (ruta_activa == nullptr || ruta_activa->dai_activo() || !ruta_activa->is_formada()))) {
@@ -60,7 +63,6 @@ void señal_impl::determinar_aspecto()
         if (sig_señal != nullptr) aspecto = std::min(aspecto, sig_señal->aspecto_maximo_anterior_señal);
     }
 }
-#include <iostream>
 void señal_impl::update()
 {
     Aspecto prev_aspecto = aspecto;
