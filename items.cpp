@@ -268,7 +268,7 @@ std::map<std::string,std::vector<std::string>> cejes_to_cvs;
 void init_items_ordered(const json &j, std::string tipo)
 {
     for (auto &[estacion, jdep] : j.items()) {
-        if (!jdep.contains(tipo)) return;
+        if (!jdep.contains(tipo)) continue;
         if (tipo == "CVs") {
             for (auto &[id, jcv] : jdep["CVs"].items()) {
                 std::string ic = estacion+":"+id;
@@ -290,11 +290,17 @@ void init_items_ordered(const json &j, std::string tipo)
         if (tipo == "Señales") {
             for (auto &[id, js] : jdep["Señales"].items()) {
                 std::string is = estacion+":"+id;
-                auto *señ = new señal_impl(is, js);
-                señales[is] = señ;
-                señal_impls[is] = señ;
+                if (dependencias.find(estacion) == dependencias.end()) {
+                    auto *señ = new señal(is, js);
+                    señales[is] = señ;
+                } else {
+                    auto *señ = new señal_impl(is, js);
+                    señales[is] = señ;
+                    señal_impls[is] = señ;
+                }
             }
         }
+        if (dependencias.find(estacion) == dependencias.end()) continue;
         if (tipo == "Bloqueos") {
             for (auto &jb : jdep["Bloqueos"]) {
                 auto *b = new bloqueo(estacion, jb);
@@ -322,7 +328,7 @@ void init_items(const json &j)
     if (j.contains("Dependencias")) {
         auto jdeps = j["Dependencias"];
         for (auto &[estacion, jdep] : jdeps.items()) {
-            dependencias[estacion] = new dependencia(estacion);
+            if (jdep.value("Controlada", true)) dependencias[estacion] = new dependencia(estacion);
         }
         init_items_ordered(jdeps, "CVs");
         init_items_ordered(jdeps, "Secciones");
@@ -352,7 +358,7 @@ void init_items(const json &j)
         managed_topics<<kvp.second->topic_colateral<<'\n';
     }
     managed_topics<<"remota/"<<name<<'\n';
-    send_message("desconexion/main", managed_topics.str(), 1, true);
+    send_message("desconexion/"+name, managed_topics.str(), 1, true);
 }
 int64_t last_sent_state;
 void loop_items()

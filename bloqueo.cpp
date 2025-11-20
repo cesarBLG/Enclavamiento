@@ -6,7 +6,7 @@ tipo(j.value("Tipo", TipoBloqueo::BAU)), bloqueo_emisor(lado == Lado::Impar ? Es
     estado_objetivo = EstadoBloqueo::Desbloqueo;
     me_pendiente = false;
     if (tipo != TipoBloqueo::BAU && tipo != TipoBloqueo::BLAU) sentido_preferente = j["SentidoPreferente"];
-    if (tipo == TipoBloqueo::BAD || tipo == TipoBloqueo::BLAD) estado = sentido_preferente == Lado::Impar ? EstadoBloqueo::BloqueoImpar : EstadoBloqueo::BloqueoPar;
+    //if (tipo == TipoBloqueo::BAD || tipo == TipoBloqueo::BLAD) estado = estado_objetivo = sentido_preferente == Lado::Impar ? EstadoBloqueo::BloqueoImpar : EstadoBloqueo::BloqueoPar;
     for (auto &cv : j["CVs"]) {
         cvs.push_back(secciones[cv]);
     }

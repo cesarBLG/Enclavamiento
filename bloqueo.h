@@ -52,7 +52,7 @@ public:
     }
     bool bloqueo_permitido(bool propio)
     {
-        if (estado == EstadoBloqueo::Desbloqueo && !ocupado && !escape && !colateral.escape) {
+        if (estado == EstadoBloqueo::Desbloqueo && colateral.estado == EstadoBloqueo::Desbloqueo && !ocupado && !escape && !colateral.escape) {
             if (propio) return !colateral.prohibido && colateral.ruta != TipoMovimiento::Itinerario && (colateral.ruta != TipoMovimiento::Maniobra || colateral.maniobra_compatible);
             else return !prohibido && ruta != TipoMovimiento::Itinerario && (ruta != TipoMovimiento::Maniobra || maniobra_compatible);
         }
@@ -87,6 +87,7 @@ public:
     }
     void update()
     {
+        //log(id, to_string(estado)+" "+to_string(estado_objetivo)+" "+to_string(colateral.estado)+" "+to_string(colateral.estado_objetivo), LOG_DEBUG);
         if (colateral.estado == EstadoBloqueo::SinDatos) {
             estado_objetivo = EstadoBloqueo::Desbloqueo;
             if (colateral.estado_objetivo == colateral.estado && estado != EstadoBloqueo::SinDatos) {
@@ -98,15 +99,25 @@ public:
             }
             return;
         }
+        if (estado == EstadoBloqueo::SinDatos) {
+            if (colateral.estado == EstadoBloqueo::Desbloqueo) {
+                estado = EstadoBloqueo::Desbloqueo;
+                send_state();
+            } else {
+                return;
+            }
+        }
         if (estado_objetivo != estado && colateral.estado == estado_objetivo) {
             estado = colateral.estado;
             if (estado == EstadoBloqueo::Desbloqueo) log(id, "desbloqueo", LOG_DEBUG);
             else if (estado == bloqueo_emisor) log(id, "establecido emisor", LOG_DEBUG);
             else log(id, "establecido receptor por discrepancia", LOG_DEBUG);
-        } else if (colateral.estado != estado) {
-            estado = colateral.estado;
-            estado_objetivo = colateral.estado;
-            log(id, "discrepancia con colateral", LOG_DEBUG);
+        } else if (colateral.estado != estado && colateral.estado_objetivo == colateral.estado) {
+            estado = EstadoBloqueo::SinDatos;
+            estado_objetivo = EstadoBloqueo::Desbloqueo;
+            log(id, "discrepancia con colateral, estado inconsistente", LOG_DEBUG);
+            send_state();
+            return;
         }
         if (estado_objetivo != estado && estado_objetivo == EstadoBloqueo::Desbloqueo && !desbloqueo_permitido()) {
             estado_objetivo = estado;
@@ -134,7 +145,11 @@ public:
                     log(id, "bloqueo receptor", LOG_DEBUG);
                 }
             } else {
-                log(id, "discrepancia con colateral", LOG_DEBUG);
+                estado = EstadoBloqueo::SinDatos;
+                estado_objetivo = EstadoBloqueo::Desbloqueo;
+                log(id, "discrepancia con colateral, solicita estado no permitido", LOG_DEBUG);
+                send_state();
+                return;
             }
         }
         if (ruta == TipoMovimiento::Itinerario && bloqueo_permitido(true)) {
@@ -151,15 +166,11 @@ public:
     }
     void cambio_mando(const estado_mando &mando)
     {
-        if (!mando.central) { // Mando local
-            actc = ACTC::NoNecesaria;
-        } else if (mando_estacion.central) { // Cambio de CTC
-            if (mando == colateral.mando_estacion) actc = ACTC::NoNecesaria; // Ambas estaciones en mismo CTC
-            else if (actc == ACTC::NoNecesaria) actc = ACTC::Concedida; // Estaciones en distinto CTC
-        } else { // Paso de mando local a central
-            actc = ACTC::Concedida;
-        }
+        if (!mando.central) actc = ACTC::NoNecesaria; // Paso a ML
+        else if (colateral.mando_estacion.central && mando.puesto == colateral.mando_estacion.puesto) actc = ACTC::NoNecesaria; // Ambas estaciones en mismo CTC
+        else if (actc == ACTC::NoNecesaria) actc = ACTC::Concedida; // Estaciones en distinto CTC o colateral en ML
         mando_estacion = mando;
+        update();
     }
     void set_ruta(TipoMovimiento tipo, bool maniobra_compatible, bool anular_bloqueo)
     {
@@ -176,7 +187,7 @@ public:
         if (mando_estacion.central && colateral.mando_estacion != this->colateral.mando_estacion) {
             if (!colateral.mando_estacion.central) { // Colateral a ML
                 if (actc == ACTC::NoNecesaria) actc = ACTC::Concedida;
-            } else if (colateral.mando_estacion == mando_estacion) { // Mismo CTC
+            } else if (colateral.mando_estacion.puesto == mando_estacion.puesto) { // Mismo CTC
                 actc = ACTC::NoNecesaria;
             } else { // Distinto CTC
                 if (actc == ACTC::NoNecesaria) actc = ACTC::Concedida;

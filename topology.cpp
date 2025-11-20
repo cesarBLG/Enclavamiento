@@ -11,7 +11,7 @@ seccion_via::seccion_via(const std::string &id, const json &j) : id(id), bloqueo
     if (j.contains("Conexiones")) {
         siguientes_secciones = j["Conexiones"];
     }
-    trayecto = bloqueo_asociado != "" || (id.size() > 2 && id.substr(0, 3) == "PV:");
+    trayecto = j.value("Trayecto", bloqueo_asociado != "");
 }
 void seccion_via::asegurar(ruta *ruta, seccion_via *prev, seccion_via *next, Lado dir)
 {

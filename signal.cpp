@@ -89,7 +89,10 @@ void señal_impl::update()
     }
     paso_circulacion = false;
 
-    if (aspecto != Aspecto::Parada) rebasada = false;
+    if (aspecto != Aspecto::Parada) {
+        rebasada = false;
+        ultimo_paso_abierta = get_milliseconds();
+    }
 
     if (aspecto != prev_aspecto) send_state();
 }
