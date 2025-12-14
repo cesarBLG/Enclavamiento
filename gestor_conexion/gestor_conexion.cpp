@@ -14,6 +14,7 @@ void on_connect(struct mosquitto *mosq, void *userdata, int rc)
         connected = true;
         mosquitto_subscribe(mosq, nullptr, "desconexion", 1);
         mosquitto_subscribe(mosq, nullptr, "desconexion/+", 1);
+        mosquitto_publish(mosq, nullptr, "gestor_conexion", 0, nullptr, 1, true);
         mosquitto_publish(mosq, nullptr, "gestor_conexion", 2, "on", 1, false);
     } else {
         std::cout<<"mqtt: connection failed"<<std::endl;
