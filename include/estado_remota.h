@@ -42,8 +42,7 @@ struct RemotaSIG
     unsigned int SIG_B:1;
     unsigned int SIG_UIC:3;
     unsigned int SIG_SA:1;
-    unsigned int SIG_FAI:1;
-    unsigned int SIG_FAI_IND:2;
+    unsigned int SIG_FAI:2;
     unsigned int SIG_GRP_ARS:2;
 };
 struct RemotaPV
@@ -112,6 +111,21 @@ struct RemotaDEP
     unsigned int DEP_CON:1;
     unsigned int DEP_BCK:1;
 };
+struct RemotaPN
+{
+    unsigned int PN_DAT:1;
+    unsigned int PN_FUN:1;
+    unsigned int PN_EST:2;
+    unsigned int PN_ENC1:2;
+    unsigned int PN_ENC2:2;
+    unsigned int PN_ENC3:2;
+    unsigned int PN_ENC4:2;
+    unsigned int PN_FLC:2;
+    unsigned int PN_FLP:2;
+    unsigned int PN_FAC:2;
+    unsigned int PN_PRX1:1;
+    unsigned int PN_PRX2:1;
+};
 #ifndef WITHOUT_JSON
 #include "json.h"
 void to_json(json& j, const RemotaSIG& p);
@@ -137,4 +151,7 @@ void from_json(const json& j, RemotaML& p);
 
 void to_json(json& j, const RemotaDEP& p);
 void from_json(const json& j, RemotaDEP& p);
+
+void to_json(json& j, const RemotaPN& p);
+void from_json(const json& j, RemotaPN& p);
 #endif

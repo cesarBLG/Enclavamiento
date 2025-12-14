@@ -21,7 +21,6 @@ void to_json(json& j, const RemotaSIG& p)
         {"SIG_UIC", p.SIG_UIC},
         {"SIG_SA", p.SIG_SA},
         {"SIG_FAI", p.SIG_FAI},
-        {"SIG_FAI_IND", p.SIG_FAI_IND},
         {"SIG_GRP_ARS", p.SIG_GRP_ARS}
     };
 }
@@ -44,7 +43,6 @@ void from_json(const json& j, RemotaSIG& p)
     p.SIG_UIC      = j.value("SIG_UIC", 0);
     p.SIG_SA       = j.value("SIG_SA", 0);
     p.SIG_FAI      = j.value("SIG_FAI", 0);
-    p.SIG_FAI_IND  = j.value("SIG_FAI_IND", 0);
     p.SIG_GRP_ARS  = j.value("SIG_GRP_ARS", 0);
 }
 
@@ -218,4 +216,40 @@ void from_json(const nlohmann::json& j, RemotaDEP& p)
     p.DEP_MAN_C   = j.value("DEP_MAN_C", 0u);
     p.DEP_CON     = j.value("DEP_CON", 0u);
     p.DEP_BCK     = j.value("DEP_BCK", 0u);
+}
+
+// ---------------- RemotaPN ----------------
+
+void to_json(nlohmann::json& j, const RemotaPN& p)
+{
+    j = nlohmann::json{
+        {"PN_DAT",  p.PN_DAT},
+        {"PN_FUN",  p.PN_FUN},
+        {"PN_EST",  p.PN_EST},
+        {"PN_ENC1", p.PN_ENC1},
+        {"PN_ENC2", p.PN_ENC2},
+        {"PN_ENC3", p.PN_ENC3},
+        {"PN_ENC4", p.PN_ENC4},
+        {"PN_FLC",  p.PN_FLC},
+        {"PN_FLP",  p.PN_FLP},
+        {"PN_FAC",  p.PN_FAC},
+        {"PN_PRX1", p.PN_PRX1},
+        {"PN_PRX2", p.PN_PRX2}
+    };
+}
+
+void from_json(const nlohmann::json& j, RemotaPN& p)
+{
+    p.PN_DAT  = j.value("PN_DAT",  0u);
+    p.PN_FUN  = j.value("PN_FUN",  0u);
+    p.PN_EST  = j.value("PN_EST",  0u);
+    p.PN_ENC1 = j.value("PN_ENC1", 0u);
+    p.PN_ENC2 = j.value("PN_ENC2", 0u);
+    p.PN_ENC3 = j.value("PN_ENC3", 0u);
+    p.PN_ENC4 = j.value("PN_ENC4", 0u);
+    p.PN_FLC  = j.value("PN_FLC",  0u);
+    p.PN_FLP  = j.value("PN_FLP",  0u);
+    p.PN_FAC  = j.value("PN_FAC",  0u);
+    p.PN_PRX1 = j.value("PN_PRX1", 0u);
+    p.PN_PRX2 = j.value("PN_PRX2", 0u);
 }

@@ -25,22 +25,23 @@ class ruta
 public:
     const std::string estacion;
     const TipoMovimiento tipo;
+    const bool ertms = false;
     const std::string id_inicio;
     const std::string id_destino;
     const std::string id;
     const std::string bloqueo_salida;
-    bool maniobra_compatible;
+    CompatibilidadManiobra maniobra_compatible;
     bool valid = false;
 
     bool anulacion_bloqueo_pendiente = false;
 protected:
     std::vector<std::pair<seccion_via*,Lado>> secciones;
+    std::map<seccion_via*, std::pair<int, int>> posicion_aparatos;
     std::set<seccion_via*> secciones_aseguradas;
     std::shared_ptr<timer> diferimetro_dai;
     std::shared_ptr<timer> diferimetro_dei;
     std::vector<std::pair<seccion_via*,Lado>> proximidad;
     std::set<std::string> ultimos_cvs_proximidad;
-    seccion_via *ultima_seccion_señal;
     señal_impl *señal_inicio;
     destino_ruta *destino;
     Lado lado;
@@ -58,14 +59,22 @@ protected:
     int64_t temporizador_dei;
 
     bool sucesion_automatica = false;
+    enum struct EstadoFAI
+    {
+        EnEspera,
+        Solicitud,
+        AperturaNoPosible,
+        AperturaNoPosibleReconocida,
+        Activo,
+        Cancelado
+    };
+    EstadoFAI estado_fai = EstadoFAI::EnEspera;
     bool fai = false;
-    bool fai_activo = false;
-    bool fai_lanzado = false;
-    bool fai_cancelado = false;
     bool fai_disparo_unico = false;
-    int64_t inicio_espera_fai = 0;
+    int64_t inicio_temporizacion_fai = 0;
     int64_t tiempo_espera_fai;
 
+    // Disolución completa de la ruta
     void disolver()
     {
         if (señal_inicio->ruta_activa == this) señal_inicio->ruta_activa = nullptr;
@@ -73,7 +82,6 @@ protected:
         formada = false;
         supervisada = false;
         ocupada = false;
-        fai_lanzado = false;
         clear_timer(diferimetro_dai);
         clear_timer(diferimetro_dei);
         diferimetro_dai = nullptr;
@@ -85,6 +93,7 @@ protected:
         secciones_aseguradas.clear();
         log(id, "disuelta");
     }
+    // Disolución parcial de la ruta hasta el primer CV ocupado
     void disolucion_parcial(bool anular_bloqueo=false)
     {
         if (!ocupada) {
@@ -93,7 +102,10 @@ protected:
             return;
         }
         if (señal_inicio->ruta_activa == this) señal_inicio->ruta_activa = nullptr;
-        fai_lanzado = false;
+        if (estado_fai == EstadoFAI::Activo) {
+            estado_fai = EstadoFAI::EnEspera;
+            inicio_temporizacion_fai = 0;
+        }
         clear_timer(diferimetro_dai);
         diferimetro_dai = nullptr;
         diferimetro_cancelado = false;
@@ -109,63 +121,7 @@ protected:
     }
 public:
     ruta(const std::string &estacion, const json &j);
-    bool establecer()
-    {
-        if (destino->bloqueo_destino || señal_inicio->bloqueo_señal) return false;
-        clear_timer(diferimetro_dai);
-        diferimetro_dai = nullptr;
-        if (mandada && !ocupada) {
-            señal_inicio->clear_request = true;
-            log(id, "re-mandada", LOG_DEBUG);
-            return true;
-        }
-        if (bloqueo_salida != "") {
-            bool bloqueo_receptor = bloqueo_act.estado == (lado_bloqueo == Lado::Par ? EstadoBloqueo::BloqueoImpar : EstadoBloqueo::BloqueoPar);
-            if (bloqueo_receptor) {
-                if (tipo == TipoMovimiento::Maniobra && maniobra_compatible) {
-                    seccion_via *sec = nullptr;
-                    seccion_via *sig = nullptr;
-                    Lado l;
-                    if (secciones.size() < 2) {
-                        sec = señal_inicio->seccion;
-                        l = lado;
-                        sig = sec->siguiente_seccion(señal_inicio->seccion_prev, l);
-                    } else {
-                        sec = secciones[secciones.size()-1].first;
-                        l = lado;
-                        sig = sec->siguiente_seccion(secciones[secciones.size()-2].first, l);
-                    }
-                    if (sig != nullptr && sig->get_ocupacion(sec, l) == EstadoCanton::Ocupado) return false;
-                } else {
-                    return false;
-                }
-            }
-            if (bloqueo_act.ruta[lado_bloqueo] != tipo && bloqueo_act.ruta[lado_bloqueo] != TipoMovimiento::Ninguno)
-                return false;
-        }
-        for (int i=0; i<secciones.size(); i++) {
-            auto *sec = secciones[i].first;
-            auto *prev = i>0 ? secciones[i-1].first : señal_inicio->seccion_prev;
-            if (sec->get_cv()->is_asegurada() && !sec->get_cv()->is_asegurada(this)) return false;
-            if (sec->is_bloqueo_seccion()) return false;
-            if (sec->get_ocupacion(prev, secciones[i].second) == EstadoCanton::Ocupado) return false;
-        }
-        log(id, "mandada", LOG_DEBUG);
-        clear_timer(diferimetro_dei);
-        diferimetro_dei = nullptr;
-        mandada = formada = true;
-        señal_inicio->clear_request = true;
-        señal_inicio->ruta_activa = this;
-        destino->ruta_activa = this;
-        for (int i=0; i<secciones.size(); i++) {
-            auto *sec = secciones[i].first;
-            auto *prev = i>0 ? secciones[i-1].first : señal_inicio->seccion_prev;
-            auto *next = i+1<secciones.size() ? secciones[i+1].first : nullptr;
-            secciones_aseguradas.insert(sec);
-            sec->asegurar(this, prev, next, secciones[i].second);
-        }
-        return true;
-    }
+    bool establecer();
     RemotaIMV get_estado_remota_inicio()
     {
         RemotaIMV r;
@@ -205,90 +161,13 @@ public:
         r.FMV_BD = destino->bloqueo_destino ? 1 : 0;
         return r;
     }
-    void update()
-    {
-        fai_activo = false;
-        bool aut_salida = true;
-        if (bloqueo_salida != "") {
-            aut_salida &= !bloqueo_act.cierre_señales[lado] && !bloqueo_act.prohibido[lado] && bloqueo_act.actc[lado] != ACTC::Denegada;
-        }
-        if (fai) {
-            bool proximidad_ocupada = false;
-            for (auto [sec, dir] : proximidad) {
-                auto e = sec->get_cv()->get_state();
-                if (e > EstadoCV::Prenormalizado && (e != (dir == Lado::Impar ? EstadoCV::OcupadoPar : EstadoCV::OcupadoImpar))) {
-                    proximidad_ocupada = true;
-                    break;
-                }
-            }
-            bool cv_anterior_ocupado = proximidad.size() > 0 && proximidad[0].first->get_cv()->get_state() > EstadoCV::Prenormalizado;
-            if (!cv_anterior_ocupado) inicio_espera_fai = 0;
-            if (aut_salida && proximidad_ocupada && get_milliseconds() - inicio_espera_fai > tiempo_espera_fai)
-                fai_activo = true;
-            else if ((!aut_salida || !proximidad_ocupada) && señal_inicio->ruta_activa == this && diferimetro_dai == nullptr && fai_lanzado)
-                dai(true);
-        }
-        if (fai_disparo_unico) {
-            if (señal_inicio->ruta_activa == this && señal_inicio->clear_request) {
-                fai_disparo_unico = false;
-                if (!fai && señal_inicio->ruta_fai == this) señal_inicio->ruta_fai = nullptr;
-            } else if (aut_salida) {
-                fai_activo = true;
-            }
-        }
-        if (!fai_activo && fai_cancelado) fai_cancelado = false;
-        if (!fai_activo && fai_lanzado) fai_lanzado = false;
-        if (fai_activo && !fai_cancelado && (señal_inicio->ruta_activa != this || diferimetro_dai != nullptr)) {
-            fai_lanzado = true;
-            establecer();
-        }
-        if (fai_activo && señal_inicio->ruta_activa == this && !señal_inicio->clear_request) {
-            señal_inicio->clear_request = true;
-        }
-        if (!mandada) return;
-        if (ocupada && !sucesion_automatica) {
-            if (tipo == TipoMovimiento::Maniobra && proximidad.size() > 0 && (proximidad[0].first->get_cv()->get_state() <= EstadoCV::Prenormalizado || proximidad[0].first->get_cv()->get_state() == (proximidad[0].second == Lado::Impar ? EstadoCV::OcupadoPar : EstadoCV::OcupadoImpar))) {
-                if (señal_inicio->ruta_activa == this) señal_inicio->ruta_activa = nullptr;
-            }
-            for (int i=0; i<secciones.size(); i++) {
-                if (secciones[i].first->get_cv()->get_state() <= EstadoCV::Prenormalizado) {
-                    bool liberar = false;
-                    if (i == 0) {
-                        if (señal_inicio->ruta_activa == nullptr || tipo == TipoMovimiento::Maniobra) liberar = true;
-                    } else if (!secciones[i-1].first->is_asegurada(this)) {
-                        liberar = true;
-                    }
-                    if (liberar) {
-                        secciones[i].first->liberar(this);
-                        secciones_aseguradas.erase(secciones[i].first);
-                        if (i == secciones.size() - 1) disolver();
-                    }
-                }
-            }
-            if (señal_inicio->ruta_activa != this && secciones.empty()) disolver();
-        }
-        if (ocupada && señal_inicio->ruta_activa == this) {
-            bool libre = true;
-            for (int i=0; i<secciones.size(); i++) {
-                if (secciones[i].first->get_cv()->get_state() > EstadoCV::Prenormalizado) {
-                    libre = false;
-                    break;
-                }
-            }
-            if (libre) {
-                ocupada = false;
-                supervisada = señal_inicio->get_state() != Aspecto::Parada;
-            }
-        }
-        if (formada && !supervisada && señal_inicio->get_state() != Aspecto::Parada) {
-            supervisada = true;
-            log(id, "supervisada");
-        }
-    }
+    void update();
+    // Disolución artificial de ruta
     bool dai(bool anular_bloqueo=false)
     {
         if (!mandada) return false;
         log(id, "dai", LOG_DEBUG);
+        // Si la señal no llegó a abrir, la disolución es inmediata
         if (!supervisada) {
             disolucion_parcial(anular_bloqueo);
             return true;
@@ -301,10 +180,16 @@ public:
                 break;
             }
         }
-        if (proximidad_libre && proximidad.size() > 0) {
+        // Si la proximidad está libre, la disolución es inmediata
+        // Si no hay secciones aseguradas por la ruta, ni un bloqueo tomado, no es necesario temporizar
+        if ((proximidad_libre && proximidad.size() > 0) || (secciones.size() == 0 && bloqueo_salida == "")) {
             disolucion_parcial(anular_bloqueo);
         } else if (diferimetro_dai == nullptr) {
             int64_t temporizador = temporizador_dai1;
+            // Temporización larga si se cumplen todas:
+            // - Existe movimiento con fin en la señal o es la señal de entrada desde un bloqueo
+            // - El aspecto de la señal condiciona señales anteriores
+            // - Está ocupada la proximidad más allá del circuito anterior a la señal
             if (tipo == TipoMovimiento::Itinerario && señal_inicio->condiciona_anteriores() && 
             (señal_inicio->tipo == TipoSeñal::Entrada || señal_inicio->tipo == TipoSeñal::PostePuntoProtegido || señal_inicio->ruta_fin != nullptr)
             && (proximidad.empty() || proximidad[0].first->get_cv()->get_state() <= EstadoCV::Prenormalizado)) {
@@ -319,18 +204,15 @@ public:
     }
     bool cancelar_fai()
     {
-        bool aceptado = false;
-        if (fai_disparo_unico) {
+        if (estado_fai != EstadoFAI::EnEspera && estado_fai != EstadoFAI::Cancelado) {
+            estado_fai = EstadoFAI::Cancelado;
             fai_disparo_unico = false;
-            if (!fai && señal_inicio->ruta_fai == this) señal_inicio->ruta_fai = nullptr;
-            aceptado = true;
+            return true;
         }
-        if (fai_lanzado && !fai_cancelado) {
-            fai_cancelado = true;
-            aceptado = true;
-        }
-        return aceptado;
+        return false;
     }
+    // Disolución de emergencia
+    // Temporización larga, disuelve secciones aseguradas aunque no estén libres
     bool dei()
     {
         if (!ocupada || !supervisada) return false;
@@ -356,28 +238,33 @@ public:
     {
         return diferimetro_dai != nullptr;
     }
-    seccion_via *get_ultima_seccion_señal()
+    const std::vector<std::pair<seccion_via*,Lado>> &get_secciones()
     {
-        return ultima_seccion_señal;
+        return secciones;
     }
     int get_estado_fai()
     {
-        if (fai_cancelado) return 2;
-        if (fai_activo && (señal_inicio->ruta_activa != this || señal_inicio->aspecto == Aspecto::Parada)) return 1;
-        return 0;
+        if (!fai && !fai_disparo_unico) return 0;
+        if (estado_fai == EstadoFAI::AperturaNoPosible || estado_fai == EstadoFAI::AperturaNoPosibleReconocida || estado_fai == EstadoFAI::Cancelado) return 3;
+        if (estado_fai == EstadoFAI::Solicitud) return 2;
+        return 1;
     }
 
     RespuestaMando mando(const std::string &inicio, const std::string &fin, const std::string &cmd)
     {
         if (inicio != id_inicio || fin != id_destino) return RespuestaMando::OrdenNoAplicable;
-        if ((cmd == "I" || cmd == "FAI" || cmd == "AFA" || cmd == "ID") && tipo != TipoMovimiento::Itinerario) return RespuestaMando::OrdenNoAplicable;
+        if ((cmd == "I" || cmd == "FAI" || cmd == "AFA" || cmd == "ID") && (tipo != TipoMovimiento::Itinerario || ertms)) return RespuestaMando::OrdenNoAplicable;
         if (cmd == "M" && tipo != TipoMovimiento::Maniobra) return RespuestaMando::OrdenNoAplicable;
-        if (cmd == "I") return establecer() ? RespuestaMando::Aceptado : RespuestaMando::OrdenRechazada;
-        else if (cmd == "M") return establecer() ? RespuestaMando::Aceptado : RespuestaMando::OrdenRechazada;
+        if (cmd == "R" && tipo != TipoMovimiento::Rebase) return RespuestaMando::OrdenNoAplicable;
+        if (cmd == "ER" && !ertms) return RespuestaMando::OrdenNoAplicable;
+        if (cmd == "I" || cmd == "ER" || cmd == "R" || cmd == "M") return establecer() ? RespuestaMando::Aceptado : RespuestaMando::OrdenRechazada;
         else if (cmd == "ID") {
-            if (!establecer() && !fai_disparo_unico && (señal_inicio->ruta_fai == nullptr || señal_inicio->ruta_fai == this)) {
+            if (establecer()) return RespuestaMando::Aceptado;
+            if (!fai_disparo_unico && (estado_fai == EstadoFAI::Cancelado || estado_fai == EstadoFAI::EnEspera)) {
                 fai_disparo_unico = true;
                 señal_inicio->ruta_fai = this;
+                estado_fai = EstadoFAI::Solicitud;
+                inicio_temporizacion_fai = get_milliseconds();
                 return RespuestaMando::Aceptado;
             }
         } else if (cmd == "FAI") {
@@ -400,14 +287,18 @@ public:
     void message_cv(const std::string &id, estado_cv ecv)
     {
         if (!mandada) return;
+        // Ocupación del primer CV de la ruta
         if (id == señal_inicio->seccion->get_cv()->id && ecv.evento && ecv.evento->ocupacion && ecv.evento->lado == lado) {
             if (!supervisada) {
+                // La ruta pasa a estar supervisada aunque la señal no haya llegado a abrir
                 supervisada = true;
                 log(this->id, "supervisada");
             }
             if (!ocupada) {
+                // Comprobación de si la ruta debe mantenerse enclavada por sucesión automática
                 sucesion_automatica = tipo == TipoMovimiento::Itinerario && señal_inicio->sucesion_automatica;
                 ocupada = true;
+                // Si la ruta se ocupa con diferímetro de disolución, se cancela la disolución
                 if (diferimetro_dai != nullptr) {
                     clear_timer(diferimetro_dai);
                     diferimetro_dai = nullptr;
@@ -417,9 +308,12 @@ public:
                     log(this->id, "ocupada");
                 }
             }
-            if (fai_lanzado) fai_lanzado = false;
-            inicio_espera_fai = get_milliseconds();
+            // Rearme de FAI
+            if (estado_fai == EstadoFAI::Activo) estado_fai = EstadoFAI::EnEspera;
+            // Impedir nueva activación de FAI hasta que transcurra cierto tiempo
+            if (estado_fai == EstadoFAI::EnEspera) inicio_temporizacion_fai = get_milliseconds();
 
+            // Con el paso de la circulación se cierra la señal, salvo en maniobras
             if (!sucesion_automatica && tipo != TipoMovimiento::Maniobra) señal_inicio->ruta_activa = nullptr;
         }
     }
@@ -427,6 +321,15 @@ public:
     {
         if (id != bloqueo_salida) return;
         bloqueo_act = eb;
+    }
+    void messsage_aguja(const std::string &id, estado_aguja estado)
+    {
+        for (auto &[sec, d] : proximidad) {
+            if (sec->id == id) {
+                construir_proximidad();
+                break;
+            }
+        }
     }
 protected:
     void construir_proximidad(seccion_via *inicio, seccion_via *next, Lado dir_fwd, std::vector<std::pair<seccion_via*, Lado>> &secciones)

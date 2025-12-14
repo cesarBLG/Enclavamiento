@@ -12,7 +12,9 @@ std::map<std::string, bloqueo*> bloqueos;
 std::set<ruta*> rutas;
 std::map<std::string, destino_ruta*> destinos_ruta;
 std::map<std::string, seccion_via*> secciones;
+std::map<std::string, aguja*> agujas;
 std::map<std::string, dependencia*> dependencias;
+std::map<std::string, pn_enclavado*> pns;
 parametros_predeterminados parametros;
 
 std::set<std::string> comandos_ruta = {"I","R","M","FAI","ID"};
@@ -20,10 +22,12 @@ std::set<std::string> comandos_señal = {"CS","CSEÑ","NPS","BS","ABS","DS","SA"
 std::set<std::string> comandos_destino = {"BDE","BD","ABDE","ABD","BDS","ABDS","DEI"};
 std::set<std::string> comandos_bloqueo = {"B","AB","CSB","NSB","PB","APB","NB","AS","AAS"};
 std::set<std::string> comandos_seccion = {"BV","BIV","ABV","DIV","FO","AFO"};
+std::set<std::string> comandos_aguja = {"MA","AN","AI","MAT","ATN","ATI","BA","ABA","BIA","DIA"};
 std::set<std::string> comandos_cv = {"BTV","ABTV","DTV","LC"};
 std::set<std::string> comandos_ignorar_mando = {"C", "TML", "TME", "CML", "RML", "ME"};
 std::set<std::string> comandos_ctc = {"C", "L", "AS", "AAS"};
 std::set<std::string> comandos_local = {"TML", "TME", "CML", "RML"};
+std::set<std::string> comandos_pn = {"APN", "CPN"};
 
 RespuestaMando mando(const std::vector<std::string> &ordenes, int me)
 {
@@ -63,6 +67,22 @@ RespuestaMando mando(const std::vector<std::string> &ordenes, int me)
         if (ordenes.size() == 3) {
             auto it = secciones.find(ordenes[1]+":"+ordenes[2]);
             if (it != secciones.end()) return it->second->mando(ordenes[0], me);
+        }
+    }
+    if (comandos_aguja.find(cmd)  != comandos_aguja.end()) {
+        if (ordenes.size() == 3) {
+            auto it = agujas.find(ordenes[1]+":"+ordenes[2]);
+            if (it != agujas.end()) {
+                auto resp = it->second->mando(ordenes[0], me);
+                if (resp == RespuestaMando::Aceptado) dependencias[ordenes[1]]->calcular_vinculacion_bloqueos();
+                return resp;
+            }
+        }
+    }
+    if (comandos_pn.find(cmd)  != comandos_pn.end()) {
+        if (ordenes.size() == 3) {
+            auto it = pns.find(ordenes[1]+":"+ordenes[2]);
+            if (it != pns.end()) return it->second->mando(ordenes[0]);
         }
     }
     return RespuestaMando::OrdenRechazada;
@@ -256,6 +276,13 @@ void handle_message(const std::string &topic, const std::string &payload)
         if (it != bloqueos.end()) it->second->message_colateral(json::parse(payload));
         return;
     }
+    std::regex comprobacionPNPattern(R"(^pn/([a-zA-Z0-9_-]+/[a-zA-Z0-9_'-]+)/comprobacion$)");
+    if (std::regex_match(topic, match, comprobacionPNPattern)) {
+        std::string id = id_from_mqtt(match[1]);
+        auto it = pns.find(id);
+        if (it != pns.end()) it->second->message_pn(payload == "true");
+        return;
+    }
 
     std::regex fecPattern(R"(^fec/([a-zA-Z0-9_-]+)$)");
     if (std::regex_match(topic, match, fecPattern)) {
@@ -284,7 +311,19 @@ void init_items_ordered(const json &j, std::string tipo)
         if (tipo == "Secciones") {
             for (auto &[id, jsec] : jdep["Secciones"].items()) {
                 std::string is = estacion+":"+id;
-                secciones[is] = new seccion_via(is, jsec);
+                if (jsec.contains("Tipo") && jsec["Tipo"] == "Aguja") {
+                    auto *ag = new aguja(is, jsec);
+                    secciones[is] = ag;
+                    agujas[is] = ag;
+                } else {
+                    secciones[is] = new seccion_via(is, jsec);
+                }
+            }
+        }
+        if (tipo == "PNs") {
+            for (auto &[id, jpn] : jdep["PNs"].items()) {
+                std::string ipn = estacion+":"+id;
+                pns[ipn] = new pn_enclavado(ipn, jpn);
             }
         }
         if (tipo == "Señales") {
@@ -332,6 +371,7 @@ void init_items(const json &j)
         }
         init_items_ordered(jdeps, "CVs");
         init_items_ordered(jdeps, "Secciones");
+        init_items_ordered(jdeps, "PNs");
         init_items_ordered(jdeps, "Señales");
         init_items_ordered(jdeps, "Bloqueos");
         init_items_ordered(jdeps, "DestinosRuta");
@@ -344,6 +384,7 @@ void init_items(const json &j)
         for (auto *ruta : kvp.second->rutas) {
             rutas.insert(ruta);
         }
+        kvp.second->calcular_vinculacion_bloqueos();
     }
 
     std::stringstream managed_topics;
@@ -356,6 +397,9 @@ void init_items(const json &j)
     for (auto &kvp : bloqueos) {
         managed_topics<<kvp.second->topic<<'\n';
         managed_topics<<kvp.second->topic_colateral<<'\n';
+    }
+    for (auto &kvp : pns) {
+        managed_topics<<kvp.second->topic<<'\n';
     }
     managed_topics<<"remota/"<<name<<'\n';
     send_message("desconexion/"+name, managed_topics.str(), 1, true);
@@ -381,6 +425,9 @@ void loop_items()
             kvp.second->send_state();
         }
         for (auto &kvp : dependencias) {
+            kvp.second->send_state();
+        }
+        for (auto &kvp : pns) {
             kvp.second->send_state();
         }
         remota_sendall();

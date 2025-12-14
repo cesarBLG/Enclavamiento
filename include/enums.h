@@ -24,8 +24,13 @@ enum struct Aspecto
 {
     Parada,
     RebaseAutorizado,
+    RebaseAutorizadoDestellos,
+    ParadaSelectiva,
+    ParadaSelectivaDestellos,
     ParadaDiferida,
     Precaucion,
+    AnuncioParada,
+    AnuncioPrecaucion,
     ViaLibre,
 };
 enum struct EstadoBloqueo
@@ -40,6 +45,14 @@ enum struct TipoMovimiento
     Ninguno,
     Itinerario,
     Maniobra,
+    Rebase,
+};
+enum struct CompatibilidadManiobra
+{
+    IncompatibleManiobra,
+    IncompatibleBloqueo,
+    IncompatibleItinerario,
+    Compatible,
 };
 enum struct TipoSeñal
 {
@@ -83,6 +96,12 @@ enum struct TipoBloqueo
     BLAD,
     BLAB,
 };
+enum struct TipoSeccion
+{
+    Lineal,
+    Cruzamiento,
+    Aguja
+};
 inline Lado opp_lado(Lado lado)
 {
     return lado == Lado::Par ? Lado::Impar : Lado::Par;
@@ -93,6 +112,7 @@ std::string to_string(Aspecto aspecto);
 std::string to_string(EstadoBloqueo estado);
 std::string to_string(EstadoCanton estado);
 std::string to_string(TipoMovimiento tipo);
+std::string to_string(CompatibilidadManiobra comp);
 std::string to_string(TipoSeñal tipo);
 std::string to_string(ACTC actc);
 std::string to_string(TipoBloqueo tipo);
@@ -108,6 +128,8 @@ void to_json(json &j, const EstadoCanton &estado);
 void from_json(const json &j, EstadoCanton &estado);
 void to_json(json &j, const TipoMovimiento &tipo);
 void from_json(const json &j, TipoMovimiento &tipo);
+void to_json(json &j, const CompatibilidadManiobra &comp);
+void from_json(const json &j, CompatibilidadManiobra &comp);
 void to_json(json &j, const TipoSeñal &tipo);
 void from_json(const json &j, TipoSeñal &tipo);
 void to_json(json &j, const Aspecto &asp);

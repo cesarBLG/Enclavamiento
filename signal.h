@@ -10,6 +10,7 @@ public:
     const std::string bloqueo_asociado;
     const Lado lado;
     const TipoSeñal tipo;
+    const bool señal_virtual=false;
     const int pin;
     seccion_via * const seccion;
     seccion_via * const seccion_prev;
@@ -38,8 +39,6 @@ protected:
     bool cierre_stick;
     bool cleared = false;
 
-    bool ruta_necesaria = true;
-
     bool me_pendiente = false;
 
     int64_t ultimo_paso_abierta;
@@ -47,6 +46,7 @@ protected:
 public:
     bool clear_request=false;
     ruta *ruta_activa=nullptr;
+    bool ruta_necesaria = true;
     ruta *ruta_fin=nullptr;
     ruta *ruta_fai=nullptr;
     bool bloqueo_señal = false;
@@ -63,12 +63,15 @@ public:
         if (id != seccion->get_cv()->id) return;
 
         paso_circulacion = false;
+        // Detección de paso de tren por la señal
         if (ev.evento && ev.evento->ocupacion && ev.evento->lado == lado && (ev.evento->cv_colateral == "" || seccion_prev == nullptr || ev.evento->cv_colateral == seccion_prev->get_cv()->id)) {
+            // Si la señal estaba cerrada, es un rebase de señal
             if (aspecto == Aspecto::Parada && get_milliseconds() - ultimo_paso_abierta > 30000) {
                 if (tipo != TipoSeñal::PostePuntoProtegido) {
                     rebasada = true;
                     log(this->id, "rebasada", LOG_WARNING);
                 }
+            // Si estaba abierta, es un paso normal de circulación
             } else {
                 ultimo_paso_abierta = get_milliseconds();
                 paso_circulacion = true;
@@ -83,6 +86,7 @@ public:
     void message_señal(estado_señal est) override {}
     RespuestaMando mando(const std::string &cmd, int me);
     std::pair<RemotaSIG, RemotaIMV> get_estado_remota();
+    // Indica si el aspecto de la señal condiciona el aspecto de señales anteriores
     bool condiciona_anteriores()
     {
         return aspectos_maximos_anterior_señal.size() > 1;

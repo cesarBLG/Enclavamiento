@@ -3,7 +3,7 @@
 #include <optional>
 struct estado_inicio_ruta
 {
-    TipoRuta tipo;
+    TipoMovimiento tipo;
     bool rebasada;
     bool ocupada_diferimetro;
     bool formada;
@@ -11,7 +11,7 @@ struct estado_inicio_ruta
 };
 struct estado_fin_ruta
 {
-    TipoRuta tipo;
+    TipoMovimiento tipo;
     bool supervisada;
     bool bloqueo_destino;
     bool me_pendiente;

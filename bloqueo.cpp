@@ -6,7 +6,7 @@ tipo(j.value("Tipo", TipoBloqueo::BAU)), bloqueo_emisor(lado == Lado::Impar ? Es
     estado_objetivo = EstadoBloqueo::Desbloqueo;
     me_pendiente = false;
     if (tipo != TipoBloqueo::BAU && tipo != TipoBloqueo::BLAU) sentido_preferente = j["SentidoPreferente"];
-    //if (tipo == TipoBloqueo::BAD || tipo == TipoBloqueo::BLAD) estado = estado_objetivo = sentido_preferente == Lado::Impar ? EstadoBloqueo::BloqueoImpar : EstadoBloqueo::BloqueoPar;
+    if (tipo == TipoBloqueo::BAD || tipo == TipoBloqueo::BLAD) estado_inicial = estado_objetivo = sentido_preferente == Lado::Impar ? EstadoBloqueo::BloqueoImpar : EstadoBloqueo::BloqueoPar;
     for (auto &cv : j["CVs"]) {
         cvs.push_back(secciones[cv]);
     }
@@ -27,24 +27,26 @@ void bloqueo::message_cv(const std::string &id, estado_cv ecv)
     bool liberar = false;
 
     bool cvEntrada = index == 0;
-    
-    bool cvEntradaPar = index == cvs.size()-1;
-    bool cvEntradaImpar = index == 0;
 
+    // Desbloqueo si se produce liberación del último CV de trayecto
     if (estado == bloqueo_receptor && index == 0 && est_cv <= EstadoCV::Prenormalizado
          && prev_est == (lado == Lado::Impar ? EstadoCV::OcupadoPar : EstadoCV::OcupadoImpar)
          && (!ecv.evento || ecv.evento->lado == lado))
             liberar = true;
     
-    if (ecv.evento && ecv.evento->lado == lado) {
+    // Detección de escape de material
+    if (ecv.evento && ecv.evento->lado == lado && estado != bloqueo_emisor) {
         bool ocupacion = ecv.evento->ocupacion;
         if (ocupacion && (ecv.estado_previo == EstadoCV::Libre || ecv.estado_previo == EstadoCV::Prenormalizado) && (ecv.estado != EstadoCV::Libre && ecv.estado != EstadoCV::Prenormalizado)) {
             bool esc=false;
+            // Ocupación del primer circuito de trayecto
             if (index == 0) {
-                if (ruta != TipoMovimiento::Maniobra) {
-                    esc = estado != bloqueo_emisor;
+                // No se produce escape si está establecida maniobra que incluye el CV de trayecto
+                if (ruta != TipoMovimiento::Maniobra || !cvs[index]->is_asegurada()) {
+                    esc = true;
                 }
             }
+            // Ocupación del siguiente circuito de trayecto por la maniobra
             if (index == 1) {
                 if (ruta == TipoMovimiento::Maniobra) {
                     esc = true;
@@ -70,8 +72,32 @@ void bloqueo::message_cv(const std::string &id, estado_cv ecv)
         estado_cantones_inicio[Lado::Par] = std::max(estado_cantones_inicio[Lado::Par], cvs[i]->get_cv()->get_ocupacion(Lado::Par));
     }*/
 
+    // No liberar bloqueos con sentido preferente
     if (liberar && tipo != TipoBloqueo::BAU && tipo != TipoBloqueo::BLAU && (estado == EstadoBloqueo::BloqueoImpar ? Lado::Impar : Lado::Par) == sentido_preferente) liberar = false;
 
-    if (liberar && desbloqueo_permitido()) estado_objetivo = EstadoBloqueo::Desbloqueo;
+    // Gestionar desbloqueo
+    // También se produce desbloqueo si el trayecto se libera con cierto retardo respecto al último paso
+    // de un tren por el último CV de trayecto (por fallo de detección)
+    if (liberar) {
+        if (desbloqueo_permitido()) estado_objetivo = EstadoBloqueo::Desbloqueo;
+        else timer_desbloqueo = get_milliseconds();
+    }
     update();
+}
+void bloqueo::vincular(const std::string &id, bool propagacion_completa)
+{
+    if (id == "") {
+        if (bloqueo_vinculado != nullptr) {
+            bloqueo_vinculado->bloqueo_vinculado = nullptr;
+            bloqueo_vinculado = nullptr;
+            this->propagacion_completa = false;
+            log(this->id, "desvinculado");
+        }
+        return;
+    }
+    this->propagacion_completa = propagacion_completa;
+    if (bloqueo_vinculado && bloqueo_vinculado->id == id) return;
+    bloqueo_vinculado = bloqueos[id];
+    bloqueo_vinculado->bloqueo_vinculado = this;
+    log(this->id, "vinculado a "+id);
 }

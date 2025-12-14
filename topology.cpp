@@ -1,7 +1,8 @@
 #include "topology.h"
 #include "ruta.h"
 #include "items.h"
-seccion_via::seccion_via(const std::string &id, const json &j) : id(id), bloqueo_asociado(j.value("Bloqueo", ""))
+#include "pn_enclavado.h"
+seccion_via::seccion_via(const std::string &id, const json &j, TipoSeccion tipo) : id(id), bloqueo_asociado(j.value("Bloqueo", "")), tipo(tipo)
 {
     active_outs[Lado::Impar][0] = 0;
     active_outs[Lado::Par][0] = 0;
@@ -13,6 +14,14 @@ seccion_via::seccion_via(const std::string &id, const json &j) : id(id), bloqueo
     }
     trayecto = j.value("Trayecto", bloqueo_asociado != "");
 }
+void seccion_via::asegurar(ruta *ruta, int in, int out, Lado dir)
+{
+    if (ruta_asegurada != nullptr || ruta == nullptr) return;
+    ruta_asegurada = ruta;
+    route_outs[dir] = out;
+    route_outs[opp_lado(dir)] = in;
+    remota_cambio_elemento(ElementoRemota::CV, cv_seccion->id);
+}
 void seccion_via::asegurar(ruta *ruta, seccion_via *prev, seccion_via *next, Lado dir)
 {
     if (ruta_asegurada != nullptr || ruta == nullptr) return;
@@ -23,6 +32,17 @@ void seccion_via::asegurar(ruta *ruta, seccion_via *prev, seccion_via *next, Lad
     route_outs[dir] = out;
     route_outs[opp_lado(dir)] = in;
     remota_cambio_elemento(ElementoRemota::CV, cv_seccion->id);
+}
+void seccion_via::liberar(ruta *ruta)
+{
+    if (ruta_asegurada == ruta) {
+        ruta_asegurada = nullptr;
+        route_outs = {-1, -1};
+        for (auto *pn : pns) {
+            pn->update();
+        }
+        remota_cambio_elemento(ElementoRemota::CV, cv_seccion->id);
+    }
 }
 TipoMovimiento seccion_via::get_tipo_movimiento()
 {
@@ -71,6 +91,11 @@ void seccion_via::message_cv(const std::string &id, estado_cv ev)
             cv_seccion->ocupacion_intempestiva = true;
         }
     }
+
+    for (auto *pn : pns) {
+        pn->message_cv(ev);
+    }
+
     remota_cambio_elemento(ElementoRemota::CV, cv_seccion->id);
 }
 EstadoCanton seccion_via::get_ocupacion(seccion_via* prev, Lado dir)
@@ -88,12 +113,13 @@ señal *seccion_via::señal_inicio(Lado lado, int pin)
     if (it != señales[lado].end()) return it->second;
     return nullptr;
 }
-seccion_via* seccion_via::siguiente_seccion(seccion_via *prev, Lado &dir)
+seccion_via* seccion_via::siguiente_seccion(seccion_via *prev, Lado &dir, bool usar_ruta_asegurada)
 {
     int in = get_in(prev, dir);
     if (in < 0) return nullptr;
-    int out = active_outs[dir][in];
-    if (out < 0) out = route_outs[dir];
+    int out;
+    if (usar_ruta_asegurada) out = route_outs[dir];
+    else out = active_outs[dir][in];
     if (out < 0 || siguientes_secciones[dir].empty()) return nullptr;
     auto p = siguientes_secciones[dir][out];
     if (p.invertir_paridad) dir = opp_lado(dir);
@@ -150,6 +176,14 @@ int seccion_via::get_out(seccion_via* next, Lado dir)
         }
     }
     return -1;
+}
+
+aguja::aguja(const std::string &id, const json &j) : seccion_via(id, j, TipoSeccion::Aguja), lado(j["Lado"])
+{
+    if (j.contains("SecciónPunta")) siguientes_secciones[opp_lado(lado)] = std::vector<conexion>({j["SecciónPunta"].get<conexion>()});
+    if (j.contains("SeccionesTalón")) siguientes_secciones[lado] = j["SeccionesTalón"];
+    talonable = PosicionAguja::Normal;
+    update();
 }
 void from_json(const json &j, seccion_via::conexion &conex)
 {

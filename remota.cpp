@@ -113,6 +113,13 @@ void update_remota()
             push(j, comp, r);
         }
     }
+    for (auto &[id, pn] : pns) {
+        std::pair<ElementoRemota,std::string> comp(ElementoRemota::PN, id);
+        if (sendall || update_components.find(comp) != update_components.end()) {
+            auto r = json(pn->get_estado_remota());
+            push(j, comp, r);
+        }
+    }
     update_components.clear();
     if (!j.empty()) send_remota(sendall ? "EstadoCompleto" : "CambioEstado", j);
     sendall = false;

@@ -17,6 +17,7 @@ struct dependencia
     {
         std::map<std::string, ruta*> movimiento_bloqueos;
         std::set<std::string> anular_bloqueos;
+        // Para cada bloqueo de salida, indicar el itinerario o maniobra establecido
         for (auto *ruta : rutas) {
             ruta->update();
             if (ruta->is_mandada()) {
@@ -29,12 +30,13 @@ struct dependencia
         for (auto &[id, bloq] : bloqueos) {
             auto it = movimiento_bloqueos.find(id);
             if (it == movimiento_bloqueos.end()) {
-                bloq->set_ruta(TipoMovimiento::Ninguno, false, anular_bloqueos.find(id) != anular_bloqueos.end());
+                bloq->set_ruta(TipoMovimiento::Ninguno, CompatibilidadManiobra::IncompatibleBloqueo, anular_bloqueos.find(id) != anular_bloqueos.end());
             } else {
                 bloq->set_ruta(it->second->tipo, it->second->maniobra_compatible, false);
             }
         }
     }
+    void calcular_vinculacion_bloqueos();
     void send_state()
     {
         send_message("mando/"+id+"/state", json(mando_actual).dump());

@@ -19,7 +19,7 @@ RemotaCV cv::get_estado_remota()
     r.CV_OCUP_TIPO = ocupacion_intempestiva ? 1 : 0;
     if (estado > EstadoCV::Prenormalizado) r.CV_EST = 3;
     else if (tipo == TipoMovimiento::Maniobra) r.CV_EST = 2;
-    else if (tipo == TipoMovimiento::Itinerario) r.CV_EST = 1;
+    else if (tipo == TipoMovimiento::Itinerario || tipo == TipoMovimiento::Rebase) r.CV_EST = 1;
     else if (estado == EstadoCV::Prenormalizado) r.CV_EST = 3;
     else r.CV_EST = 0;
     r.CV_DES = 0;

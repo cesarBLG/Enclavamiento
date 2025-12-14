@@ -3,7 +3,7 @@ project (Enclavamiento)
 set(CMAKE_CXX_STANDARD 17)
 
 set(SOURCES main.cpp mqtt.cpp log.cpp items.cpp cv.cpp bloqueo.cpp signal.cpp
-    ruta.cpp topology.cpp remota.cpp dependencia.cpp
+    ruta.cpp topology.cpp remota.cpp dependencia.cpp pn_enclavado.cpp
     serialization.cpp serialization_remota.cpp )
 
 add_executable(enclavamiento ${SOURCES})

@@ -33,8 +33,13 @@ std::string to_string(Aspecto aspecto)
     switch(aspecto) {
         case Aspecto::Parada: return "Parada";
         case Aspecto::RebaseAutorizado: return "RebaseAutorizado";
+        case Aspecto::RebaseAutorizadoDestellos: return "RebaseAutorizadoDestellos";
         case Aspecto::ParadaDiferida: return "ParadaDiferida";
+        case Aspecto::ParadaSelectiva: return "ParadaSelectiva";
+        case Aspecto::ParadaSelectivaDestellos: return "ParadaSelectivaDestellos";
         case Aspecto::Precaucion: return "Precaución";
+        case Aspecto::AnuncioParada: return "AnuncioParada";
+        case Aspecto::AnuncioPrecaucion: return "AnuncioPrecaución";
         case Aspecto::ViaLibre: return "VíaLibre";
     }
     return "";
@@ -55,6 +60,17 @@ std::string to_string(TipoMovimiento tipo)
         case TipoMovimiento::Ninguno: return "Ninguno";
         case TipoMovimiento::Itinerario: return "Itinerario";
         case TipoMovimiento::Maniobra: return "Maniobra";
+        case TipoMovimiento::Rebase: return "Rebase";
+    }
+    return "";
+}
+std::string to_string(CompatibilidadManiobra comp)
+{
+    switch(comp) {
+        case CompatibilidadManiobra::Compatible: return "Compatible";
+        case CompatibilidadManiobra::IncompatibleBloqueo: return "IncompatibleBloqueo";
+        case CompatibilidadManiobra::IncompatibleItinerario: return "IncompatibleItinerario";
+        case CompatibilidadManiobra::IncompatibleManiobra: return "IncompatibleManiobra";
     }
     return "";
 }
@@ -142,9 +158,14 @@ void to_json(json &j, const Aspecto &asp)
 void from_json(const json &j, Aspecto &asp)
 {
     if (j == "VíaLibre") asp = Aspecto::ViaLibre;
-    else if (j == "RebaseAutorizado") asp = Aspecto::RebaseAutorizado;
+    else if (j == "AnuncioPrecaución") asp = Aspecto::AnuncioPrecaucion;
+    else if (j == "AnuncioParada") asp = Aspecto::AnuncioParada;
     else if (j == "Precaución") asp = Aspecto::Precaucion;
+    else if (j == "ParadaSelectivaDestellos") asp = Aspecto::ParadaSelectivaDestellos;
+    else if (j == "ParadaSelectiva") asp = Aspecto::ParadaSelectiva;
     else if (j == "ParadaDiferida") asp = Aspecto::ParadaDiferida;
+    else if (j == "RebaseAutorizadoDestellos") asp = Aspecto::RebaseAutorizadoDestellos;
+    else if (j == "RebaseAutorizado") asp = Aspecto::RebaseAutorizado;
     else asp = Aspecto::Parada;
 }
 void to_json(json &j, const TipoMovimiento &tipo)
@@ -156,6 +177,18 @@ void from_json(const json &j, TipoMovimiento &tipo)
     if (j == "Ninguno") tipo = TipoMovimiento::Ninguno;
     else if (j == "Itinerario") tipo = TipoMovimiento::Itinerario;
     else if (j == "Maniobra") tipo = TipoMovimiento::Maniobra;
+    else if (j == "Rebase") tipo = TipoMovimiento::Rebase;
+}
+void to_json(json &j, const CompatibilidadManiobra &comp)
+{
+    j = to_string(comp);
+}
+void from_json(const json &j, CompatibilidadManiobra &comp)
+{
+    if (j == "IncompatibleManiobra") comp = CompatibilidadManiobra::IncompatibleManiobra;
+    else if (j == "IncompatibleBloqueo") comp = CompatibilidadManiobra::IncompatibleBloqueo;
+    else if (j == "IncompatibleManiobra") comp = CompatibilidadManiobra::IncompatibleManiobra;
+    else if (j == "Compatible") comp = CompatibilidadManiobra::Compatible;
 }
 void to_json(json &j, const TipoSeñal &tipo)
 {
@@ -275,6 +308,7 @@ void to_json(json &j, const estado_bloqueo_lado &estado)
     j["ManiobraCompatible"] = estado.maniobra_compatible;
     j["MandoEstación"] = estado.mando_estacion;
     j["NormalizarEscape"] = estado.normalizar_escape;
+    j["BloqueoSiguiente"] = estado.bloqueo_siguiente;
 }
 void from_json(const json &j, estado_bloqueo_lado &estado)
 {
@@ -293,6 +327,7 @@ void from_json(const json &j, estado_bloqueo_lado &estado)
     estado.maniobra_compatible = j["ManiobraCompatible"];
     estado.mando_estacion = j["MandoEstación"];
     estado.normalizar_escape = j.value("NormalizarEscape", false);
+    estado.bloqueo_siguiente = j["BloqueoSiguiente"];
 }
 void to_json(json &j, const estado_mando &estado)
 {
@@ -333,6 +368,7 @@ void from_json(const json &j, parametros_predeterminados &params)
     params.diferimetro_prenormalizacion_cv_tren = j.value("PrenormalizaciónCVTren", 20) * 1000;
     params.tiempo_espera_fai = j.value("EspaciadoFAI", 20) * 1000;
     params.fraccion_ejes_prenormalizacion = j.value("FracciónEjesPrenormalización", 0.5);
+    params.deslizamiento_bloqueo = j.value("DeslizamientoBloqueo", false);
 }
 void to_json(json &j, const TipoBloqueo &tipo)
 {
