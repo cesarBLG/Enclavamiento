@@ -5,4 +5,5 @@
 #include "estado_mando.h"
 #include "estado_cv.h"
 #include "estado_señal.h"
+#include "estado_ruta.h"
 #include "parametros.h"

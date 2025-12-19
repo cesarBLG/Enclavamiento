@@ -113,7 +113,7 @@ public:
         clear_timer(timer_liberacion);
         timer_liberacion = nullptr;
         json msg(*((estado_cv*)this));
-        send_message(topic, msg.dump(), evento ? 2 : 1);
+        send_message(topic, msg.dump());
 
         evento = {};
         estado_previo = estado;

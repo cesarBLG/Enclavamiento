@@ -50,9 +50,9 @@ public:
             estado_completo.ruta[l] = e.ruta;
         }
         json j = *((estado_bloqueo_lado*)this);
-        send_message(topic_colateral, j.dump(), 1);
+        send_message(topic_colateral, j.dump());
         j = estado_completo;
-        send_message(topic, j.dump(), 1);
+        send_message(topic, j.dump());
         remota_cambio_elemento(ElementoRemota::BLQ, id);
     }
     bool bloqueo_permitido(bool propio)

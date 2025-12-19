@@ -69,6 +69,7 @@ public:
     }
     TipoMovimiento get_tipo_movimiento();
     bool is_bloqueo_seccion() { return bloqueo_seccion; }
+    bool is_me_pendiente() { return me_pendiente; }
     bool is_trayecto() { return trayecto; }
     virtual void message_cv(const std::string &id, estado_cv ev);
     void message_bloqueo(const std::string &id, estado_bloqueo eb)

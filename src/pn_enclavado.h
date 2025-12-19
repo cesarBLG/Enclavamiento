@@ -72,6 +72,7 @@ public:
         if (this->protegido == protegido) return;
         this->protegido = protegido;
         if (!protegido && mando_cierre) perdida_comprobacion = true;
+        if (perdida_comprobacion && protegido) perdida_comprobacion = false;
         log(id, protegido ? "protegido" : "sin proteccion");
         update();
     }
@@ -117,6 +118,6 @@ public:
     }
     bool is_enclavado()
     {
-        return (protegido || perdida_comprobacion) && cierre_ruta;
+        return protegido && cierre_ruta;
     }
 };

@@ -23,7 +23,7 @@ void send_remota(std::string tipo, const json &msg)
     json j;
     j["Tipo"] = tipo;
     j["Mensaje"] = msg;
-    send_message("remota/"+name, j.dump(), 0);
+    send_message("remota/"+name, j.dump());
 }
 void remota_sendall()
 {

@@ -20,7 +20,6 @@ public:
     {
         return aspecto;
     }
-    bool is_rebasada() { return rebasada; }
     virtual void message_señal(estado_señal est)
     {
         *((estado_señal*)this) = est;
@@ -40,6 +39,7 @@ protected:
     bool cleared = false;
 
     bool me_pendiente = false;
+    bool rebasada;
 
     int64_t ultimo_paso_abierta;
     bool paso_circulacion = false;
@@ -54,7 +54,7 @@ public:
     señal_impl(const std::string &estacion, const json &j);
     void send_state()
     {
-        send_message(topic, json(*(estado_señal*)this).dump(), 1);
+        send_message(topic, json(*(estado_señal*)this).dump());
     }
     void determinar_aspecto();
     void update();
@@ -86,6 +86,7 @@ public:
     void message_señal(estado_señal est) override {}
     RespuestaMando mando(const std::string &cmd, int me);
     std::pair<RemotaSIG, RemotaIMV> get_estado_remota();
+    bool is_rebasada() { return rebasada; }
     // Indica si el aspecto de la señal condiciona el aspecto de señales anteriores
     bool condiciona_anteriores()
     {

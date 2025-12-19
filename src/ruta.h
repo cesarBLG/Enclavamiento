@@ -59,15 +59,6 @@ protected:
     int64_t temporizador_dei;
 
     bool sucesion_automatica = false;
-    enum struct EstadoFAI
-    {
-        EnEspera,
-        Solicitud,
-        AperturaNoPosible,
-        AperturaNoPosibleReconocida,
-        Activo,
-        Cancelado
-    };
     EstadoFAI estado_fai = EstadoFAI::EnEspera;
     bool fai = false;
     bool fai_disparo_unico = false;
@@ -286,6 +277,13 @@ public:
 
     void message_cv(const std::string &id, estado_cv ecv)
     {
+        if (estado_fai == EstadoFAI::EnEspera) {
+            for (auto &[s, l] : proximidad) {
+                if (id == s->get_cv()->id && ecv.evento && ecv.evento->ocupacion && ecv.evento->lado == l) {
+                    inicio_temporizacion_fai = 0;
+                }
+            }
+        }
         if (!mandada) return;
         // Ocupación del primer CV de la ruta
         if (id == señal_inicio->seccion->get_cv()->id && ecv.evento && ecv.evento->ocupacion && ecv.evento->lado == lado) {

@@ -6,14 +6,7 @@ struct estado_mando
     std::string puesto;
     std::optional<std::string> cedido;
     bool emergencia;
-    bool operator==(const estado_mando &o) const
-    {
-        return central == o.central && puesto == o.puesto && cedido == o.cedido && emergencia == o.emergencia;
-    }
-    bool operator!=(const estado_mando &o) const
-    {
-        return !(*this == o);
-    }
+    bool operator<=>(const estado_mando &o) const = default;
 };
 #ifndef WITHOUT_JSON
 #include "json.h"

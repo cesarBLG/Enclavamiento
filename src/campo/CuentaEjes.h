@@ -36,9 +36,9 @@ public:
   }
   void addSecuencia(bool b) {
     if (b && pinA < 0) {
-      client->publish(topic.c_str(), "Reverse", 2);
+      client->publish(topic.c_str(), "Reverse");
     } else if (!b && pinB < 0) {
-      client->publish(topic.c_str(), "Nominal", 2);
+      client->publish(topic.c_str(), "Nominal");
     } else {
       tren = true;
       ultimaActivacion = millis();
@@ -133,10 +133,10 @@ public:
     if (dir < 0) dir = dirTren;
     if (dir < 0) dir = getDirection();
     if (dir < 0) {
-      client->publish(topic.c_str(), "Error", 1);
+      client->publish(topic.c_str(), "Error");
     } else {
       int num = countAxles(dir == 0);
-      client->publish(topic.c_str(), ((dir == 1 ? "Nominal:" : "Reverse:")+String(num)).c_str(), 2);
+      client->publish(topic.c_str(), ((dir == 1 ? "Nominal:" : "Reverse:")+String(num)).c_str());
     }
     tren = false;
     eventBuffer.clear();

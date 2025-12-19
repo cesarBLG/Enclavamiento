@@ -10,7 +10,7 @@ void exit_mqtt();
 
 extern std::string name;
 
-void send_message(const std::string &topic, const std::string &payload, int qos=1, bool retain=false);
+void send_message(const std::string &topic, const std::string &payload, int qos=0, bool retain=false);
 void handle_message(const std::string &topic, const std::string &payload);
 std::string id_to_mqtt(std::string id);
 std::string id_from_mqtt(std::string id);

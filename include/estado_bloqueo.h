@@ -16,6 +16,7 @@ struct estado_bloqueo
     lados<TipoMovimiento> ruta;
     lados<CompatibilidadManiobra> maniobra_compatible;
     lados<estado_mando> mando_estacion;
+    bool operator<=>(const estado_bloqueo &o) const = default;
 };
 struct estado_bloqueo_lado
 {
@@ -31,10 +32,7 @@ struct estado_bloqueo_lado
     EstadoBloqueo estado_objetivo=EstadoBloqueo::SinDatos;
     bool normalizar_escape;
     bool bloqueo_siguiente = false;
-    bool operator==(const estado_bloqueo_lado &o) const
-    {
-        return estado_cvs == o.estado_cvs && prohibido == o.prohibido && escape == o.escape && actc == o.actc && cierre_señales == o.cierre_señales && ruta == o.ruta && maniobra_compatible == o.maniobra_compatible && mando_estacion == o.mando_estacion && estado == o.estado && estado_objetivo == o.estado_objetivo && normalizar_escape == o.normalizar_escape && bloqueo_siguiente == o.bloqueo_siguiente;
-    }
+    bool operator<=>(const estado_bloqueo_lado &o) const = default;
 };
 #ifndef WITHOUT_JSON
 #include "json.h"

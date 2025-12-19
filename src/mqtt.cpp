@@ -12,20 +12,21 @@ std::string name;
 
 std::map<std::string, std::vector<std::string>> handled_topics;
 bool connected = false;
+bool gestor_conectado = true;
 void on_connect(struct mosquitto *mosq, void *userdata, int rc)
 {
     if (rc == 0) {
         log("mqtt", "connected", LOG_DEBUG);
         connected = true;
-        mosquitto_subscribe(mosq, nullptr, "desconexion", 1);
-        mosquitto_subscribe(mosq, nullptr, "desconexion/+", 1);
-        mosquitto_subscribe(mosq, nullptr, "mando/+", 2);
-        mosquitto_subscribe(mosq, nullptr, "cejes/+/+/event", 2);
-        mosquitto_subscribe(mosq, nullptr, "cv/+/+/state", 2);
-        mosquitto_subscribe(mosq, nullptr, "bloqueo/+/+/state", 1);
-        mosquitto_subscribe(mosq, nullptr, "bloqueo/+/+/colateral", 1);
-        mosquitto_subscribe(mosq, nullptr, "signal/+/+/state", 1);
-        mosquitto_subscribe(mosq, nullptr, "pn/+/+/comprobacion", 1);
+        mosquitto_subscribe(mosq, nullptr, "gestor_conexion", 0);
+        mosquitto_subscribe(mosq, nullptr, "desconexion/+", 0);
+        mosquitto_subscribe(mosq, nullptr, "mando/+", 0);
+        mosquitto_subscribe(mosq, nullptr, "cejes/+/+/event", 0);
+        mosquitto_subscribe(mosq, nullptr, "cv/+/+/state", 0);
+        mosquitto_subscribe(mosq, nullptr, "bloqueo/+/+/state", 0);
+        mosquitto_subscribe(mosq, nullptr, "bloqueo/+/+/colateral", 0);
+        mosquitto_subscribe(mosq, nullptr, "signal/+/+/state", 0);
+        mosquitto_subscribe(mosq, nullptr, "pn/+/+/comprobacion", 0);
         mosquitto_subscribe(mosq, nullptr, "fec/+", 0);
     } else {
         log("mqtt", "connection failed", LOG_DEBUG);
@@ -41,16 +42,26 @@ void on_message(struct mosquitto *mosq, void *obj, const struct mosquitto_messag
 {
     std::string topic(message->topic);
     std::string payload((const char*)message->payload, message->payloadlen);
-    if (topic == "desconexion") {
+    /*if (topic == "desconexion") {
         auto &tops = handled_topics[payload];
         for (auto &t : tops) {
-            //mosquitto_publish(mosq, nullptr, t.c_str(), 13, "\"desconexion\"", 1, false);
             handle_message(t, "\"desconexion\"");
+        }*/
+    if (topic == "gestor_conexion") {
+        gestor_conectado = payload == "on";
+        if (!gestor_conectado)
+        {
+            for (auto &kvp : handled_topics) {
+                for (const auto &t : kvp.second) {
+                    if (t == "") continue;
+                    handle_message(t, "\"desconexion\"");
+                }
+            }
         }
     } else if (topic.size() > 12 && topic.substr(0, 11) == "desconexion") {
         std::string cl = topic.substr(12);
         handled_topics[cl] = split(payload, '\n');
-    } else {
+    } else if (gestor_conectado) {
         handle_message(topic, payload);
     }
 }
@@ -89,7 +100,7 @@ void init_mqtt(const json &j)
     mosq = mosquitto_new(name.c_str(), true, nullptr);
     mosquitto_connect_callback_set(mosq, on_connect);
 
-    mosquitto_will_set(mosq, "desconexion", name.size(), name.c_str(), 1, false);
+    mosquitto_will_set(mosq, "desconexion", name.size(), name.c_str(), 0, false);
     mosquitto_connect(mosq, j["Host"].get<std::string>().c_str(), 1883, 15);
 
     mosquitto_message_callback_set(mosq, on_message);

@@ -47,6 +47,15 @@ enum struct TipoMovimiento
     Maniobra,
     Rebase,
 };
+enum struct EstadoFAI
+{
+    EnEspera,
+    Solicitud,
+    AperturaNoPosible,
+    AperturaNoPosibleReconocida,
+    Activo,
+    Cancelado
+};
 enum struct CompatibilidadManiobra
 {
     IncompatibleManiobra,

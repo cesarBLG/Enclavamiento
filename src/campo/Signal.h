@@ -7,7 +7,7 @@ class Signal : public mqtt_device
 public:
     const char *id;
     std::string topic;
-    Signal(const char *id, mqtt_client *client, int pinRojo, int pinVerde) : mqtt_device(client), pinRojo(pinRojo), pinVerde(pinVerde), estado({Aspecto::Parada, Aspecto::Parada, false, false}), id(id)
+    Signal(const char *id, mqtt_client *client, int pinRojo, int pinVerde) : mqtt_device(client), pinRojo(pinRojo), pinVerde(pinVerde), estado({Aspecto::Parada, Aspecto::Parada, false}), id(id)
     {
       topic = std::string("signal/")+id+"/state";
     }
@@ -22,7 +22,7 @@ public:
         pinMode(pinVerde, OUTPUT);
         digitalWrite(pinRojo, HIGH);
         digitalWrite(pinVerde, HIGH);
-        client->subscribe(topic.c_str(), 1);
+        client->subscribe(topic.c_str());
     }
     void loop() override
     {

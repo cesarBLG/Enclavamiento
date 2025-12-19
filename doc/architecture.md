@@ -18,11 +18,6 @@ de detección en campo (contadores de ejes). El funcionamiento es el siguiente:
   de. al menos, el 50% de los ejes de cada tren.
 - Se establece un temporizador que prenormaliza de forma automática e incondicional el cantón
 
-Además, el operador puede efectuar una serie de mandos sobre el CV, de acuerdo con la normativa de referencia:
-- LC: liberar (prenormalizar cantón)
-- BTV: bloqueo de CV de trayecto
-- DTV: anular bloqueo de CV de trayecto
-
 Cada CV debe estar gestionado por un único enclavamiento, que deberá crear una clase *cv_impl*
 por cada CV que gestione. El resto de enclavamientos podrán acceder al estado de dicho CV usando
 la clase *cv*.
@@ -47,10 +42,6 @@ La sección de vía asigna un pin de salida para cada pin de entrada. Algunos ej
 Las rutas permiten reservar una sección de vía para el paso de un tren, asegurando que no se establezcan
 movimientos incompatibles.
 
-Mandos aceptados:
-- BIV: impedir establecimiento de movimientos por la sección
-- DIV: permitir movimientos por la sección
-
 Señal
 -----
 
@@ -74,17 +65,6 @@ su aspecto se determina teniendo en cuenta el aspecto más restrictivo entre:
   así como el aspecto máximo que puede indicar la señal.
 - El aspecto máximo permitido por la señal siguiente. Por ejemplo, una señal en parada puede
   ordenar que la señal anterior muestre anuncio de parada.
-
-Mandos aceptados:
-- BS: bloqueo de señal, impedir establecimiento de rutas con origen en la señal
-- ABS: anular bloqueo de señal
-- DAI: disolución artificial de un itinerario con origen en la señal
-- DAB: DAI con anulación de bloqueo emisor
-- SA: establecer sucesión automática
-- ASA: anular sucesión automática
-- AFA: anular FAI
-- CS: cierre de señal
-- NPS (solo señales de trayecto): normalizar señal
 
 Ruta
 ----
@@ -117,18 +97,8 @@ Los estados de una ruta pueden ser:
 - Formada: todos los elementos de la ruta están enclavados en su posición
 - Supervisada: la señal de salida ha abierto, o una circulación ha rebasado la señal
 
-Mandos:
-- I: movimiento de itinerario
-- R: movimiento de rebase
-- M: maniobra
-- ID: itinerario con formación diferida, establecer en cuanto se cumplan las condiciones
-- FAI: establecer FAI
-
 El origen de la rutas siempre es una señal. El destino puede ser la estación colateral, otra
-señal o un final de vía. El destino de ruta acepta los siguientes mandos:
-- BD: bloqueo de destino, impedir la formación de itinerarios con dicho destino
-- ABD: anular bloqueo de destino
-- DEI: establecer DEI para ruta establecida con dicho destino
+señal o un final de vía.
 
 Bloqueo
 -------
@@ -150,30 +120,13 @@ ir a B y viceversa. Con esta funcionalidad, los bloqueos A y B actúan como un �
 dos estaciones colaterales, realizándose la comunicación entre ambas a través de la estación donde
 se produce la vinculación.
 
-Mandos:
-- B: tomar bloqueo
-- AB: anular bloqueo y escape de material
-- CSB: cierre de señales de bloqueo desde la estación receptora
-- NSB: normalizar cierre de señales
-- AS: autorización de salida al CTC. Permite la apertura de la señal de salida de la estación colateral
-- AAS: anular autorización de salida al CTC. No permite la apertura de la señal de salida colateral
-- PB: prohibir a la estación colateral la toma del bloqueo
-- APB: anular prohibir bloqueo
-
 Dependencia
 -----------
 Representa cada zona de mando controlada por el enclavamiento. El mando puede ser local o central (CTC).
 El CTC puede tomar el mando en cualquier momento, los puestos locales solo si lo cede el CTC o por
 emergencia. Solo se aceptan las órdenes del puesto de operaciones que tiene el mando.
 
-Mandos:
-- C: toma de mando por el CTC
-- L: ceder el mando del CTC al puesto local
-- TML: toma de mando local
-- TME: toma de mando local por emergencia
-- RML: ceder mando de un puesto local a otro
-- CML: toma de mando local (sin autorización) desde un puesto local de mayor rango
-- ME: mando especial. Permite confirmar la ejecución de órdenes no habituales con afectación a la seguridad.
+Además, la clase *dependencia* gestiona la relación entre bloqueos y movimientos en la estación
 
 Paso a nivel (PN)
 -----------------

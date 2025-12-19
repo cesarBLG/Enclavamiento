@@ -119,9 +119,9 @@ class mqtt_client
           }
           std::string desconex("desconexion/");
           desconex += client_id;
-          esp_mqtt_client_enqueue(mqtt, desconex.c_str(), own_topics.c_str(), 0, 1, 1, false);
+          esp_mqtt_client_enqueue(mqtt, desconex.c_str(), own_topics.c_str(), 0, 0, 1, true);
         }
-        esp_mqtt_client_subscribe_single(mqtt, "gestor_conexion", 1);
+        esp_mqtt_client_subscribe_single(mqtt, "gestor_conexion", 0);
         break;
       case MQTT_EVENT_DISCONNECTED:
         connected = false;
@@ -175,17 +175,17 @@ class mqtt_client
   {
     ((mqtt_client*)client)->handle_event(event_base, event_id, event_data);
   }
-  void publish(const char *topic, const char* payload, int qos)
+  void publish(const char *topic, const char* payload)
   {
-    esp_mqtt_client_enqueue(mqtt, topic, payload, 0, qos, 0, true);
+    esp_mqtt_client_enqueue(mqtt, topic, payload, 0, 0, 0, true);
   }
-  void publish(const std::string &topic, const std::string &payload, int qos)
+  void publish(const std::string &topic, const std::string &payload)
   {
-    esp_mqtt_client_enqueue(mqtt, topic.c_str(), payload.c_str(), 0, qos, 0, true);
+    esp_mqtt_client_enqueue(mqtt, topic.c_str(), payload.c_str(), 0, 0, 0, true);
   }
-  void subscribe(const char *topic, int qos)
+  void subscribe(const char *topic)
   {
-    subscribed_topics.push_back({topic, qos});
-    if (connected) esp_mqtt_client_subscribe_single(mqtt, topic, qos);
+    subscribed_topics.push_back({topic, 0});
+    if (connected) esp_mqtt_client_subscribe_single(mqtt, topic, 0);
   }
 };

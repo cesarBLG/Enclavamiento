@@ -14,7 +14,7 @@ RemotaCV cv::get_estado_remota()
     seccion_via *seccion = secciones.size() == 1 ? *secciones.begin() : nullptr;
     TipoMovimiento tipo = seccion != nullptr ? seccion->get_tipo_movimiento() : TipoMovimiento::Ninguno;
     r.CV_DAT = 1;
-    r.CV_ME = me_pendiente ? 1 : 0;
+    r.CV_ME = me_pendiente || (seccion != nullptr && seccion->is_me_pendiente()) ? 1 : 0;
     r.CV_BV = ((seccion != nullptr && seccion->is_bloqueo_seccion()) || btv) ? 1 : 0;
     r.CV_OCUP_TIPO = ocupacion_intempestiva ? 1 : 0;
     if (estado > EstadoCV::Prenormalizado) r.CV_EST = 3;

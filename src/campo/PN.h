@@ -39,7 +39,7 @@ public:
         serial.write(30);
         serial.write(0xEF);
         pendienteAck = millis();
-        client->subscribe(topic.c_str(), 1);
+        client->subscribe(topic.c_str());
     }
     void loop() override
     {
@@ -113,7 +113,7 @@ public:
     }
     void sendState()
     {
-        client->publish(topicComprobacion.c_str(), comprobacionSoneria ? "true" : "false", 1);
+        client->publish(topicComprobacion.c_str(), comprobacionSoneria ? "true" : "false");
     }
     void setCierre(bool newCierre)
     {
