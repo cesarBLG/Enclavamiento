@@ -69,6 +69,7 @@ protected:
     void disolver()
     {
         if (señal_inicio->ruta_activa == this) señal_inicio->ruta_activa = nullptr;
+        if (destino->ruta_activa == this) destino->ruta_activa = nullptr;
         mandada = false;
         formada = false;
         supervisada = false;
