@@ -4,6 +4,8 @@
 #include <map>
 #include <iostream>
 #include <sstream>
+#include <thread>
+#include <chrono>
 mosquitto *mosq;
 std::map<std::string, std::vector<std::string>> handled_topics;
 bool connected;
@@ -54,7 +56,7 @@ void on_disconnect(struct mosquitto *mosq, void *obj, int rc)
     connected = false;
 }
 
-int main()
+int main(int argc, char **argv)
 {
     mosquitto_lib_init();
 
@@ -62,10 +64,29 @@ int main()
     mosquitto_connect_callback_set(mosq, on_connect);
 
     mosquitto_will_set(mosq, "gestor_conexion", 3, "off", 0, true);
-    mosquitto_connect(mosq, "server.int.vtrains.es", 1883, 15);
+    while (mosquitto_connect(mosq, argc > 1 ? argv[1] : "127.0.0.1", 1883, 15) != MOSQ_ERR_SUCCESS) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+    }
 
     mosquitto_message_callback_set(mosq, on_message);
     mosquitto_disconnect_callback_set(mosq, on_disconnect);
 
-    mosquitto_loop_forever(mosq, -1, 1);
+    while (!connected) {
+        mosquitto_loop(mosq, -1, 1);
+    }
+
+    using clock = std::chrono::steady_clock;
+    auto last_publish = clock::now();
+    for (;;) {
+        auto now = clock::now();
+        if (now >= last_publish + std::chrono::seconds(10)) {
+            mosquitto_publish(mosq, nullptr, "gestor_conexion", 2, "on", 0, false);
+            last_publish = now;
+        }
+        mosquitto_loop(mosq, -1, 1);
+        if (!connected) {
+            mosquitto_reconnect(mosq);
+            std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+        }
+    }
 }

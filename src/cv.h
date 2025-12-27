@@ -285,7 +285,7 @@ public:
     void set_timer_auto_prenormalizacion_tren()
     {
         timer_auto_prenormalizacion_tren = set_timer([this]() {
-            bool changed;
+            bool changed = false;
             for (auto lado : {Lado::Impar, Lado::Par}) {
                 if (num_ejes[lado] == 0) continue;
                 auto &arr = num_trenes[lado];

@@ -101,7 +101,9 @@ void init_mqtt(const json &j)
     mosquitto_connect_callback_set(mosq, on_connect);
 
     mosquitto_will_set(mosq, "desconexion", name.size(), name.c_str(), 0, false);
-    mosquitto_connect(mosq, j["Host"].get<std::string>().c_str(), 1883, 15);
+    while (mosquitto_connect(mosq, j["Host"].get<std::string>().c_str(), 1883, 15) != MOSQ_ERR_SUCCESS) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+    }
 
     mosquitto_message_callback_set(mosq, on_message);
     mosquitto_disconnect_callback_set(mosq, on_disconnect);

@@ -19,7 +19,6 @@ class ContadorEjes : public mqtt_device {
   int Aon=0;
   int Bon=0;
   std::vector<Event> eventBuffer;
-  bool tren = false;
   int dirTren = -1;
   unsigned long ultimaActivacion;
 public:
@@ -40,7 +39,6 @@ public:
     } else if (!b && pinB < 0) {
       client->publish(topic.c_str(), "Nominal");
     } else {
-      tren = true;
       ultimaActivacion = millis();
       eventBuffer.push_back({b, ultimaActivacion});
     }
@@ -129,6 +127,7 @@ public:
   }
   void processTrain()
   {
+    if (eventBuffer.empty()) return;
     int dir = getDirection(true);
     if (dir < 0) dir = dirTren;
     if (dir < 0) dir = getDirection();
@@ -138,7 +137,6 @@ public:
       int num = countAxles(dir == 0);
       client->publish(topic.c_str(), ((dir == 1 ? "Nominal:" : "Reverse:")+String(num)).c_str());
     }
-    tren = false;
     eventBuffer.clear();
   }
   void loop() override {
@@ -166,7 +164,7 @@ public:
     } else {
       Bon = 0;
     }
-    if (tren) {
+    if (!eventBuffer.empty()) {
       unsigned long timeSinceLast = millis() - ultimaActivacion;
       if (eventBuffer.size() > 3) {
         int dir = getDirection(true);
@@ -174,11 +172,12 @@ public:
           dirTren = dir;
           processTrain();
         }
+      } else if (eventBuffer.size() >= 2 && dirTren >= 0) {
+        int dir = getDirection(false);
+        if (dir == dirTren) processTrain();
       }
-      if (timeSinceLast > MAX_TRAIN_INTERVAL_MS) {
-        processTrain();
-        dirTren = -1;
-      }
+      if (timeSinceLast > MAX_TRAIN_INTERVAL_MS) processTrain();
     }
+    if (dirTren >= 0 && timeSinceLast > MAX_TRAIN_INTERVAL_MS) dirTren = -1;
   }
 };
