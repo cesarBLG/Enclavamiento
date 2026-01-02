@@ -23,6 +23,7 @@ void on_connect(struct mosquitto *mosq, void *userdata, int rc)
         mosquitto_subscribe(mosq, nullptr, "mando/+", 0);
         mosquitto_subscribe(mosq, nullptr, "cejes/+/+/event", 0);
         mosquitto_subscribe(mosq, nullptr, "cv/+/+/state", 0);
+        mosquitto_subscribe(mosq, nullptr, "cv/+/+/action", 0);
         mosquitto_subscribe(mosq, nullptr, "bloqueo/+/+/state", 0);
         mosquitto_subscribe(mosq, nullptr, "bloqueo/+/+/colateral", 0);
         mosquitto_subscribe(mosq, nullptr, "signal/+/+/state", 0);

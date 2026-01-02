@@ -13,11 +13,14 @@ class señal;
 class seccion_via;
 class cv : protected estado_cv
 {
+protected:
+    bool me_pendiente=false;
 public:
     const std::string id;
     std::set<seccion_via*> secciones;
     bool ocupacion_intempestiva = false;
     cv(const std::string &id) : id(id) {}
+    virtual ~cv() = default;
     
     EstadoCV get_state()
     {
@@ -38,16 +41,36 @@ public:
     bool is_btv() { return btv; }
     bool is_perdida_secuencia() { return perdida_secuencia; }
 
-    void message_cv(estado_cv ecv)
+    virtual void message_cv(estado_cv ecv)
     {
         *((estado_cv*)this) = ecv;
         remota_cambio_elemento(ElementoRemota::CV, id);
         if (estado <= EstadoCV::Prenormalizado) ocupacion_intempestiva = false;
     }
 
+    virtual RespuestaMando mando(const std::string &cmd, int me)
+    {
+        RespuestaMando aceptado = RespuestaMando::OrdenRechazada;
+        if (me_pendiente && me == 0) return RespuestaMando::MandoEspecialEnCurso;
+        bool pend = me_pendiente;
+        me_pendiente = false;
+        if (me < 0) return pend ? RespuestaMando::Aceptado : RespuestaMando::OrdenRechazada;
+        if (cmd == "LC" && estado > EstadoCV::Prenormalizado) {
+            if (me) {
+                send_message("cv/"+id_to_mqtt(id)+"/action", "Prenormalizar");
+                aceptado = RespuestaMando::Aceptado;
+            } else {
+                me_pendiente = true;
+                aceptado = RespuestaMando::MandoEspecialNecesario;
+                remota_cambio_elemento(ElementoRemota::CV, id);
+            }
+        }
+        return aceptado;
+    }
+
     RemotaCV get_estado_remota();
 };
-class cv_impl : protected estado_cv
+class cv_impl : public cv
 {
 public:
     struct cejes_position
@@ -58,7 +81,6 @@ public:
         bool liberar=true;
         std::string cv_colateral;
     };
-    const std::string id;
 protected:
     std::map<std::string, cejes_position> cejes;
     std::set<std::string> averia_cejes;
@@ -112,6 +134,8 @@ public:
     {
         clear_timer(timer_liberacion);
         timer_liberacion = nullptr;
+        remota_cambio_elemento(ElementoRemota::CV, id);
+        if (estado <= EstadoCV::Prenormalizado) ocupacion_intempestiva = false;
         json msg(*((estado_cv*)this));
         send_message(topic, msg.dump());
 
@@ -219,6 +243,7 @@ public:
     void message_cv(const std::string &msg)
     {
         if (msg == "Normalizar") normalizar();
+        else if (msg == "Prenormalizar") normalizar();
         else if (msg == "NormalizarSecuencia") perdida_secuencia = false;
         else if (msg == "PérdidaSecuencia") perdida_secuencia = true;
     }
@@ -240,7 +265,9 @@ public:
         update();
     }
 
-    RespuestaMando mando(const std::string &cmd, int me)
+    void message_cv(estado_cv ecv) override {}
+
+    RespuestaMando mando(const std::string &cmd, int me) override
     {
         RespuestaMando aceptado = RespuestaMando::OrdenRechazada;
         if (me_pendiente && me == 0) return RespuestaMando::MandoEspecialEnCurso;

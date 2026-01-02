@@ -33,11 +33,21 @@ RespuestaMando mando(const std::vector<std::string> &ordenes, int me)
 {
     std::string cmd = ordenes[0];
     if (comandos_cv.find(cmd) != comandos_cv.end()) {
+        std::string id = "";
         if (ordenes.size() == 3) {
-            std::string id = ordenes[1]+":"+ordenes[2];
-            auto it = cv_impls.find(id);
-            if (it != cv_impls.end()) return it->second->mando(ordenes[0], me);
+            id = ordenes[1]+":"+ordenes[2];
+        } else if (ordenes.size() == 4) {
+            std::string colat = ordenes[3];
+            for (auto &[idd, dest] : destinos_ruta) {
+                if (dest->tipo != TipoDestino::Colateral) continue;
+                if (idd.starts_with(ordenes[1]+":"+colat)) {
+                    id = colat+":"+ordenes[2];
+                    break;
+                }
+            }
         }
+        auto it = cvs.find(id);
+        if (it != cvs.end()) return it->second->mando(ordenes[0], me);
     }
     if (comandos_bloqueo.find(cmd) != comandos_bloqueo.end()) {
         if (ordenes.size() == 3) {
@@ -228,9 +238,8 @@ void handle_message(const std::string &topic, const std::string &payload)
     if (std::regex_match(topic, match, cvStatePattern)) {
         std::string id = id_from_mqtt(match[1]);
         estado_cv ecv(json::parse(payload));
-        for (auto &kvp : cvs) {
-            if (id == kvp.first) kvp.second->message_cv(ecv);
-        }
+        auto it = cvs.find(id);
+        if (it != cvs.end()) it->second->message_cv(ecv);
         for (auto &kvp : secciones) {
             kvp.second->message_cv(id, ecv);
         }
@@ -245,6 +254,13 @@ void handle_message(const std::string &topic, const std::string &payload)
                 ruta->message_cv(id, ecv);
             }
         }
+        return;
+    }
+    std::regex cvActionPattern(R"(^cv/([a-zA-Z0-9_-]+/[a-zA-Z0-9_'-]+)/action$)");
+    if (std::regex_match(topic, match, cvActionPattern)) {
+        std::string id = id_from_mqtt(match[1]);
+        auto it = cv_impls.find(id);
+        if (it != cv_impls.end()) it->second->message_cv(payload);
         return;
     }
     std::regex signalStatePattern(R"(^signal/([a-zA-Z0-9_-]+/[a-zA-Z0-9_'-]+)/state$)");
@@ -299,12 +315,14 @@ void init_items_ordered(const json &j, std::string tipo)
         if (tipo == "CVs") {
             for (auto &[id, jcv] : jdep["CVs"].items()) {
                 std::string ic = estacion+":"+id;
-                cvs[ic] = new cv(ic);
                 if (jcv.contains("ContadoresEjes")) {
                     cv_impls[ic] = new cv_impl(ic, jcv);
                     for (auto &[key,val] : jcv["ContadoresEjes"].items()) {
                         cejes_to_cvs[key].push_back(ic);
                     }
+                    cvs[ic] = cv_impls[ic];
+                } else {
+                    cvs[ic] = new cv(ic);
                 }
             }
         }

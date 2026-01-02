@@ -16,7 +16,6 @@ struct estado_cv
     bool btv=false;
     bool perdida_secuencia=false;
     bool sin_datos=false;
-    bool me_pendiente=false;
     bool operator<=>(const estado_cv &o) const = default;
 };
 #ifndef WITHOUT_JSON

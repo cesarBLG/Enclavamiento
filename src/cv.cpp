@@ -29,7 +29,7 @@ RemotaCV cv::get_estado_remota()
     r.CV_NSEC = perdida_secuencia ? 1 : 0;
     return r;
 }
-cv_impl::cv_impl(const std::string &id, const json &j) : id(id), topic("cv/"+id_to_mqtt(id)+"/state"), cejes(j["ContadoresEjes"])
+cv_impl::cv_impl(const std::string &id, const json &j) : cv(id), topic("cv/"+id_to_mqtt(id)+"/state"), cejes(j["ContadoresEjes"])
 {
     num_ejes = {0, 0};
     ultimo_eje = {0, 0};

@@ -228,7 +228,6 @@ void to_json(json &j, const estado_cv &estado)
     j["Avería"] = estado.averia;
     j["PérdidaSecuencia"] = estado.perdida_secuencia;
     j["BTV"] = estado.btv;
-    j["ME"] = estado.me_pendiente;
     if (estado.evento) {
         j["Evento"] = *estado.evento;
     }
@@ -245,7 +244,6 @@ void from_json(const json &j, estado_cv &estado)
     estado.averia = j["Avería"];
     estado.perdida_secuencia = j["PérdidaSecuencia"];
     estado.btv = j["BTV"];
-    estado.me_pendiente = j["ME"];
     if (j.contains("Evento")) {
         estado.evento = j["Evento"];
     }
