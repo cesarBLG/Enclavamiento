@@ -46,6 +46,14 @@ RemotaFMV destino_ruta::get_estado_remota()
     r.FMV_BD = bloqueo_destino ? 1 : 0;
     return r;
 }
+estado_fin_ruta destino_ruta::get_estado()
+{
+    if (ruta_activa != nullptr) return ruta_activa->get_estado_fin();
+    estado_fin_ruta e;
+    e.me_pendiente = me_pendiente;
+    e.bloqueo_destino = bloqueo_destino;
+    return e;
+}
 ruta::ruta(const std::string &estacion, const json &j) : estacion(estacion), tipo(j["Tipo"]), id_inicio(j["Inicio"]), id_destino(j["Destino"]), id((tipo == TipoMovimiento::Itinerario ? (ertms ? "ER " : "I ") : (tipo == TipoMovimiento::Rebase ? "R" : "M "))+estacion+" "+id_inicio+" "+id_destino), bloqueo_salida(j.value("Bloqueo", ""))
 {
     std::string id_señal = estacion+":"+id_inicio;

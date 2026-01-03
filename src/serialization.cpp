@@ -357,6 +357,46 @@ void from_json(const json &j, estado_señal &estado)
     estado.aspecto = j["Aspecto"];
     estado.aspecto_maximo_anterior_señal = j["AspectoAnterior"];
 }
+void to_json(json &j, const estado_inicio_ruta &estado)
+{
+    j["Tipo"] = estado.tipo;
+    j["Rebasada"] = estado.rebasada;
+    j["OcupadaDiferimetro"] = estado.ocupada_diferimetro;
+    j["Formada"] = estado.formada;
+    if (estado.fai) j["FAI"] = *estado.fai;
+    j["SucesionAutomatica"] = estado.sucesion_automatica;
+    j["BloqueoSenal"] = estado.bloqueo_señal;
+    j["ME"] = estado.me_pendiente;
+    if (estado.fin_diferimetro) j["FinDiferimetro"] = *estado.fin_diferimetro;
+}
+void from_json(const json &j, estado_inicio_ruta &estado)
+{
+    estado.tipo = j.value("Tipo", TipoMovimiento::Ninguno);
+    estado.rebasada = j.value("Rebasada", false);
+    estado.ocupada_diferimetro = j.value("OcupadaDiferimetro", false);
+    estado.formada = j.value("Formada", false);
+    if (j.contains("FAI")) estado.fai = j["FAI"];
+    estado.sucesion_automatica = j.value("SucesionAutomatica", false);
+    estado.bloqueo_señal = j.value("BloqueoSenal", false);
+    estado.me_pendiente = j.value("ME", false);
+    if (j.contains("FinDiferimetro")) estado.fin_diferimetro = j["FinDiferimetro"];
+}
+void to_json(json &j, const estado_fin_ruta &estado)
+{
+    j["Tipo"] = estado.tipo;
+    j["Supervisada"] = estado.supervisada;
+    j["BloqueoDestino"] = estado.bloqueo_destino;
+    j["ME"] = estado.me_pendiente;
+    if (estado.fin_diferimetro) j["FinDiferimetro"] = *estado.fin_diferimetro;
+}
+void from_json(const json &j, estado_fin_ruta &estado)
+{
+    estado.tipo = j.value("Tipo", TipoMovimiento::Ninguno);
+    estado.supervisada = j.value("Supervisada", false);
+    estado.bloqueo_destino = j.value("BloqueoDestino", false);
+    estado.me_pendiente = j.value("ME", false);
+    if (j.contains("FinDiferimetro"))estado.fin_diferimetro = j["FinDiferimetro"];
+}
 void from_json(const json &j, parametros_predeterminados &params)
 {
     params.diferimetro_dai1 = j.value("DiferímetroDAI1", 30) * 1000;

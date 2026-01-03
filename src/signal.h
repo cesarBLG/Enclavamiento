@@ -29,6 +29,7 @@ class señal_impl : public señal
 {
 public:
     const std::string topic;
+    const std::string topic_inicio;
 protected:
     std::map<Aspecto, Aspecto> aspectos_maximos_anterior_señal;
     std::map<EstadoCanton, Aspecto> aspecto_maximo_ocupacion;
@@ -43,6 +44,8 @@ protected:
 
     int64_t ultimo_paso_abierta;
     bool paso_circulacion = false;
+
+    estado_inicio_ruta estado_inicio;
 public:
     bool clear_request=false;
     ruta *ruta_activa=nullptr;
@@ -52,9 +55,10 @@ public:
     bool bloqueo_señal = false;
     bool sucesion_automatica = false;
     señal_impl(const std::string &estacion, const json &j);
-    void send_state()
+    void send_state(bool aspecto=true, bool inicio=true)
     {
-        send_message(topic, json(*(estado_señal*)this).dump());
+        if (aspecto) send_message(topic, json(*(estado_señal*)this).dump());
+        if (inicio) send_message(topic_inicio, json(estado_inicio).dump());
     }
     void determinar_aspecto();
     void update();
@@ -86,6 +90,7 @@ public:
     void message_señal(estado_señal est) override {}
     RespuestaMando mando(const std::string &cmd, int me);
     std::pair<RemotaSIG, RemotaIMV> get_estado_remota();
+    estado_inicio_ruta get_estado_inicio();
     bool is_rebasada() { return rebasada; }
     // Indica si el aspecto de la señal condiciona el aspecto de señales anteriores
     bool condiciona_anteriores()

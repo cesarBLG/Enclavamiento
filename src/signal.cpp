@@ -5,7 +5,7 @@ señal::señal(const std::string &id, const json &j) : id(id), lado(j["Lado"]), 
 {
     seccion->vincular_señal(this, lado, pin);
 }
-señal_impl::señal_impl(const std::string &id, const json &j) : señal(id, j), topic("signal/"+id_to_mqtt(id)+"/state")
+señal_impl::señal_impl(const std::string &id, const json &j) : señal(id, j), topic("signal/"+id_to_mqtt(id)+"/state"), topic_inicio("signal/"+id_to_mqtt(id)+"/inicio")
 {
     for (auto &[est, asp] : j["AspectoCanton"].items()) {
         aspecto_maximo_ocupacion[json(est)] = asp;
@@ -141,6 +141,7 @@ void señal_impl::determinar_aspecto()
 void señal_impl::update()
 {
     Aspecto prev_aspecto = aspecto;
+    estado_inicio_ruta prev_estado_inicio = estado_inicio;
 
     determinar_aspecto();
 
@@ -162,8 +163,9 @@ void señal_impl::update()
         rebasada = false;
         ultimo_paso_abierta = get_milliseconds();
     }
+    estado_inicio = get_estado_inicio();
 
-    if (aspecto != prev_aspecto) send_state();
+    send_state(aspecto != prev_aspecto, estado_inicio != prev_estado_inicio);
 }
 RespuestaMando señal_impl::mando(const std::string &cmd, int me)
 {
@@ -277,7 +279,7 @@ std::pair<RemotaSIG, RemotaIMV> señal_impl::get_estado_remota()
     r.SIG_UIC = 0;
     r.SIG_SA = sucesion_automatica ? 1 : 0;
     if (ruta_fai != nullptr) {
-        r.SIG_FAI = ruta_fai->get_estado_fai();
+        r.SIG_FAI = ruta_fai->get_estado_fai_remota();
     } else {
         r.SIG_FAI = 0;
     }
@@ -291,4 +293,19 @@ std::pair<RemotaSIG, RemotaIMV> señal_impl::get_estado_remota()
         i.IMV_EST = rebasada ? 7 : 0;
     }
     return {r, i};
+}
+estado_inicio_ruta señal_impl::get_estado_inicio()
+{
+    estado_inicio_ruta e;
+    if (ruta_activa != nullptr) {
+        e = ruta_activa->get_estado_inicio();
+    }
+    e.rebasada = rebasada;
+    e.bloqueo_señal = bloqueo_señal;
+    e.sucesion_automatica = sucesion_automatica;
+    e.me_pendiente = me_pendiente;
+    if (ruta_fai != nullptr) {
+        e.fai = ruta_fai->get_estado_fai();
+    }
+    return e;
 }

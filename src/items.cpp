@@ -411,10 +411,14 @@ void init_items(const json &j)
     }
     for (auto &kvp : señal_impls) {
         managed_topics<<kvp.second->topic<<'\n';
+        managed_topics<<kvp.second->topic_inicio<<'\n';
     }
     for (auto &kvp : bloqueos) {
         managed_topics<<kvp.second->topic<<'\n';
         managed_topics<<kvp.second->topic_colateral<<'\n';
+    }
+    for (auto &kvp : destinos_ruta) {
+        managed_topics<<kvp.second->topic<<'\n';
     }
     for (auto &kvp : pns) {
         managed_topics<<kvp.second->topic<<'\n';
@@ -431,6 +435,9 @@ void loop_items()
     for (auto &kvp : dependencias) {
         kvp.second->update();
     }
+    for (auto &kvp : destinos_ruta) {
+        kvp.second->update();
+    }
     int64_t now = get_milliseconds();
     if (now - last_sent_state > 30000) {
         for (auto &kvp : cv_impls) {
@@ -443,6 +450,9 @@ void loop_items()
             kvp.second->send_state();
         }
         for (auto &kvp : dependencias) {
+            kvp.second->send_state();
+        }
+        for (auto &kvp : destinos_ruta) {
             kvp.second->send_state();
         }
         for (auto &kvp : pns) {

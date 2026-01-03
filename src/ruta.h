@@ -10,15 +10,29 @@
 class ruta;
 class destino_ruta
 {
+protected:
+    estado_fin_ruta estado;
 public:
     const std::string id;
+    const std::string topic;
     const TipoDestino tipo;
     bool bloqueo_destino = false;
     bool me_pendiente = false;
     ruta *ruta_activa = nullptr;
-    destino_ruta(const std::string &id, TipoDestino tipo) : id(id), tipo(tipo) {}
+    destino_ruta(const std::string &id, TipoDestino tipo) : id(id), tipo(tipo), topic("destino/"+id_to_mqtt(id)+"/state") {}
     RespuestaMando mando(const std::string &cmd, int me);
     RemotaFMV get_estado_remota();
+    estado_fin_ruta get_estado();
+    void send_state()
+    {
+        send_message(topic, json(estado).dump());
+    }
+    void update()
+    {
+        auto prev_estado = estado;
+        estado = get_estado();
+        if (estado != prev_estado) send_state();
+    }
 };
 class ruta
 {
@@ -114,6 +128,15 @@ protected:
 public:
     ruta(const std::string &estacion, const json &j);
     bool establecer();
+    estado_inicio_ruta get_estado_inicio()
+    {
+        estado_inicio_ruta e;
+        e.ocupada_diferimetro = supervisada && diferimetro_cancelado;
+        if (supervisada && diferimetro_dai != nullptr) e.fin_diferimetro = diferimetro_dai->time;
+        e.formada = formada;
+        e.tipo = tipo;
+        return e;
+    }
     RemotaIMV get_estado_remota_inicio()
     {
         RemotaIMV r;
@@ -130,6 +153,16 @@ public:
             r.IMV_DIF_VAL = 0;
         }
         return r;
+    }
+    estado_fin_ruta get_estado_fin()
+    {
+        estado_fin_ruta e;
+        e.supervisada = supervisada;
+        e.bloqueo_destino = destino->bloqueo_destino;
+        e.me_pendiente = destino->me_pendiente;
+        e.tipo = tipo;
+        if (diferimetro_dei) e.fin_diferimetro = diferimetro_dei->time;
+        return e;
     }
     RemotaFMV get_estado_remota_fin()
     {
@@ -234,7 +267,12 @@ public:
     {
         return secciones;
     }
-    int get_estado_fai()
+    std::optional<EstadoFAI> get_estado_fai()
+    {
+        if (!fai && !fai_disparo_unico) return {};
+        return estado_fai;
+    }
+    int get_estado_fai_remota()
     {
         if (!fai && !fai_disparo_unico) return 0;
         if (estado_fai == EstadoFAI::AperturaNoPosible || estado_fai == EstadoFAI::AperturaNoPosibleReconocida || estado_fai == EstadoFAI::Cancelado) return 3;
