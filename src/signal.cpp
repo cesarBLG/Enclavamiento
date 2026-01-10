@@ -32,6 +32,9 @@ void señal_impl::determinar_aspecto()
     bool prohibir_abrir = false;
     // Requerir secciones asegurado por ruta (no necesario en trayecto)
     bool comprobar_ruta = ruta_activa != nullptr && !ruta_activa->get_secciones().empty();
+    // Nombre del bloqueo asociado
+    std::string bloq_id = bloqueo_asociado;
+    if (bloq_id == "" && ruta_activa != nullptr && ruta_activa->bloqueo_salida != "") bloq_id = ruta_activa->bloqueo_salida;
     // Comprobamos todos los CVs hasta la señal siguiente o fin de movimiento
     while (sec_act != nullptr && sig_señal == nullptr) {
         if (!comprobar_ruta && ruta_activa != nullptr && ruta_activa->tipo == TipoMovimiento::Maniobra) {
@@ -51,6 +54,7 @@ void señal_impl::determinar_aspecto()
             if (ruta_activa->get_secciones().back().first == sec_act) comprobar_ruta = false;
         }
         if (sec_act->is_asegurada() && (ruta_activa == nullptr || !sec_act->is_asegurada(ruta_activa))) cerrar = true;
+        if (bloq_id == "" && sec_act->bloqueo_asociado != "") bloq_id = sec_act->bloqueo_asociado;
         sec_prv = sec_act;
         sec_act = next;
         if (sec_act != nullptr) sig_señal = sec_act->señal_inicio(dir, pin);
@@ -63,7 +67,8 @@ void señal_impl::determinar_aspecto()
     // Condiciones que impiden la apertura de señal en itinerario, pero no la cierran si estaba abierta
     bool prohibir_abrir_itinerario = false;
     if (bloqueo_asociado == "" && ruta_activa != nullptr && ruta_activa->bloqueo_salida != "") bloqueo_act = bloqueos[ruta_activa->bloqueo_salida]->get_estado(dir);
-    if (bloqueo_asociado != "" || (ruta_activa != nullptr && ruta_activa->bloqueo_salida != "")) {
+    if (bloq_id != "") {
+        bloqueo_act = bloqueos[bloq_id]->get_estado(dir);
         TipoMovimiento tipo_opp = bloqueo_act.ruta[opp_lado(dir)];
         // Cerrar señales intermedias y de salida si falla comunicación con colateral
         cerrar |= bloqueo_act.estado == EstadoBloqueo::SinDatos;
@@ -78,9 +83,10 @@ void señal_impl::determinar_aspecto()
         // Cerrar señales intermedias y de salida si se establece el cierre de señales de bloqueo
         cerrar |= bloqueo_act.cierre_señales[dir];
         // Cerrar señales intermedias y de salida si no está establecido el bloqueo en ese sentido
+        // Permitir apertura en desbloqueo de la señal de salida en estaciones cerradas
         // Las señales avanzadas abren según el aspecto de la señal de entrada
         // Las pantallas virtuales no abren sin bloqueo establecido, pero la condición de cierre se establece más adelante
-        cerrar_itinerario |= bloqueo_act.estado != (dir == Lado::Impar ? EstadoBloqueo::BloqueoImpar : EstadoBloqueo::BloqueoPar) && tipo != TipoSeñal::Avanzada && !señal_virtual;
+        cerrar_itinerario |= bloqueo_act.estado != (dir == Lado::Impar ? EstadoBloqueo::BloqueoImpar : EstadoBloqueo::BloqueoPar) && tipo != TipoSeñal::Avanzada && !señal_virtual && (tipo == TipoSeñal::Intermedia || ruta_necesaria || bloqueo_act.estado != EstadoBloqueo::Desbloqueo);
         // Cerrar el itinerario de salida si la estación colateral está realizando maniobras,
         // y no hay señales intermedias suficientes que puedan proteger la maniobra
         cerrar_itinerario |= tipo_opp == TipoMovimiento::Maniobra && bloqueo_act.maniobra_compatible[opp_lado(dir)] == CompatibilidadManiobra::IncompatibleItinerario;
@@ -135,7 +141,7 @@ void señal_impl::determinar_aspecto()
     // Esto permite que la señal avanzada abra en función de la señal de entrada aunque
     // las pantallas estén cerradas por no haber bloqueo
     // Si la pantalla está cerrada por otro motivo, la avanzada mostrará parada selectiva
-    if (señal_virtual && bloqueo_asociado != "" && bloqueo_act.estado != (dir == Lado::Impar ? EstadoBloqueo::BloqueoImpar : EstadoBloqueo::BloqueoPar))
+    if (señal_virtual && bloq_id != "" && bloqueo_act.estado != (dir == Lado::Impar ? EstadoBloqueo::BloqueoImpar : EstadoBloqueo::BloqueoPar))
         aspecto = Aspecto::Parada;
 }
 void señal_impl::update()

@@ -9,10 +9,12 @@ struct dependencia
 {
     const std::string id;
     estado_mando mando_actual;
+    bool me_pendiente = false;
+    bool cerrada = false;
     std::string mando_especial_pendiente;
     std::set<ruta*> rutas;
     std::map<std::string, bloqueo*> bloqueos;
-    dependencia(const std::string id) : id(id), mando_actual({false, "PLO_"+id, std::nullopt, false}) {}
+    dependencia(const std::string id, const json &j) : id(id), mando_actual({false, "PLO_"+id, std::nullopt, false}), cerrada(j.value("Cerrada", false)) {}
     void update()
     {
         std::map<std::string, ruta*> movimiento_bloqueos;
@@ -49,6 +51,37 @@ struct dependencia
             bloqueo->cambio_mando(estado);
         }
         send_state();
+    }
+    void initialize()
+    {
+        calcular_vinculacion_bloqueos();
+        if (cerrada) set_servicio_intermitente(true);
+    }
+    void set_servicio_intermitente(bool cerrar);
+    RespuestaMando mando(const std::string &cmd, int me) {
+        if (me_pendiente && me == 0) return RespuestaMando::MandoEspecialEnCurso;
+        bool pend = me_pendiente;
+        me_pendiente = false;
+        if (me < 0) return pend ? RespuestaMando::Aceptado : RespuestaMando::OrdenRechazada;
+        if (cmd == "EC") {
+            if (!cerrada) {
+                if (me) {
+                    log(id, "cerrar estación", LOG_DEBUG);
+                    set_servicio_intermitente(true);
+                    return RespuestaMando::Aceptado;
+                } else {
+                    me_pendiente = true;
+                    return RespuestaMando::MandoEspecialNecesario;
+                }
+            }
+        } else if (cmd == "EA") {
+            if (cerrada) {
+                log(id, "abrir estación", LOG_DEBUG);
+                set_servicio_intermitente(false);
+                return RespuestaMando::Aceptado;
+            }
+        }
+        return RespuestaMando::OrdenRechazada;
     }
     RespuestaMando mando_ruta(const std::string &inicio, const std::string &fin, const std::string &cmd) {
         for (auto *ruta : rutas) {

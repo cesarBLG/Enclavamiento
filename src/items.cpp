@@ -28,6 +28,7 @@ std::set<std::string> comandos_ignorar_mando = {"C", "TML", "TME", "CML", "RML",
 std::set<std::string> comandos_ctc = {"C", "L", "AS", "AAS"};
 std::set<std::string> comandos_local = {"TML", "TME", "CML", "RML"};
 std::set<std::string> comandos_pn = {"APN", "CPN"};
+std::set<std::string> comandos_dependencia = {"RAL","RA","BCA","DCA","EA","EC"};
 
 RespuestaMando mando(const std::vector<std::string> &ordenes, int me)
 {
@@ -93,6 +94,12 @@ RespuestaMando mando(const std::vector<std::string> &ordenes, int me)
         if (ordenes.size() == 3) {
             auto it = pns.find(ordenes[1]+":"+ordenes[2]);
             if (it != pns.end()) return it->second->mando(ordenes[0]);
+        }
+    }
+    if (comandos_dependencia.find(cmd) != comandos_dependencia.end()) {
+        if (ordenes.size() == 2) {
+            auto it = dependencias.find(ordenes[1]);
+            if (it != dependencias.end()) return it->second->mando(ordenes[0], me);
         }
     }
     return RespuestaMando::OrdenRechazada;
@@ -274,9 +281,6 @@ void handle_message(const std::string &topic, const std::string &payload)
     if (std::regex_match(topic, match, bloqueoStatePattern)) {
         estado_bloqueo eb(json::parse(payload));
         std::string id = id_from_mqtt(match[1]);
-        for (auto &kvp : señal_impls) {
-            kvp.second->message_bloqueo(id, eb);
-        }
         for (auto *ruta : rutas) {
             ruta->message_bloqueo(id, eb);
         }
@@ -385,7 +389,7 @@ void init_items(const json &j)
     if (j.contains("Dependencias")) {
         auto jdeps = j["Dependencias"];
         for (auto &[estacion, jdep] : jdeps.items()) {
-            if (jdep.value("Controlada", true)) dependencias[estacion] = new dependencia(estacion);
+            if (jdep.value("Controlada", true)) dependencias[estacion] = new dependencia(estacion, jdep);
         }
         init_items_ordered(jdeps, "CVs");
         init_items_ordered(jdeps, "Secciones");
@@ -402,7 +406,7 @@ void init_items(const json &j)
         for (auto *ruta : kvp.second->rutas) {
             rutas.insert(ruta);
         }
-        kvp.second->calcular_vinculacion_bloqueos();
+        kvp.second->initialize();
     }
 
     std::stringstream managed_topics;

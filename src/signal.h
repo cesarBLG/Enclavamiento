@@ -36,7 +36,6 @@ protected:
 
     estado_bloqueo bloqueo_act;
 
-    bool cierre_stick;
     bool cleared = false;
 
     bool me_pendiente = false;
@@ -49,7 +48,10 @@ protected:
 public:
     bool clear_request=false;
     ruta *ruta_activa=nullptr;
+
     bool ruta_necesaria = true;
+    bool cierre_stick;
+
     ruta *ruta_fin=nullptr;
     ruta *ruta_fai=nullptr;
     bool bloqueo_señal = false;
@@ -81,11 +83,6 @@ public:
                 paso_circulacion = true;
             }
         }
-    }
-    void message_bloqueo(const std::string &id, estado_bloqueo eb)
-    {
-        if (id != bloqueo_asociado) return;
-        bloqueo_act = eb;
     }
     void message_señal(estado_señal est) override {}
     RespuestaMando mando(const std::string &cmd, int me);

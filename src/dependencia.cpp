@@ -33,3 +33,15 @@ void dependencia::calcular_vinculacion_bloqueos()
         bloq->vincular(vinculo, !señal_ruta);
     }
 }
+void dependencia::set_servicio_intermitente(bool cerrar)
+{
+    for (auto &[ids, sig] : señal_impls) {
+        std::string dep = ids.substr(0, ids.find_first_of(':'));
+        if (dep == id && sig->tipo == TipoSeñal::Salida) {
+            sig->cierre_stick = !cerrar;
+            sig->ruta_necesaria = !cerrar;
+            sig->clear_request = cerrar;
+        }
+    }
+    cerrada = cerrar;
+}
