@@ -175,7 +175,7 @@ bool ruta::establecer()
                     sig = sec->siguiente_seccion(prev, l, false);
                 }
                 if (parametros.deslizamiento_bloqueo || sec->is_trayecto()) {
-                    if (sig == nullptr || sig->get_ocupacion(sec, l) == EstadoCanton::Ocupado) return false;
+                    if (sig != nullptr && sig->is_trayecto() && sig->get_ocupacion(sec, l) == EstadoCanton::Ocupado) return false;
                 }
             }
         // No permitir rutas de salida con bloqueo receptor
