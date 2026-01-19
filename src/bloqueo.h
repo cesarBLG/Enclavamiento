@@ -145,7 +145,7 @@ public:
     }
     void set_ruta(TipoMovimiento tipo, CompatibilidadManiobra maniobra_compatible, bool anular_bloqueo)
     {
-        if (tipo != ruta || maniobra_compatible != maniobra_compatible) {
+        if (tipo != ruta || maniobra_compatible != this->maniobra_compatible) {
             ruta = tipo;
             this->maniobra_compatible = maniobra_compatible;
             if (ruta == TipoMovimiento::Ninguno && anular_bloqueo && estado == bloqueo_emisor && desbloqueo_permitido()) estado_objetivo = EstadoBloqueo::Desbloqueo;
@@ -282,7 +282,7 @@ public:
         return r;
     }
 
-    estado_bloqueo get_estado(Lado lado)
+    estado_bloqueo get_estado()
     {
         return estado_completo;
     }

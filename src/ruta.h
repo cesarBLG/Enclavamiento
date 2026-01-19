@@ -8,6 +8,7 @@
 #include "log.h"
 #include "remota.h"
 class ruta;
+class frontera;
 class destino_ruta
 {
 protected:
@@ -33,6 +34,7 @@ public:
         estado = get_estado();
         if (estado != prev_estado) send_state();
     }
+    frontera* get_frontera();
 };
 class ruta
 {
@@ -50,10 +52,12 @@ public:
     bool anulacion_bloqueo_pendiente = false;
 protected:
     std::vector<std::pair<seccion_via*,Lado>> secciones;
+    std::map<seccion_via*, EstadoCanton> ocupacion_maxima_secciones;
     std::map<seccion_via*, std::pair<int, int>> posicion_aparatos;
     std::set<seccion_via*> secciones_aseguradas;
     std::shared_ptr<timer> diferimetro_dai;
     std::shared_ptr<timer> diferimetro_dei;
+    std::shared_ptr<timer> diferimetro_deslizamiento;
     std::vector<std::pair<seccion_via*,Lado>> proximidad;
     std::set<std::string> ultimos_cvs_proximidad;
     señal_impl *señal_inicio;
@@ -71,6 +75,9 @@ protected:
     int64_t temporizador_dai1;
     int64_t temporizador_dai2;
     int64_t temporizador_dei;
+    int64_t temporizador_deslizamiento;
+
+    seccion_via *seccion_inicio_temporizador_deslizamiento = nullptr;
 
     bool sucesion_automatica = false;
     EstadoFAI estado_fai = EstadoFAI::EnEspera;
@@ -80,51 +87,9 @@ protected:
     int64_t tiempo_espera_fai;
 
     // Disolución completa de la ruta
-    void disolver()
-    {
-        if (señal_inicio->ruta_activa == this) señal_inicio->ruta_activa = nullptr;
-        if (destino->ruta_activa == this) destino->ruta_activa = nullptr;
-        mandada = false;
-        formada = false;
-        supervisada = false;
-        ocupada = false;
-        clear_timer(diferimetro_dai);
-        clear_timer(diferimetro_dei);
-        diferimetro_dai = nullptr;
-        diferimetro_dei = nullptr;
-        diferimetro_cancelado = false;
-        for (auto *sec : secciones_aseguradas) {
-            sec->liberar(this);
-        }
-        secciones_aseguradas.clear();
-        log(id, "disuelta");
-    }
+    void disolver();
     // Disolución parcial de la ruta hasta el primer CV ocupado
-    void disolucion_parcial(bool anular_bloqueo=false)
-    {
-        if (!ocupada) {
-            anulacion_bloqueo_pendiente = anular_bloqueo;
-            disolver();
-            return;
-        }
-        if (señal_inicio->ruta_activa == this) señal_inicio->ruta_activa = nullptr;
-        if (estado_fai == EstadoFAI::Activo) {
-            estado_fai = EstadoFAI::EnEspera;
-            inicio_temporizacion_fai = 0;
-        }
-        clear_timer(diferimetro_dai);
-        diferimetro_dai = nullptr;
-        diferimetro_cancelado = false;
-        log(id, "disolución parcial");
-        for (int i=0; i<secciones.size(); i++) {
-            auto *sec = secciones[i].first;
-            auto *prev = i>0 ? secciones[i-1].first : señal_inicio->seccion_prev;
-            if (!sec->get_cv()->is_asegurada(this)) break;
-            if (sec->get_ocupacion(prev, secciones[i].second) > EstadoCanton::Prenormalizado) break;
-            sec->liberar(this);
-            secciones_aseguradas.erase(sec);
-        }
-    }
+    void disolucion_parcial(bool anular_bloqueo=false);
 public:
     ruta(const std::string &estacion, const json &j);
     bool establecer();
@@ -188,45 +153,7 @@ public:
     }
     void update();
     // Disolución artificial de ruta
-    bool dai(bool anular_bloqueo=false)
-    {
-        if (!mandada) return false;
-        log(id, "dai", LOG_DEBUG);
-        // Si la señal no llegó a abrir, la disolución es inmediata
-        if (!supervisada) {
-            disolucion_parcial(anular_bloqueo);
-            return true;
-        }
-        bool proximidad_libre = true;
-        for (auto [sec, dir] : proximidad) {
-            auto e = sec->get_cv()->get_state();
-            if (e != EstadoCV::Libre) {
-                proximidad_libre = false;
-                break;
-            }
-        }
-        // Si la proximidad está libre, la disolución es inmediata
-        // Si no hay secciones aseguradas por la ruta, ni un bloqueo tomado, no es necesario temporizar
-        if ((proximidad_libre && proximidad.size() > 0) || (secciones.size() == 0 && bloqueo_salida == "")) {
-            disolucion_parcial(anular_bloqueo);
-        } else if (diferimetro_dai == nullptr) {
-            int64_t temporizador = temporizador_dai1;
-            // Temporización larga si se cumplen todas:
-            // - Existe movimiento con fin en la señal o es la señal de entrada desde un bloqueo
-            // - El aspecto de la señal condiciona señales anteriores
-            // - Está ocupada la proximidad más allá del circuito anterior a la señal
-            if (tipo == TipoMovimiento::Itinerario && señal_inicio->condiciona_anteriores() && 
-            (señal_inicio->tipo == TipoSeñal::Entrada || señal_inicio->tipo == TipoSeñal::PostePuntoProtegido || señal_inicio->ruta_fin != nullptr)
-            && (proximidad.empty() || proximidad[0].first->get_cv()->get_state() <= EstadoCV::Prenormalizado)) {
-                temporizador = temporizador_dai2;
-            }
-            diferimetro_dai = set_timer([this, anular_bloqueo]() {
-                diferimetro_dai = nullptr;
-                disolucion_parcial(anular_bloqueo);
-            }, temporizador);
-        }
-        return true;
-    }
+    bool dai(bool anular_bloqueo=false);
     bool cancelar_fai()
     {
         if (estado_fai != EstadoFAI::EnEspera && estado_fai != EstadoFAI::Cancelado) {
@@ -238,18 +165,7 @@ public:
     }
     // Disolución de emergencia
     // Temporización larga, disuelve secciones aseguradas aunque no estén libres
-    bool dei()
-    {
-        if (!ocupada || !supervisada) return false;
-        log(id, "dei", LOG_DEBUG);
-        if (diferimetro_dei == nullptr) {
-            diferimetro_dei = set_timer([this]() {
-                diferimetro_dei = nullptr;
-                disolver();
-            }, temporizador_dei);
-        }
-        return true;
-    } 
+    bool dei();
 
     bool is_mandada()
     {
@@ -259,13 +175,25 @@ public:
     {
         return formada;
     }
-    bool dai_activo()
+    bool is_ocupada()
     {
-        return diferimetro_dai != nullptr;
+        return ocupada;
+    }
+    bool is_supervisada()
+    {
+        return supervisada;
+    }
+    bool en_disolucion()
+    {
+        return diferimetro_dai != nullptr || diferimetro_dei != nullptr;
     }
     const std::vector<std::pair<seccion_via*,Lado>> &get_secciones()
     {
         return secciones;
+    }
+    const std::map<seccion_via*,EstadoCanton> &get_ocupacion_maxima_secciones()
+    {
+        return ocupacion_maxima_secciones;
     }
     std::optional<EstadoFAI> get_estado_fai()
     {
@@ -278,6 +206,10 @@ public:
         if (estado_fai == EstadoFAI::AperturaNoPosible || estado_fai == EstadoFAI::AperturaNoPosibleReconocida || estado_fai == EstadoFAI::Cancelado) return 3;
         if (estado_fai == EstadoFAI::Solicitud) return 2;
         return 1;
+    }
+    señal_impl *get_señal_inicio()
+    {
+        return señal_inicio;
     }
 
     RespuestaMando mando(const std::string &inicio, const std::string &fin, const std::string &cmd)
@@ -316,13 +248,14 @@ public:
 
     void message_cv(const std::string &id, estado_cv ecv)
     {
-        if (estado_fai == EstadoFAI::EnEspera) {
+        /*if (estado_fai == EstadoFAI::EnEspera || estado_fai == EstadoFAI::Cancelado || estado_fai == EstadoFAI::AperturaNoPosible || estado_fai == EstadoFAI::AperturaNoPosibleReconocida) {
             for (auto &[s, l] : proximidad) {
                 if (id == s->get_cv()->id && ecv.evento && ecv.evento->ocupacion && ecv.evento->lado == l) {
                     inicio_temporizacion_fai = 0;
+                    estado_fai = EstadoFAI::EnEspera;
                 }
             }
-        }
+        }*/
         if (!mandada) return;
         // Ocupación del primer CV de la ruta
         if (id == señal_inicio->seccion->get_cv()->id && ecv.evento && ecv.evento->ocupacion && ecv.evento->lado == lado) {

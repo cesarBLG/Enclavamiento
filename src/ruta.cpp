@@ -54,6 +54,13 @@ estado_fin_ruta destino_ruta::get_estado()
     e.bloqueo_destino = bloqueo_destino;
     return e;
 }
+frontera *destino_ruta::get_frontera()
+{
+    if (tipo == TipoDestino::Señal) {
+        return señales[id]->frontera_entrada;
+    }
+    return nullptr;
+}
 ruta::ruta(const std::string &estacion, const json &j) : estacion(estacion), tipo(j["Tipo"]), id_inicio(j["Inicio"]), id_destino(j["Destino"]), id((tipo == TipoMovimiento::Itinerario ? (ertms ? "ER " : "I ") : (tipo == TipoMovimiento::Rebase ? "R" : "M "))+estacion+" "+id_inicio+" "+id_destino), bloqueo_salida(j.value("Bloqueo", ""))
 {
     std::string id_señal = estacion+":"+id_inicio;
@@ -66,13 +73,14 @@ ruta::ruta(const std::string &estacion, const json &j) : estacion(estacion), tip
     temporizador_dai1 = parametros.diferimetro_dai1;
     temporizador_dai2 = parametros.diferimetro_dai2;
     temporizador_dei = parametros.diferimetro_dei;
+    temporizador_deslizamiento = j.value("DiferímetroDeslizamiento", 15);
 
     señal_inicio = señal_impls[id_señal];
     lado = señal_inicio->lado;
     if (secciones.empty()) lado_bloqueo = lado;
     else lado_bloqueo = secciones.back().second;
 
-    std::string full_id_destino = estacion+":"+id_destino;
+    std::string full_id_destino = id_destino.find(':') != std::string::npos ? id_destino : estacion+":"+id_destino;
     if (destinos_ruta.find(full_id_destino) == destinos_ruta.end()) {
         log(id, "destino inválido", LOG_ERROR);
         return;
@@ -97,6 +105,7 @@ ruta::ruta(const std::string &estacion, const json &j) : estacion(estacion), tip
         do
         {
             secciones.push_back({sec, dir});
+            ocupacion_maxima_secciones[sec] = EstadoCanton::Prenormalizado;
             seccion_via *next;
             if (posicion_aparatos.find(sec) != posicion_aparatos.end()) {
                 auto p = sec->get_seccion_in(opp_lado(dir), posicion_aparatos[sec].second);
@@ -128,6 +137,12 @@ bool ruta::establecer()
     }
     // Existe otro itinerario con el mismo destino
     if (destino->ruta_activa != nullptr && destino->ruta_activa != this) {
+        return false;
+    }
+    if (señal_inicio->frontera_salida != nullptr && !señal_inicio->frontera_salida->salida_permitida(this)) {
+        return false;
+    }
+    if (destino->get_frontera() != nullptr && !destino->get_frontera()->entrada_permitida(this)) {
         return false;
     }
     if (bloqueo_salida != "") {
@@ -193,8 +208,6 @@ bool ruta::establecer()
         if (sec->get_cv()->is_asegurada() && !sec->get_cv()->is_asegurada(this)) return false;
         // Bloqueo de vía establecido
         if (sec->is_bloqueo_seccion()) return false;
-        // CV ocupado en sentido contrario
-        if (sec->get_ocupacion(prev, secciones[i].second) == EstadoCanton::Ocupado) return false;
     }
     log(id, "mandada", LOG_DEBUG);
     clear_timer(diferimetro_dei);
@@ -294,25 +307,38 @@ void ruta::update()
     // Desenclavar ruta al paso de la circulación
     if (ocupada && !sucesion_automatica) {
         // En maniobra, cerrar señal cuando se libera el CV anterior o el de señal
-        if (tipo == TipoMovimiento::Maniobra && proximidad.size() > 0 && (proximidad[0].first->get_cv()->get_state() <= EstadoCV::Prenormalizado || proximidad[0].first->get_cv()->get_state() == (proximidad[0].second == Lado::Impar ? EstadoCV::OcupadoPar : EstadoCV::OcupadoImpar))) {
-            if (señal_inicio->ruta_activa == this) señal_inicio->ruta_activa = nullptr;
+        if (tipo == TipoMovimiento::Maniobra && señal_inicio->ruta_activa == this) {
+            if ((proximidad.size() > 0 &&
+                (proximidad[0].first->get_cv()->get_state() <= EstadoCV::Prenormalizado || proximidad[0].first->get_cv()->get_state() == (proximidad[0].second == Lado::Impar ? EstadoCV::OcupadoPar : EstadoCV::OcupadoImpar)))
+            || (secciones.size() > 0 && secciones[0].first->get_cv()->get_state() <= EstadoCV::Prenormalizado)) {
+                
+                señal_inicio->ruta_activa = nullptr;
+            }
         }
         // Desenclavar secciones conforme se liberan
         for (int i=0; i<secciones.size(); i++) {
+            bool anterior_libre = false;
+            // Primer CV se desenclava cuando se libera con la señal cerrada
+            if (i == 0) {
+                if (señal_inicio->ruta_activa == nullptr) anterior_libre = true;
+            // Resto de CVs se desenclavan cuando se liberan con la anterior sección desenclavada
+            } else if (!secciones[i-1].first->is_asegurada(this)) {
+                anterior_libre = true;
+            }
+            if (!anterior_libre) break;
             if (secciones[i].first->get_cv()->get_state() <= EstadoCV::Prenormalizado) {
-                bool liberar = false;
-                // Primer CV se desenclava cuando se libera con la señal cerrada
-                if (i == 0) {
-                    if (señal_inicio->ruta_activa == nullptr || tipo == TipoMovimiento::Maniobra) liberar = true;
-                // Resto de CVs se desenclavan cuando se liberan con la anterior sección desenclavada
-                } else if (!secciones[i-1].first->is_asegurada(this)) {
-                    liberar = true;
-                }
-                if (liberar) {
+                if (secciones[i].first->is_asegurada(this)) {
                     secciones[i].first->liberar(this);
                     secciones_aseguradas.erase(secciones[i].first);
                     // Si todas las secciones están libres, se produce disolución normal de la ruta
-                    if (i == secciones.size() - 1) disolver();
+                    if (i == secciones.size() - 1) {
+                        disolver();
+                    } else if (secciones[i+1].first == seccion_inicio_temporizador_deslizamiento) {
+                        diferimetro_deslizamiento = set_timer([this]() {
+                            log(id, "diferimetro deslizamiento", LOG_INFO);
+                            disolver();
+                        }, temporizador_deslizamiento);
+                    }
                 }
             }
         }
@@ -338,5 +364,122 @@ void ruta::update()
     if (formada && !supervisada && señal_inicio->get_state() != Aspecto::Parada) {
         supervisada = true;
         log(id, "supervisada");
+    }
+}
+bool ruta::dai(bool anular_bloqueo)
+{
+    if (!mandada) return false;
+    if (señal_inicio->frontera_salida != nullptr && !señal_inicio->frontera_salida->dai_salida_permitido()) return false;
+    log(id, "dai", LOG_DEBUG);
+    // Si la señal no llegó a abrir, la disolución es inmediata
+    if (!supervisada) {
+        disolucion_parcial(anular_bloqueo);
+        return true;
+    }
+    bool proximidad_libre = true;
+    for (auto [sec, dir] : proximidad) {
+        auto e = sec->get_cv()->get_state();
+        if (e != EstadoCV::Libre) {
+            proximidad_libre = false;
+            break;
+        }
+    }
+    // Si la proximidad está libre, la disolución es inmediata
+    // Si no hay secciones aseguradas por la ruta, ni un bloqueo tomado, no es necesario temporizar
+    // Señales de salida de estaciones abiertas no necesitan temporizador por necesitar señal de marche el tren
+    if ((proximidad_libre && proximidad.size() > 0) || (secciones.size() == 0 && bloqueo_salida == "") || (señal_inicio->tipo == TipoSeñal::Salida && !dependencias[estacion]->cerrada)) {
+        disolucion_parcial(anular_bloqueo);
+    } else if (diferimetro_dai == nullptr) {
+        int64_t temporizador = temporizador_dai1;
+        // Temporización larga si se cumplen todas:
+        // - Existe movimiento con fin en la señal o es la señal de entrada desde un bloqueo
+        // - El aspecto de la señal condiciona señales anteriores
+        // - Está ocupada la proximidad más allá del circuito anterior a la señal
+        if (tipo == TipoMovimiento::Itinerario && señal_inicio->condiciona_anteriores() && 
+        (señal_inicio->tipo == TipoSeñal::Entrada || señal_inicio->tipo == TipoSeñal::PostePuntoProtegido || señal_inicio->ruta_fin != nullptr)
+        && (proximidad.empty() || proximidad[0].first->get_cv()->get_state() <= EstadoCV::Prenormalizado)) {
+            temporizador = temporizador_dai2;
+        }
+        diferimetro_dai = set_timer([this, anular_bloqueo]() {
+            diferimetro_dai = nullptr;
+            disolucion_parcial(anular_bloqueo);
+        }, temporizador);
+    }
+    return true;
+}
+// Disolución de emergencia
+bool ruta::dei()
+{
+    frontera *f = destino->get_frontera();
+    if (f != nullptr) {
+        if (!f->dei_entrada_permitido()) return false;
+    }
+    if (!ocupada || !supervisada) {
+        if (señal_inicio != nullptr && señal_inicio->frontera_salida != nullptr) {
+            if (!señal_inicio->frontera_salida->dei_salida_permitido()) return false;
+        } else {
+            return false;
+        }
+    }
+    log(id, "dei", LOG_DEBUG);
+    if (diferimetro_dei == nullptr) {
+        diferimetro_dei = set_timer([this]() {
+            diferimetro_dei = nullptr;
+            disolver();
+            if (señal_inicio != nullptr && señal_inicio->frontera_salida) {
+                señal_inicio->frontera_salida->disolver_entrada();
+            }
+        }, temporizador_dei);
+    }
+    return true;
+} 
+// Disolución completa de la ruta
+void ruta::disolver()
+{
+    if (señal_inicio->ruta_activa == this) señal_inicio->ruta_activa = nullptr;
+    if (destino->ruta_activa == this) destino->ruta_activa = nullptr;
+    mandada = false;
+    formada = false;
+    supervisada = false;
+    ocupada = false;
+    clear_timer(diferimetro_dai);
+    clear_timer(diferimetro_dei);
+    clear_timer(diferimetro_deslizamiento);
+    diferimetro_dai = nullptr;
+    diferimetro_dei = nullptr;
+    diferimetro_deslizamiento = nullptr;
+    diferimetro_cancelado = false;
+    for (auto *sec : secciones_aseguradas) {
+        sec->liberar(this);
+    }
+    secciones_aseguradas.clear();
+    log(id, "disuelta");
+}
+// Disolución parcial de la ruta hasta el primer CV ocupado
+void ruta::disolucion_parcial(bool anular_bloqueo)
+{
+    if (!ocupada) {
+        anulacion_bloqueo_pendiente = anular_bloqueo;
+        frontera *f = destino->get_frontera();
+        disolver();
+        if (f != nullptr) f->disolver_salida();
+        return;
+    }
+    if (señal_inicio->ruta_activa == this) señal_inicio->ruta_activa = nullptr;
+    if (estado_fai == EstadoFAI::Activo) {
+        estado_fai = EstadoFAI::EnEspera;
+        inicio_temporizacion_fai = 0;
+    }
+    clear_timer(diferimetro_dai);
+    diferimetro_dai = nullptr;
+    diferimetro_cancelado = false;
+    log(id, "disolución parcial");
+    for (int i=0; i<secciones.size(); i++) {
+        auto *sec = secciones[i].first;
+        auto *prev = i>0 ? secciones[i-1].first : señal_inicio->seccion_prev;
+        if (!sec->get_cv()->is_asegurada(this)) break;
+        if (sec->get_ocupacion(prev, secciones[i].second) > EstadoCanton::Prenormalizado) break;
+        sec->liberar(this);
+        secciones_aseguradas.erase(sec);
     }
 }

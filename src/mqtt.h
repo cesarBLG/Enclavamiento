@@ -1,6 +1,7 @@
 #pragma once
 #include <string>
 #include <vector>
+#include <set>
 #include "nlohmann/json.hpp"
 using json = nlohmann::json;
 void init_mqtt(const json &j);
@@ -9,6 +10,7 @@ void loop_mqtt(int64_t timeout);
 void exit_mqtt();
 
 extern std::string name;
+extern std::set<std::string> managed_topics;
 
 void send_message(const std::string &topic, const std::string &payload, int qos=0, bool retain=false);
 void handle_message(const std::string &topic, const std::string &payload);

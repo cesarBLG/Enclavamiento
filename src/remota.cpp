@@ -72,7 +72,7 @@ void handle_message_fec(const std::string client, const json &j)
     } else if (j["Tipo"] == "ConfirmaciónMandoEspecial") {
         procesar_mando(client, "ME", true);
     } else if (j["Tipo"] == "CancelaciónMandoEspecial") {
-        procesar_mando(client, "", true);
+        procesar_mando(client, "BL", true);
     }
 }
 void update_remota()

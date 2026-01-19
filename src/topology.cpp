@@ -71,7 +71,7 @@ void seccion_via::message_cv(const std::string &id, estado_cv ev)
         bool intempestiva = false;
         if (trayecto) {
             if (bloqueo_asociado != "" && bloqueo_act.estado != (ev.evento->lado == Lado::Impar ? EstadoBloqueo::BloqueoImpar : EstadoBloqueo::BloqueoPar) && bloqueo_act.ruta[ev.evento->lado] != TipoMovimiento::Maniobra) {
-                intempestiva = true;
+                //intempestiva = true;
             }
         } else {
             if (ruta_asegurada == nullptr) {

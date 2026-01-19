@@ -4,6 +4,7 @@
 #include <thread>
 #include <chrono>
 #include <map>
+#include <set>
 #include "mqtt.h"
 #include "log.h"
 
@@ -11,6 +12,7 @@ mosquitto *mosq;
 std::string name;
 
 std::map<std::string, std::vector<std::string>> handled_topics;
+std::set<std::string> managed_topics;
 bool connected = false;
 bool gestor_conectado = true;
 void on_connect(struct mosquitto *mosq, void *userdata, int rc)
@@ -37,6 +39,7 @@ void on_connect(struct mosquitto *mosq, void *userdata, int rc)
 void send_message(const std::string &topic, const std::string &payload, int qos, bool retain)
 {
     mosquitto_publish(mosq, nullptr, topic.c_str(), payload.size(), payload.c_str(), qos, retain);
+    handle_message(topic, payload);
 }
 
 void on_message(struct mosquitto *mosq, void *obj, const struct mosquitto_message *message)
@@ -48,6 +51,7 @@ void on_message(struct mosquitto *mosq, void *obj, const struct mosquitto_messag
         for (auto &t : tops) {
             handle_message(t, "\"desconexion\"");
         }*/
+    if (managed_topics.find(topic) != managed_topics.end()) return;
     if (topic == "gestor_conexion") {
         gestor_conectado = payload == "on";
         if (!gestor_conectado)

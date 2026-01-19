@@ -2,7 +2,7 @@ cmake_minimum_required (VERSION 3.14)
 project (Enclavamiento)
 set(CMAKE_CXX_STANDARD 20)
 
-set(SOURCES main.cpp mqtt.cpp log.cpp items.cpp cv.cpp bloqueo.cpp signal.cpp
+set(SOURCES main.cpp mqtt.cpp log.cpp items.cpp cv.cpp bloqueo.cpp signal.cpp frontera.cpp
     ruta.cpp topology.cpp remota.cpp dependencia.cpp pn_enclavado.cpp
     serialization.cpp serialization_remota.cpp )
 

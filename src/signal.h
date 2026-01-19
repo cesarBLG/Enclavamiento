@@ -3,6 +3,7 @@
 #include "topology.h"
 #include "remota.h"
 class ruta;
+class frontera;
 class señal : public estado_señal
 {
 public:
@@ -14,6 +15,7 @@ public:
     const int pin;
     seccion_via * const seccion;
     seccion_via * const seccion_prev;
+    frontera *frontera_entrada=nullptr;
     señal(const std::string &estacion, const json &j);
     virtual ~señal() {}
     Aspecto get_state()
@@ -56,6 +58,9 @@ public:
     ruta *ruta_fai=nullptr;
     bool bloqueo_señal = false;
     bool sucesion_automatica = false;
+
+    frontera *frontera_salida=nullptr;
+
     señal_impl(const std::string &estacion, const json &j);
     void send_state(bool aspecto=true, bool inicio=true)
     {
@@ -72,8 +77,8 @@ public:
         // Detección de paso de tren por la señal
         if (ev.evento && ev.evento->ocupacion && ev.evento->lado == lado && (ev.evento->cv_colateral == "" || seccion_prev == nullptr || ev.evento->cv_colateral == seccion_prev->get_cv()->id)) {
             // Si la señal estaba cerrada, es un rebase de señal
-            if (aspecto == Aspecto::Parada && get_milliseconds() - ultimo_paso_abierta > 30000) {
-                if (tipo != TipoSeñal::PostePuntoProtegido) {
+            if (aspecto == Aspecto::Parada) {
+                if (ruta_necesaria && get_milliseconds() - ultimo_paso_abierta > 30000) {
                     rebasada = true;
                     log(this->id, "rebasada", LOG_WARNING);
                 }

@@ -116,8 +116,8 @@ public:
         r.PN_PRX2 = proximidad[Lado::Par] ? 1 : 0;
         return r;
     }
-    bool is_enclavado()
+    bool is_protegido()
     {
-        return protegido && cierre_ruta;
+        return protegido;
     }
 };
