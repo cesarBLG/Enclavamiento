@@ -90,6 +90,7 @@ public:
         // - Si no existe posibilidad de cruce en la estación emisora (estación cerrada sin agujas talonables),
         //   esta estación no puede ser receptora de otro bloqueo
         if (ruta == TipoMovimiento::Itinerario || colateral.ruta == TipoMovimiento::Itinerario || ocupado) return false;
+        if (tipo == TipoBloqueo::BAD || tipo == TipoBloqueo::BLAD) return false;
         if (estado == bloqueo_emisor) {
             if (bloqueo_vinculado != nullptr && (colateral.bloqueo_siguiente || bloqueo_vinculado->propagacion_completa) && (bloqueo_vinculado->estado == bloqueo_vinculado->bloqueo_receptor || bloqueo_vinculado->colateral.estado_objetivo == bloqueo_vinculado->bloqueo_receptor || bloqueo_vinculado->estado == EstadoBloqueo::SinDatos)) {
                 return false;

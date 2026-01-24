@@ -35,7 +35,7 @@ void bloqueo::message_cv(const std::string &id, estado_cv ecv)
             liberar = true;
     
     // Detección de escape de material
-    if (ecv.evento && ecv.evento->lado == lado && estado != bloqueo_emisor) {
+    if (ecv.evento && ecv.evento->lado == lado && estado != bloqueo_emisor && tipo != TipoBloqueo::BAD && tipo != TipoBloqueo::BLAD) {
         bool ocupacion = ecv.evento->ocupacion;
         if (ocupacion && (ecv.estado_previo == EstadoCV::Libre || ecv.estado_previo == EstadoCV::Prenormalizado) && (ecv.estado != EstadoCV::Libre && ecv.estado != EstadoCV::Prenormalizado)) {
             bool esc=false;

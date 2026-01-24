@@ -390,9 +390,9 @@ void init_items_ordered(const json &j, std::string tipo)
             }
         }
         if (tipo == "DestinosRuta") {
-            for (auto &[id, tipo] : jdep["DestinosRuta"].items()) {
+            for (auto &[id, jdest] : jdep["DestinosRuta"].items()) {
                 std::string idd = estacion+":"+id;
-                destinos_ruta[idd] = new destino_ruta(idd, tipo);
+                destinos_ruta[idd] = new destino_ruta(idd, jdest);
             }
         }
         if (tipo == "Rutas") {

@@ -1,6 +1,9 @@
 #include "ruta.h"
 #include "items.h"
+destino_ruta::destino_ruta(const std::string &id, const json &j) : id(id), tipo(j["Tipo"]), topic("destino/"+id_to_mqtt(id)+"/state")
+{
 
+}
 RespuestaMando destino_ruta::mando(const std::string &cmd, int me)
 {
     if (me_pendiente && me == 0) return RespuestaMando::MandoEspecialEnCurso;
@@ -239,10 +242,11 @@ void ruta::update()
         aut_salida &= !bloqueo_act.cierre_señales[lado] && !bloqueo_act.prohibido[lado] && bloqueo_act.actc[lado] != ACTC::Denegada;
     }
     bool proximidad_ocupada = false;
-    for (auto [sec, dir] : proximidad) {
+    for (int i=0; i<proximidad.size(); i++) {
+        auto [sec, dir] = proximidad[i];
         auto e = sec->get_cv()->get_state();
         if (e > EstadoCV::Prenormalizado && (e != (dir == Lado::Impar ? EstadoCV::OcupadoPar : EstadoCV::OcupadoImpar))) {
-            proximidad_ocupada = true;
+            if (i == 0 || (señal_inicio->tipo == TipoSeñal::Entrada || señal_inicio->tipo == TipoSeñal::PostePuntoProtegido || señal_inicio->ruta_fin != nullptr)) proximidad_ocupada = true;
             break;
         }
     }

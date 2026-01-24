@@ -20,7 +20,7 @@ public:
     bool bloqueo_destino = false;
     bool me_pendiente = false;
     ruta *ruta_activa = nullptr;
-    destino_ruta(const std::string &id, TipoDestino tipo) : id(id), tipo(tipo), topic("destino/"+id_to_mqtt(id)+"/state") {}
+    destino_ruta(const std::string &id, const json &j);
     RespuestaMando mando(const std::string &cmd, int me);
     RemotaFMV get_estado_remota();
     estado_fin_ruta get_estado();
