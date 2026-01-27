@@ -117,14 +117,14 @@ RespuestaMando mando(const std::vector<std::string> &ordenes, int me)
 RespuestaMando procesar_mando(const std::string &client, std::string payload, bool from_ctc)
 {
     if (payload == "desconexion") {
-        /*for (auto &[id, dep] : dependencias) {
+        for (auto &[id, dep] : dependencias) {
             estado_mando est = dep->mando_actual;
-            if (est.central == from_ctc && est.puesto == client && !est.cedido) {
+            if (est.central && from_ctc && est.puesto == client && !est.cedido) {
                 est.cedido = "";
                 dep->set_mando(est);
                 log(id, "mando cedido a local por desconexion");
             }
-        }*/
+        }
         return RespuestaMando::Aceptado;
     }
     auto ordenes = split(payload, ' ');

@@ -1,5 +1,19 @@
 #include "dependencia.h"
 #include "items.h"
+dependencia::dependencia(const std::string id, const json &j) : id(id), mando_actual({false, "PLO_"+id, std::nullopt, false})
+{
+    if (j.contains("ServicioIntermitente")) {
+        auto &si = j["ServicioIntermitente"];
+        cerrada = si.value("Activo", false);
+        servicio_intermitente = config_servicio_intermitente();
+        if (si.contains("FAI")) {
+            servicio_intermitente->fais = si["FAI"];
+        }
+        if (si.contains("SeñalesAbiertas")) {
+            servicio_intermitente->señales_abiertas = si["SeñalesAbiertas"];
+        }
+    }
+}
 void dependencia::calcular_vinculacion_bloqueos()
 {
     // Para cada bloqueo en estación cerrada, indicar si es posible realizar cruces, 
@@ -38,6 +52,7 @@ void dependencia::calcular_vinculacion_bloqueos()
 }
 bool dependencia::set_servicio_intermitente(bool cerrar)
 {
+    if (!servicio_intermitente) return false;
     if (cerrar) {
         // Comprobar que no hay bloqueos en sentidos opuestos
         for (auto &[id, bloq] : bloqueos) {
@@ -65,14 +80,33 @@ bool dependencia::set_servicio_intermitente(bool cerrar)
             }
         }
     }
-
+    for (auto *r : rutas) {
+        if (servicio_intermitente->fais.find(r->id) != servicio_intermitente->fais.end()) {
+            if (cerrar) {
+                auto *r2 = r->get_señal_inicio()->ruta_fai;
+                if (r2 != r && r2 != nullptr) r2->set_fai(false);
+                if (r2 != r) r->set_fai(true);
+            } else {
+                r->set_fai(false);
+            }
+        }
+    }
     for (auto &[ids, sig] : señal_impls) {
-        std::string dep = ids.substr(0, ids.find_first_of(':'));
-        if (dep == id && sig->tipo == TipoSeñal::Salida) {
-            sig->cierre_stick = !cerrar;
-            sig->ruta_necesaria = !cerrar;
-            if (cerrar) sig->clear_request = true;
-            else if (sig->ruta_activa == nullptr) sig->clear_request = false;
+        size_t idx = ids.find_first_of(':');
+        std::string dep = ids.substr(0, idx);
+        std::string elem = ids.substr(idx+1);
+        if (dep == id) {
+            if (servicio_intermitente->señales_abiertas.find(elem) != servicio_intermitente->señales_abiertas.end()) {
+                sig->cierre_stick = !cerrar;
+                sig->ruta_necesaria = !cerrar;
+                if (cerrar) sig->clear_request = true;
+                else if (sig->ruta_activa == nullptr) sig->clear_request = false;
+            } else {
+                sig->cierre_stick = sig->ruta_necesaria && !cerrar;
+                bool clear = sig->ruta_activa != nullptr || !sig->ruta_necesaria;
+                if (cerrar) sig->clear_request |= clear;
+                else sig->clear_request &= clear;
+            }
         }
     }
     cerrada = cerrar;

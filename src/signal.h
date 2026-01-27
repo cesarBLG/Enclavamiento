@@ -94,9 +94,4 @@ public:
     std::pair<RemotaSIG, RemotaIMV> get_estado_remota();
     estado_inicio_ruta get_estado_inicio();
     bool is_rebasada() { return rebasada; }
-    // Indica si el aspecto de la señal condiciona el aspecto de señales anteriores
-    bool condiciona_anteriores()
-    {
-        return aspectos_maximos_anterior_señal.size() > 1;
-    }
 };

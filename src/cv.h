@@ -87,6 +87,7 @@ protected:
 
     int64_t tiempo_auto_prenormalizacion;
     int64_t tiempo_auto_prenormalizacion_tren;
+    double fraccion_ejes_prenormalizacion;
 
     std::shared_ptr<timer> timer_auto_prenormalizacion;
     std::shared_ptr<timer> timer_auto_prenormalizacion_tren;
@@ -96,6 +97,7 @@ protected:
     lados<int> num_ejes;
     lados<std::vector<int>> num_trenes;
     lados<int64_t> ultimo_eje;
+    EstadoCV estado_raw;
 
     bool normalizado;
 
@@ -112,28 +114,29 @@ public:
             ocupado[cejes[id].lado] = true;
         }
         if (ocupado[Lado::Impar] && ocupado[Lado::Par]) {
-            estado = EstadoCV::Ocupado;
+            estado_raw = EstadoCV::Ocupado;
         } else if (ocupado[Lado::Impar]) {
-            estado = EstadoCV::OcupadoImpar;
+            estado_raw = EstadoCV::OcupadoImpar;
         } else if (ocupado[Lado::Par]) {
-            estado = EstadoCV::OcupadoPar;
+            estado_raw = EstadoCV::OcupadoPar;
         } else {
-            estado = normalizado ? EstadoCV::Libre : EstadoCV::Prenormalizado;
+            estado_raw = normalizado ? EstadoCV::Libre : EstadoCV::Prenormalizado;
         }
         averia = !averia_cejes.empty();
-        if (estado_previo > estado) {
-            set_timer([this]() {
+        if (estado_raw >= estado) {
+            estado = estado_raw;
+            send_state();
+        } else if (timer_liberacion == nullptr) {
+            timer_liberacion = set_timer([this]() {
+                estado = estado_raw;
+                timer_liberacion = nullptr;
                 send_state();
             }, 1000);
-        } else {
-            send_state();
         }
     }
 
     void send_state()
     {
-        clear_timer(timer_liberacion);
-        timer_liberacion = nullptr;
         remota_cambio_elemento(ElementoRemota::CV, id);
         if (estado <= EstadoCV::Prenormalizado) ocupacion_intempestiva = false;
         json msg(*((estado_cv*)this));
@@ -225,14 +228,16 @@ public:
             if (num_ejes[Lado::Par] == 0) num_trenes[Lado::Par].clear();
             clear_timer(timer_auto_prenormalizacion);
             clear_timer(timer_auto_prenormalizacion_tren);
-
-            timer_auto_prenormalizacion = set_timer([this]() {
-                if (num_ejes[Lado::Impar] > 0 || num_ejes[Lado::Par] > 0) {
-                    prenormalizar();
-                    log(this->id, "timer prenormalizacion", LOG_WARNING);
-                    update();
-                }
-            }, tiempo_auto_prenormalizacion);
+            
+            if (tiempo_auto_prenormalizacion > 0) {
+                timer_auto_prenormalizacion = set_timer([this]() {
+                    if (num_ejes[Lado::Impar] > 0 || num_ejes[Lado::Par] > 0) {
+                        prenormalizar();
+                        log(this->id, "timer prenormalizacion", LOG_WARNING);
+                        update();
+                    }
+                }, tiempo_auto_prenormalizacion);
+            }
             set_timer_auto_prenormalizacion_tren();
             averia_cejes.erase(id);
             evento = {lado, msg == "Nominal", it->second.cv_colateral};
@@ -311,6 +316,7 @@ public:
 
     void set_timer_auto_prenormalizacion_tren()
     {
+        if (tiempo_auto_prenormalizacion_tren <= 0) return;
         timer_auto_prenormalizacion_tren = set_timer([this]() {
             bool changed = false;
             for (auto lado : {Lado::Impar, Lado::Par}) {
@@ -319,7 +325,7 @@ public:
                 if (arr.empty()) continue;
                 int diff = arr[arr.size() - 1] - num_ejes[lado];
                 int val0 = arr[0];
-                if (diff >= 0.5 * val0) {
+                if (diff >= fraccion_ejes_prenormalizacion * val0) {
                     arr.erase(arr.begin());
                     num_ejes[lado] = arr.empty() ? 0 : arr[arr.size()-1] - val0;
                     for (int &n : arr) {

@@ -211,6 +211,23 @@ public:
     {
         return señal_inicio;
     }
+    bool set_fai(bool activar) {
+        if (activar) {
+            if (!fai && señal_inicio->ruta_fai == nullptr) {
+                fai = true;
+                señal_inicio->ruta_fai = this;
+                return true;
+            }
+        } else {
+            if ((fai || fai_disparo_unico) && señal_inicio->ruta_fai == this) {
+                fai = false;
+                fai_disparo_unico = false;
+                señal_inicio->ruta_fai = nullptr;
+                return true;
+            }
+        }
+        return false;
+    }
 
     RespuestaMando mando(const std::string &inicio, const std::string &fin, const std::string &cmd)
     {
@@ -230,18 +247,9 @@ public:
                 return RespuestaMando::Aceptado;
             }
         } else if (cmd == "FAI") {
-            if (!fai && señal_inicio->ruta_fai == nullptr) {
-                fai = true;
-                señal_inicio->ruta_fai = this;
-                return RespuestaMando::Aceptado;
-            }
+            if (set_fai(true)) return RespuestaMando::Aceptado;
         } else if (cmd == "AFA") {
-            if ((fai || fai_disparo_unico) && señal_inicio->ruta_fai == this) {
-                fai = false;
-                fai_disparo_unico = false;
-                señal_inicio->ruta_fai = nullptr;
-                return RespuestaMando::Aceptado;
-            }
+            if (set_fai(false)) return RespuestaMando::Aceptado;
         }
         return RespuestaMando::OrdenRechazada;
     }
@@ -292,33 +300,9 @@ public:
         if (id != bloqueo_salida) return;
         bloqueo_act = eb;
     }
-    void messsage_aguja(const std::string &id, estado_aguja estado)
+    void message_aguja(const std::string &id, estado_aguja estado)
     {
-        for (auto &[sec, d] : proximidad) {
-            if (sec->id == id) {
-                construir_proximidad();
-                break;
-            }
-        }
     }
 protected:
-    void construir_proximidad(seccion_via *inicio, seccion_via *next, Lado dir_fwd, std::vector<std::pair<seccion_via*, Lado>> &secciones)
-    {
-        if (inicio == nullptr) return;
-        if (ultimos_cvs_proximidad.find(inicio->get_cv()->id) != ultimos_cvs_proximidad.end()) return;
-        int i0 = secciones.size();
-        inicio->prev_secciones(next, dir_fwd, secciones);
-        for (int i=i0; i<secciones.size(); i++) {
-            construir_proximidad(secciones[i].first, inicio, secciones[i].second, secciones);
-        }
-    }
-    void construir_proximidad()
-    {
-        proximidad.clear();
-        auto *inicio = señal_inicio->seccion;
-        auto p = inicio->get_seccion_in(lado, señal_inicio->pin);
-        if (p.first == nullptr || ultimos_cvs_proximidad.empty()) return;
-        proximidad.push_back({p.first, p.second});
-        construir_proximidad(p.first, inicio, p.second, proximidad);
-    }
+    void construir_proximidad();
 };

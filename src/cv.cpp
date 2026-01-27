@@ -35,9 +35,10 @@ cv_impl::cv_impl(const std::string &id, const json &j) : cv(id), topic("cv/"+id_
     ultimo_eje = {0, 0};
     tiempo_auto_prenormalizacion = parametros.diferimetro_prenormalizacion_cv;
     tiempo_auto_prenormalizacion_tren = parametros.diferimetro_prenormalizacion_cv_tren;
+    fraccion_ejes_prenormalizacion = parametros.fraccion_ejes_prenormalizacion;
     normalizado = false;
     perdida_secuencia = false;
-    estado = estado_previo = EstadoCV::Prenormalizado;
+    estado_raw = estado = estado_previo = EstadoCV::Prenormalizado;
 }
 void from_json(const json &j, cv_impl::cejes_position &position)
 {

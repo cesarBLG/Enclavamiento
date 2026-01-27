@@ -5,6 +5,11 @@
 #include <enclavamiento.h>
 #include "nlohmann/json.hpp"
 using json = nlohmann::json;
+struct config_servicio_intermitente
+{
+    std::set<std::string> fais;
+    std::set<std::string> señales_abiertas;
+};
 struct dependencia
 {
     const std::string id;
@@ -14,7 +19,8 @@ struct dependencia
     std::string mando_especial_pendiente;
     std::set<ruta*> rutas;
     std::map<std::string, bloqueo*> bloqueos;
-    dependencia(const std::string id, const json &j) : id(id), mando_actual({false, "PLO_"+id, std::nullopt, false}), cerrada(j.value("Cerrada", false)) {}
+    std::optional<config_servicio_intermitente> servicio_intermitente;
+    dependencia(const std::string id, const json &j);
     void update()
     {
         std::map<std::string, ruta*> movimiento_bloqueos;
