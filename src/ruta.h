@@ -20,6 +20,7 @@ public:
     bool bloqueo_destino = false;
     bool me_pendiente = false;
     ruta *ruta_activa = nullptr;
+    señal_impl *señal_fin = nullptr;
     destino_ruta(const std::string &id, const json &j);
     RespuestaMando mando(const std::string &cmd, int me);
     RemotaFMV get_estado_remota();
@@ -30,6 +31,9 @@ public:
     }
     void update()
     {
+        if (señal_fin != nullptr) {
+            señal_fin->ruta_fin = ruta_activa;
+        }
         auto prev_estado = estado;
         estado = get_estado();
         if (estado != prev_estado) send_state();
@@ -61,6 +65,7 @@ protected:
     std::vector<std::pair<seccion_via*,Lado>> proximidad;
     std::set<std::string> ultimos_cvs_proximidad;
     señal_impl *señal_inicio;
+    std::vector<std::pair<señal_impl*, Lado>> señales;
     destino_ruta *destino;
     Lado lado;
     Lado lado_bloqueo;
@@ -183,13 +188,13 @@ public:
     {
         return supervisada;
     }
-    bool en_disolucion()
-    {
-        return diferimetro_dai != nullptr || diferimetro_dei != nullptr;
-    }
     const std::vector<std::pair<seccion_via*,Lado>> &get_secciones()
     {
         return secciones;
+    }
+    const std::vector<std::pair<señal_impl*,Lado>> &get_señales()
+    {
+        return señales;
     }
     const std::map<seccion_via*,EstadoCanton> &get_ocupacion_maxima_secciones()
     {
@@ -293,6 +298,11 @@ public:
 
             // Con el paso de la circulación se cierra la señal, salvo en maniobras
             if (!sucesion_automatica && tipo != TipoMovimiento::Maniobra) señal_inicio->ruta_activa = nullptr;
+        }
+        for (auto &[sig, dir] : señales) {
+            if (id == sig->seccion->get_cv()->id && ecv.evento && ecv.evento->ocupacion && ecv.evento->lado == dir) {
+                if (!sucesion_automatica && tipo != TipoMovimiento::Maniobra) sig->ruta_activa = nullptr;
+            }
         }
     }
     void message_bloqueo(const std::string &id, estado_bloqueo eb)

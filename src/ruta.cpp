@@ -2,7 +2,8 @@
 #include "items.h"
 destino_ruta::destino_ruta(const std::string &id, const json &j) : id(id), tipo(j["Tipo"]), topic("destino/"+id_to_mqtt(id)+"/state")
 {
-
+    auto it = señal_impls.find(id);
+    if (it != señal_impls.end()) señal_fin = it->second;
 }
 RespuestaMando destino_ruta::mando(const std::string &cmd, int me)
 {
@@ -64,7 +65,7 @@ frontera *destino_ruta::get_frontera()
     }
     return nullptr;
 }
-ruta::ruta(const std::string &estacion, const json &j) : estacion(estacion), tipo(j["Tipo"]), id_inicio(j["Inicio"]), id_destino(j["Destino"]), id((tipo == TipoMovimiento::Itinerario ? (ertms ? "ER " : "I ") : (tipo == TipoMovimiento::Rebase ? "R" : "M "))+estacion+" "+id_inicio+" "+id_destino), bloqueo_salida(j.value("Bloqueo", ""))
+ruta::ruta(const std::string &estacion, const json &j) : estacion(estacion), tipo(j["Tipo"]), id_inicio(j["Inicio"]), id_destino(j["Destino"]), id((tipo == TipoMovimiento::Itinerario ? (ertms ? "ER " : "I ") : (tipo == TipoMovimiento::Rebase ? "R " : "M "))+estacion+" "+id_inicio+" "+id_destino), bloqueo_salida(j.value("Bloqueo", ""))
 {
     std::string id_señal = estacion+":"+id_inicio;
     if (señal_impls.find(id_señal) == señal_impls.end()) {
@@ -108,6 +109,12 @@ ruta::ruta(const std::string &estacion, const json &j) : estacion(estacion), tip
         {
             secciones.push_back({sec, dir});
             ocupacion_maxima_secciones[sec] = EstadoCanton::Prenormalizado;
+
+            if (sec != señal_inicio->seccion) {
+                auto *sig = sec->señal_inicio(dir, prv);
+                if (sig != nullptr && señal_impls.find(sig->id) != señal_impls.end()) señales.push_back({señal_impls[sig->id], dir});
+            }
+
             seccion_via *next;
             if (posicion_aparatos.find(sec) != posicion_aparatos.end()) {
                 auto p = sec->get_seccion_in(opp_lado(dir), posicion_aparatos[sec].second);
@@ -130,12 +137,19 @@ bool ruta::establecer()
     diferimetro_dai = nullptr;
     if (mandada && !ocupada) {
         señal_inicio->clear_request = true;
+        for (auto &[sig, dir] : señales) {
+            sig->clear_request = true;
+        }
         log(id, "re-mandada", LOG_DEBUG);
         return true;
     }
     // Existe otro itinerario con misma señal de inicio
     if (señal_inicio->ruta_activa != nullptr && señal_inicio->ruta_activa != this) {
         return false;
+    }
+    // Alguna de las señales de la ruta está mandada por otra ruta
+    for (auto &[sig, dir] : señales) {
+        if (sig->ruta_activa != nullptr && sig->ruta_activa != this) return false;
     }
     // Existe otro itinerario con el mismo destino
     if (destino->ruta_activa != nullptr && destino->ruta_activa != this) {
@@ -217,6 +231,10 @@ bool ruta::establecer()
     mandada = formada = true;
     señal_inicio->clear_request = true;
     señal_inicio->ruta_activa = this;
+    for (auto &[sig, dir] : señales) {
+        sig->ruta_activa = this;
+        sig->clear_request = true;
+    }
     destino->ruta_activa = this;
     // Asegurar todas las secciones en el sentido de la ruta
     for (int i=0; i<secciones.size(); i++) {
@@ -330,6 +348,9 @@ void ruta::update()
                 anterior_libre = true;
             }
             if (!anterior_libre) break;
+            for (auto &[sig, dir] : señales) {
+                if (sig->seccion == secciones[i].first && sig->ruta_activa == this) sig->ruta_activa = nullptr;
+            }
             if (secciones[i].first->get_cv()->get_state() <= EstadoCV::Prenormalizado) {
                 if (secciones[i].first->is_asegurada(this)) {
                     secciones[i].first->liberar(this);
@@ -338,10 +359,14 @@ void ruta::update()
                     if (i == secciones.size() - 1) {
                         disolver();
                     } else if (secciones[i+1].first == seccion_inicio_temporizador_deslizamiento) {
-                        diferimetro_deslizamiento = set_timer([this]() {
-                            log(id, "diferimetro deslizamiento", LOG_INFO);
+                        if (temporizador_deslizamiento <= 0) {
                             disolver();
-                        }, temporizador_deslizamiento);
+                        } else {
+                            diferimetro_deslizamiento = set_timer([this]() {
+                                log(id, "diferimetro deslizamiento", LOG_INFO);
+                                disolver();
+                            }, temporizador_deslizamiento);
+                        }
                     }
                 }
             }
@@ -399,6 +424,16 @@ bool ruta::dai(bool anular_bloqueo)
             diferimetro_dai = nullptr;
             disolucion_parcial(anular_bloqueo);
         }, temporizador);
+        if (señal_inicio->ruta_activa == this) señal_inicio->clear_request = false;
+        for (int i=0; i<secciones.size(); i++) {
+            auto *sec = secciones[i].first;
+            auto *prev = i>0 ? secciones[i-1].first : señal_inicio->seccion_prev;
+            for (auto &[sig, dir] : señales) {
+                if (sig->seccion == sec && sig->ruta_activa == this) sig->clear_request = false;
+            }
+            if (!sec->get_cv()->is_asegurada(this)) break;
+            if (sec->get_ocupacion(prev, secciones[i].second) > EstadoCanton::Prenormalizado) break;
+        }
     }
     return true;
 }
@@ -416,6 +451,10 @@ bool ruta::dei()
             return false;
         }
     }
+    if (señal_inicio->ruta_activa == this) señal_inicio->clear_request = false;
+    for (auto &[sig, dir] : señales) {
+        if (sig->ruta_activa == this) sig->clear_request = false;
+    }
     log(id, "dei", LOG_DEBUG);
     if (diferimetro_dei == nullptr) {
         diferimetro_dei = set_timer([this]() {
@@ -432,6 +471,9 @@ bool ruta::dei()
 void ruta::disolver()
 {
     if (señal_inicio->ruta_activa == this) señal_inicio->ruta_activa = nullptr;
+    for (auto &[sig, dir] : señales) {
+        if (sig->ruta_activa == this) sig->ruta_activa = nullptr;
+    }
     if (destino->ruta_activa == this) destino->ruta_activa = nullptr;
     mandada = false;
     formada = false;
@@ -472,6 +514,9 @@ void ruta::disolucion_parcial(bool anular_bloqueo)
     for (int i=0; i<secciones.size(); i++) {
         auto *sec = secciones[i].first;
         auto *prev = i>0 ? secciones[i-1].first : señal_inicio->seccion_prev;
+        for (auto &[sig, dir] : señales) {
+            if (sig->seccion == sec && sig->ruta_activa == this) sig->ruta_activa = nullptr;
+        }
         if (!sec->get_cv()->is_asegurada(this)) break;
         if (sec->get_ocupacion(prev, secciones[i].second) > EstadoCanton::Prenormalizado) break;
         sec->liberar(this);

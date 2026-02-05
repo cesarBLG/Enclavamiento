@@ -35,7 +35,10 @@ void señal_impl::determinar_aspecto()
     bool comprobar_ruta = ruta_activa != nullptr && !ruta_activa->get_secciones().empty();
     // Nombre del bloqueo asociado
     std::string bloq_id = bloqueo_asociado;
-    if (bloq_id == "" && ruta_activa != nullptr && ruta_activa->bloqueo_salida != "") bloq_id = ruta_activa->bloqueo_salida;
+    if (bloq_id == "" && ruta_activa != nullptr && ruta_activa->bloqueo_salida != "") {
+        auto &señales = ruta_activa->get_señales();
+        if (señales.empty() || señales.back().first == this || tipo == TipoSeñal::Salida) bloq_id = ruta_activa->bloqueo_salida;
+    }
     // Comprobamos todos los CVs hasta la señal siguiente o fin de movimiento
     while (sec_act != nullptr && sig_señal == nullptr) {
         if (!comprobar_ruta && ruta_activa != nullptr && ruta_activa->tipo == TipoMovimiento::Maniobra) {
@@ -72,7 +75,6 @@ void señal_impl::determinar_aspecto()
     bool cerrar_itinerario = false;
     // Condiciones que impiden la apertura de señal en itinerario, pero no la cierran si estaba abierta
     bool prohibir_abrir_itinerario = false;
-    if (bloqueo_asociado == "" && ruta_activa != nullptr && ruta_activa->bloqueo_salida != "") bloqueo_act = bloqueos[ruta_activa->bloqueo_salida]->get_estado();
     if (bloq_id != "") {
         bloqueo_act = bloqueos[bloq_id]->get_estado();
         TipoMovimiento tipo_opp = bloqueo_act.ruta[opp_lado(dir)];
@@ -109,7 +111,7 @@ void señal_impl::determinar_aspecto()
     // - La señal es de inicio de ruta y la ruta no está asegurada o está en proceso de disolución
     if ((prohibir_abrir && prev_aspecto == Aspecto::Parada) || 
         cerrar || !clear_request || 
-        (ruta_necesaria && (ruta_activa == nullptr || ruta_activa->en_disolucion() || !ruta_activa->is_formada()))) {
+        (ruta_necesaria && (ruta_activa == nullptr || !ruta_activa->is_formada()))) {
         aspecto = Aspecto::Parada;
     } else if (ruta_activa != nullptr && ruta_activa->tipo == TipoMovimiento::Maniobra) {
         aspecto = Aspecto::RebaseAutorizado;
@@ -233,7 +235,7 @@ RespuestaMando señal_impl::mando(const std::string &cmd, int me)
     } else if (cmd == "DAI" || cmd == "DAB") {
         bool aceptado = false;
         if (ruta_fai != nullptr && ruta_fai->cancelar_fai()) aceptado = true;
-        if (ruta_activa != nullptr && ruta_activa->dai(cmd == "DAB")) aceptado = true;
+        if (ruta_activa != nullptr && ruta_activa->get_señal_inicio() == this && ruta_activa->dai(cmd == "DAB")) aceptado = true;
         return aceptado ? RespuestaMando::Aceptado : RespuestaMando::OrdenRechazada;
     } else if (cmd == "AFA") {
         if (ruta_fai != nullptr) {
@@ -301,7 +303,7 @@ std::pair<RemotaSIG, RemotaIMV> señal_impl::get_estado_remota()
     }
     r.SIG_GRP_ARS = 0;
     RemotaIMV i;
-    if (ruta_activa) {
+    if (ruta_activa != nullptr && ruta_activa->get_señal_inicio() == this) {
         i = ruta_activa->get_estado_remota_inicio();
     } else {
         i.IMV_DAT = 1;
@@ -313,7 +315,7 @@ std::pair<RemotaSIG, RemotaIMV> señal_impl::get_estado_remota()
 estado_inicio_ruta señal_impl::get_estado_inicio()
 {
     estado_inicio_ruta e;
-    if (ruta_activa != nullptr) {
+    if (ruta_activa != nullptr && ruta_activa->get_señal_inicio() == this) {
         e = ruta_activa->get_estado_inicio();
     }
     e.rebasada = rebasada;
