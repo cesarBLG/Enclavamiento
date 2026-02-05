@@ -433,6 +433,10 @@ bool ruta::dai(bool anular_bloqueo)
             }
             if (!sec->get_cv()->is_asegurada(this)) break;
             if (sec->get_ocupacion(prev, secciones[i].second) > EstadoCanton::Prenormalizado) break;
+            if (i + 1 == secciones.size() && !señales.empty()) {
+                auto *sig = señales.back().first;
+                if (sig->seccion_prev == sec && sig->ruta_activa == this) sig->clear_request = false;
+            }
         }
     }
     return true;
@@ -521,6 +525,10 @@ void ruta::disolucion_parcial(bool anular_bloqueo)
         if (sec->get_ocupacion(prev, secciones[i].second) > EstadoCanton::Prenormalizado) break;
         sec->liberar(this);
         secciones_aseguradas.erase(sec);
+        if (i + 1 == secciones.size() && !señales.empty()) {
+            auto *sig = señales.back().first;
+            if (sig->seccion_prev == sec && sig->ruta_activa == this) sig->ruta_activa = nullptr;
+        }
     }
 }
 void ruta::construir_proximidad()
