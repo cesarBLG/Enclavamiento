@@ -32,7 +32,7 @@ void señal_impl::determinar_aspecto()
     // Condiciones que impiden abrir la señal, pero no la cierran si estaba abierta
     bool prohibir_abrir = false;
     // Requerir secciones asegurado por ruta (no necesario en trayecto)
-    bool comprobar_ruta = ruta_activa != nullptr && !ruta_activa->get_secciones().empty();
+    bool comprobar_ruta = ruta_activa != nullptr && !ruta_activa->get_secciones().empty() && ruta_activa->get_secciones().back().first != seccion_prev;
     // Nombre del bloqueo asociado
     std::string bloq_id = bloqueo_asociado;
     if (bloq_id == "" && ruta_activa != nullptr && ruta_activa->bloqueo_salida != "") {
@@ -46,7 +46,7 @@ void señal_impl::determinar_aspecto()
         }
         EstadoCanton sec_ocup = sec_act->get_ocupacion(sec_prv, dir);
         canton = std::max(sec_ocup, canton);
-        if (sec_act->get_cv()->is_btv()) prohibir_abrir = true;
+        if (sec_act->get_cv() != nullptr && sec_act->get_cv()->is_btv()) prohibir_abrir = true;
         Lado l = dir;
         seccion_via *next = sec_act->siguiente_seccion(sec_prv, dir, false);
         if (comprobar_ruta) {
@@ -326,4 +326,42 @@ estado_inicio_ruta señal_impl::get_estado_inicio()
         e.fai = ruta_fai->get_estado_fai();
     }
     return e;
+}
+void señal_impl::message_cv(const std::string &id, estado_cv ev)
+{
+    if (id != get_id_cv_inicio()) return;
+
+    // Con el paso de la circulación se cierra la señal, salvo en maniobras
+    if (ruta_activa != nullptr && ruta_activa->tipo != TipoMovimiento::Maniobra && !ruta_activa->is_sucesion_automatica() && ev.evento && ev.evento->ocupacion && ev.evento->lado == lado) {
+        ruta_activa = nullptr;
+    }
+
+    paso_circulacion = false;
+    // Detección de paso de tren por la señal
+    if (ev.evento && ev.evento->ocupacion && ev.evento->lado == lado && (ev.evento->cv_colateral == "" || seccion_prev == nullptr || ev.evento->cv_colateral == seccion_prev->id_cv)) {
+        // Si la señal estaba cerrada, es un rebase de señal
+        if (aspecto == Aspecto::Parada) {
+            if (ruta_necesaria && get_milliseconds() - ultimo_paso_abierta > 30000) {
+                rebasada = true;
+                log(this->id, "rebasada", LOG_WARNING);
+            }
+        // Si estaba abierta, es un paso normal de circulación
+        } else {
+            ultimo_paso_abierta = get_milliseconds();
+            paso_circulacion = true;
+        }
+    }
+}
+const std::string &señal_impl::get_id_cv_inicio()
+{
+    auto *sec = seccion;
+    auto *prv = seccion_prev;
+    Lado dir = lado;
+    while (sec != nullptr) {
+        if (sec->get_cv() != nullptr) return sec->id_cv;
+        auto next = sec->siguiente_seccion(prv, dir, false);
+        prv = sec;
+        sec = next;
+    }
+    return seccion->id_cv;
 }

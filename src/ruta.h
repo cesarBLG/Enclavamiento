@@ -140,6 +140,7 @@ public:
         r.FMV_DAT = 1;
         if (!supervisada) r.FMV_EST = 0;
         else if (diferimetro_dei) r.FMV_EST = 6;
+        else if (diferimetro_deslizamiento) r.FMV_EST = tipo == TipoMovimiento::Maniobra ? 5 : 4;
         else r.FMV_EST = tipo == TipoMovimiento::Maniobra ? 2 : 1;
         switch (destino->tipo) {
             case TipoDestino::Colateral:
@@ -187,6 +188,10 @@ public:
     bool is_supervisada()
     {
         return supervisada;
+    }
+    bool is_sucesion_automatica()
+    {
+        return sucesion_automatica;
     }
     const std::vector<std::pair<seccion_via*,Lado>> &get_secciones()
     {
@@ -263,7 +268,7 @@ public:
     {
         /*if (estado_fai == EstadoFAI::EnEspera || estado_fai == EstadoFAI::Cancelado || estado_fai == EstadoFAI::AperturaNoPosible || estado_fai == EstadoFAI::AperturaNoPosibleReconocida) {
             for (auto &[s, l] : proximidad) {
-                if (id == s->get_cv()->id && ecv.evento && ecv.evento->ocupacion && ecv.evento->lado == l) {
+                if (id == s->id_cv && ecv.evento && ecv.evento->ocupacion && ecv.evento->lado == l) {
                     inicio_temporizacion_fai = 0;
                     estado_fai = EstadoFAI::EnEspera;
                 }
@@ -271,7 +276,7 @@ public:
         }*/
         if (!mandada) return;
         // Ocupación del primer CV de la ruta
-        if (id == señal_inicio->seccion->get_cv()->id && ecv.evento && ecv.evento->ocupacion && ecv.evento->lado == lado) {
+        if (id == señal_inicio->get_id_cv_inicio() && ecv.evento && ecv.evento->ocupacion && ecv.evento->lado == lado) {
             if (!supervisada) {
                 // La ruta pasa a estar supervisada aunque la señal no haya llegado a abrir
                 supervisada = true;
@@ -295,14 +300,6 @@ public:
             if (estado_fai == EstadoFAI::Activo) estado_fai = EstadoFAI::EnEspera;
             // Impedir nueva activación de FAI hasta que transcurra cierto tiempo
             if (estado_fai == EstadoFAI::EnEspera) inicio_temporizacion_fai = get_milliseconds();
-
-            // Con el paso de la circulación se cierra la señal, salvo en maniobras
-            if (!sucesion_automatica && tipo != TipoMovimiento::Maniobra) señal_inicio->ruta_activa = nullptr;
-        }
-        for (auto &[sig, dir] : señales) {
-            if (id == sig->seccion->get_cv()->id && ecv.evento && ecv.evento->ocupacion && ecv.evento->lado == dir) {
-                if (!sucesion_automatica && tipo != TipoMovimiento::Maniobra) sig->ruta_activa = nullptr;
-            }
         }
     }
     void message_bloqueo(const std::string &id, estado_bloqueo eb)

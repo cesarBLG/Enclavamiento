@@ -2,13 +2,18 @@
 #include "ruta.h"
 #include "items.h"
 #include "pn_enclavado.h"
-seccion_via::seccion_via(const std::string &id, const json &j, TipoSeccion tipo) : id(id), bloqueo_asociado(j.value("Bloqueo", "")), tipo(tipo)
+seccion_via::seccion_via(const std::string &id, const json &j, TipoSeccion tipo) : id(id), bloqueo_asociado(j.value("Bloqueo", "")), tipo(tipo), id_cv(j.value("CV", id))
 {
     active_outs[Lado::Impar][0] = 0;
     active_outs[Lado::Par][0] = 0;
     route_outs = {-1, -1};
-    cv_seccion = cvs[j.value("CV", id)];
-    cv_seccion->secciones.insert(this);
+    auto cv_it = cvs.find(id_cv);
+    if (cv_it != cvs.end()) {
+        cv_seccion = cvs[id_cv];
+        cv_seccion->secciones.insert(this);
+    } else {
+        cv_seccion = nullptr;
+    }
     if (j.contains("Conexiones")) {
         siguientes_secciones = j["Conexiones"];
     }
@@ -17,10 +22,11 @@ seccion_via::seccion_via(const std::string &id, const json &j, TipoSeccion tipo)
 void seccion_via::asegurar(ruta *ruta, int in, int out, Lado dir)
 {
     if (ruta_asegurada != nullptr || ruta == nullptr) return;
+    log(id, "enclavada", LOG_DEBUG);
     ruta_asegurada = ruta;
     route_outs[dir] = out;
     route_outs[opp_lado(dir)] = in;
-    remota_cambio_elemento(ElementoRemota::CV, cv_seccion->id);
+    remota_cambio_elemento(ElementoRemota::CV, id_cv);
 }
 void seccion_via::asegurar(ruta *ruta, seccion_via *prev, seccion_via *next, Lado dir)
 {
@@ -28,20 +34,22 @@ void seccion_via::asegurar(ruta *ruta, seccion_via *prev, seccion_via *next, Lad
     int in = get_in(prev, dir);
     int out = get_out(next, dir);
     if (in < 0 || out < 0) return;
+    log(id, "enclavada", LOG_DEBUG);
     ruta_asegurada = ruta;
     route_outs[dir] = out;
     route_outs[opp_lado(dir)] = in;
-    remota_cambio_elemento(ElementoRemota::CV, cv_seccion->id);
+    remota_cambio_elemento(ElementoRemota::CV, id_cv);
 }
 void seccion_via::liberar(ruta *ruta)
 {
     if (ruta_asegurada == ruta) {
+        log(id, "desenclavada");
         ruta_asegurada = nullptr;
         route_outs = {-1, -1};
         for (auto *pn : pns) {
             pn->update();
         }
-        remota_cambio_elemento(ElementoRemota::CV, cv_seccion->id);
+        remota_cambio_elemento(ElementoRemota::CV, id_cv);
     }
 }
 TipoMovimiento seccion_via::get_tipo_movimiento()
@@ -56,7 +64,7 @@ TipoMovimiento seccion_via::get_tipo_movimiento()
 }
 void seccion_via::message_cv(const std::string &id, estado_cv ev)
 {
-    if (id != cv_seccion->id) return;
+    if (id != id_cv) return;
     if (ev.evento && ev.evento->ocupacion && ev.estado > EstadoCV::Prenormalizado && ocupacion_outs[Lado::Impar] < 0 && ocupacion_outs[Lado::Par] < 0) {
         if (trayecto) {
             ocupacion_outs = {0, 0};
@@ -80,7 +88,7 @@ void seccion_via::message_cv(const std::string &id, estado_cv ev)
                 Lado l = opp_lado(ev.evento->lado);
                 auto &sigs = siguientes_secciones[l];
                 for (int i=0; i<sigs.size(); i++) {
-                    if (secciones[sigs[i].id]->cv_seccion->id == ev.evento->cv_colateral && route_outs[l] != i) {
+                    if (secciones[sigs[i].id]->id_cv == ev.evento->cv_colateral && route_outs[l] != i) {
                         intempestiva = true;
                         break;
                     }
@@ -96,10 +104,11 @@ void seccion_via::message_cv(const std::string &id, estado_cv ev)
         pn->message_cv(ev);
     }
 
-    remota_cambio_elemento(ElementoRemota::CV, cv_seccion->id);
+    remota_cambio_elemento(ElementoRemota::CV, id_cv);
 }
 EstadoCanton seccion_via::get_ocupacion(seccion_via* prev, Lado dir)
 {
+    if (cv_seccion == nullptr) return EstadoCanton::Libre;
     EstadoCanton estado = cv_seccion->get_ocupacion(dir);
     if (estado != EstadoCanton::OcupadoMismoSentido) return estado;
     if (cv_seccion->ocupacion_intempestiva) return EstadoCanton::Ocupado;

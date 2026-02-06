@@ -80,7 +80,7 @@ void bloqueo::message_cv(const std::string &id, estado_cv ecv)
     // de un tren por el último CV de trayecto (por fallo de detección)
     if (liberar) {
         if (desbloqueo_permitido()) estado_objetivo = EstadoBloqueo::Desbloqueo;
-        else timer_desbloqueo = get_milliseconds();
+        else if (!cierre_señales) timer_desbloqueo = get_milliseconds();
     }
     update();
 }

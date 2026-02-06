@@ -1,13 +1,6 @@
 #include "cv.h"
 #include "items.h"
 #include "topology.h"
-bool cv::is_asegurada(ruta *ruta)
-{
-    for (auto *sec : secciones) {
-        if (!sec->is_asegurada(ruta)) return false;
-    }
-    return true;
-}
 RemotaCV cv::get_estado_remota()
 {
     RemotaCV r;

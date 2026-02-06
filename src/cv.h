@@ -36,7 +36,6 @@ public:
         else return EstadoCanton::Ocupado;
     }
 
-    bool is_asegurada(ruta *ruta=nullptr);
     bool is_averia() { return averia; }
     bool is_btv() { return btv; }
     bool is_perdida_secuencia() { return perdida_secuencia; }

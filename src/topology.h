@@ -25,6 +25,7 @@ public:
     const std::string id;
     const std::string bloqueo_asociado;
     const TipoSeccion tipo;
+    const std::string id_cv;
 
     std::set<pn_enclavado*> pns;
 protected:
@@ -67,6 +68,15 @@ public:
         if (ruta == nullptr) return ruta_asegurada != nullptr;
         return ruta_asegurada == ruta;
     }
+    bool asegurar_posible(ruta *ruta)
+    {
+        if (cv_seccion != nullptr) {
+            for (auto &sec : cv_seccion->secciones) {
+                if (sec->is_asegurada() && !sec->is_asegurada(ruta)) return false;
+            }
+        }
+        return ruta_asegurada == ruta || ruta_asegurada == nullptr;
+    }
     TipoMovimiento get_tipo_movimiento();
     bool is_bloqueo_seccion() { return bloqueo_seccion; }
     bool is_me_pendiente() { return me_pendiente; }
@@ -76,7 +86,7 @@ public:
     {
         if (id != bloqueo_asociado) return;
         bloqueo_act = eb;
-        remota_cambio_elemento(ElementoRemota::CV, cv_seccion->id);
+        remota_cambio_elemento(ElementoRemota::CV, id_cv);
     }
     virtual RespuestaMando mando(const std::string &cmd, int me)
     {
@@ -104,7 +114,7 @@ public:
             }
         }
         if (aceptado != RespuestaMando::OrdenRechazada)
-            remota_cambio_elemento(ElementoRemota::CV, cv_seccion->id);
+            remota_cambio_elemento(ElementoRemota::CV, id_cv);
         return aceptado;
     }
     void vincular_señal(señal *sig, Lado lado, int pin)
@@ -148,7 +158,7 @@ class aguja : public seccion_via, public estado_aguja
     }
     void message_cv(const std::string &id, estado_cv ev) override
     {
-        if (id != cv_seccion->id) return;
+        if (id != id_cv) return;
         seccion_via::message_cv(id, ev);
     }
     bool is_ruta_fija(seccion_via *prev, Lado dir)
