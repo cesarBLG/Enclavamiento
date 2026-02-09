@@ -177,11 +177,11 @@ class mqtt_client
   }
   void publish(const char *topic, const char* payload)
   {
-    esp_mqtt_client_enqueue(mqtt, topic, payload, 0, 0, 0, true);
+    if (connected) esp_mqtt_client_enqueue(mqtt, topic, payload, 0, 0, 0, true);
   }
   void publish(const std::string &topic, const std::string &payload)
   {
-    esp_mqtt_client_enqueue(mqtt, topic.c_str(), payload.c_str(), 0, 0, 0, true);
+    if (connected) esp_mqtt_client_enqueue(mqtt, topic.c_str(), payload.c_str(), payload.size(), 0, 0, true);
   }
   void subscribe(const char *topic)
   {

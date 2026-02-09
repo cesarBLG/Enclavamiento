@@ -41,7 +41,7 @@ public:
                 digitalWrite(pinRojo, (millis()/500)%2 ? HIGH : LOW);
                 break;
             case Aspecto::Precaucion:
-                digitalWrite(pinVerde, LOW);//(millis()/500)%2 ? HIGH : LOW);
+                digitalWrite(pinVerde, (millis()/500)%2 ? HIGH : LOW);
                 digitalWrite(pinRojo, LOW);
                 break;
             case Aspecto::ViaLibre:

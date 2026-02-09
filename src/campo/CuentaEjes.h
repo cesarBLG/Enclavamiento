@@ -4,6 +4,7 @@
 #define MAX_ACTIVATION_TIME_MS 5
 #define MAX_WHEELSET_INTERVAL_MS 2000
 #define MAX_TRAIN_INTERVAL_MS 10000
+#define DEBUG_CEJES
 struct Event
 {
   bool isB;
@@ -18,14 +19,23 @@ class ContadorEjes : public mqtt_device {
   unsigned long firstBon=0;
   int Aon=0;
   int Bon=0;
+  int missedLast=-1;
   std::vector<Event> eventBuffer;
   int dirTren = -1;
   unsigned long ultimaActivacion;
 public:
   const char *id;
   std::string topic;
+#ifdef DEBUG_CEJES
+  std::string topic_dbg;
+  std::vector<std::pair<unsigned long,std::pair<bool,bool>>> events_dbg;
+  std::pair<bool,bool> prev_dbg;
+#endif
   ContadorEjes(const char *id, mqtt_client *client, int pinA, int pinB) : mqtt_device(client), pinA(pinA), pinB(pinB), id(id) {
     topic = std::string("cejes/") + id + "/event";
+#ifdef DEBUG_CEJES
+    topic_dbg = std::string("cejes/") + id + "/debug";
+#endif
     provided_topics.push_back(topic);
     eventBuffer.reserve(2*4);
   }
@@ -39,8 +49,11 @@ public:
     } else if (!b && pinB < 0) {
       client->publish(topic.c_str(), "Nominal");
     } else {
+      if (missedLast != b || millis() - ultimaActivacion > MAX_WHEELSET_INTERVAL_MS) {
+        eventBuffer.push_back({b, millis()});
+      }
+      missedLast = -1;
       ultimaActivacion = millis();
-      eventBuffer.push_back({b, ultimaActivacion});
     }
   }
   int getDirection(bool strict=false) {
@@ -121,6 +134,9 @@ public:
     // If we ended mid-pair, simulate last one
     if (phase == 1) {
       axleCount++;
+      missedLast = !expected;
+    } else {
+      missedLast = -1;
     }
 
     return axleCount;
@@ -164,8 +180,8 @@ public:
     } else {
       Bon = 0;
     }
+    unsigned long timeSinceLast = millis() - ultimaActivacion;
     if (!eventBuffer.empty()) {
-      unsigned long timeSinceLast = millis() - ultimaActivacion;
       if (eventBuffer.size() > 3) {
         int dir = getDirection(true);
         if (dir >= 0) {
@@ -179,5 +195,25 @@ public:
       if (timeSinceLast > MAX_TRAIN_INTERVAL_MS) processTrain();
     }
     if (dirTren >= 0 && timeSinceLast > MAX_TRAIN_INTERVAL_MS) dirTren = -1;
+#ifdef DEBUG_CEJES
+    std::pair<bool,bool> state_dbg = {!digitalRead(pinA), !digitalRead(pinB)};
+    if (state_dbg != prev_dbg) {
+      events_dbg.push_back({micros(), state_dbg});
+      prev_dbg = state_dbg;
+    }
+    if (events_dbg.size() > 15 || (!events_dbg.empty() && micros() - events_dbg.back().first > 15000000UL)) {
+      byte buff[events_dbg.size()*5+1];
+      for (int i=0; i<events_dbg.size(); i++) {
+        buff[5*i] = events_dbg[i].first>>24;
+        buff[5*i+1] = events_dbg[i].first>>16;
+        buff[5*i+2] = events_dbg[i].first>>8;
+        buff[5*i+3] = events_dbg[i].first;
+        buff[5*i+4] = (events_dbg[i].second.first<<1)|events_dbg[i].second.second;
+      }
+      std::string payload((char*)buff, events_dbg.size()*5);
+      client->publish(topic_dbg, payload);
+      events_dbg.clear();
+    }
+#endif
   }
 };
