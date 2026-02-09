@@ -83,6 +83,7 @@ public:
 protected:
     std::map<std::string, cejes_position> cejes;
     std::set<std::string> averia_cejes;
+    bool topera = false;
 
     int64_t tiempo_auto_prenormalizacion;
     int64_t tiempo_auto_prenormalizacion_tren;
@@ -120,6 +121,19 @@ public:
             estado_raw = EstadoCV::OcupadoPar;
         } else {
             estado_raw = normalizado ? EstadoCV::Libre : EstadoCV::Prenormalizado;
+        }
+        if (estado_raw > EstadoCV::Prenormalizado && !averia_cejes.empty()) {
+            bool normalizar = true;
+            for (auto lado : {Lado::Impar, Lado::Par}) {
+                if (num_ejes[lado] == 0) continue;
+                auto &arr = num_trenes[lado];
+                if (arr.empty()) continue;
+                if (arr.size() > 1 || arr[0] - num_ejes[lado] < fraccion_ejes_prenormalizacion * arr[0]) {
+                    normalizar = false;
+                    break;
+                }
+            }
+            if (normalizar) estado_raw = EstadoCV::Prenormalizado;
         }
         averia = !averia_cejes.empty();
         if (estado_raw >= estado) {
@@ -200,6 +214,7 @@ public:
                         if (!arr.empty()) {
                             int prev = arr.size() > 1 ? arr[arr.size() - 2] : 0;
                             int ejes = num_ejes[lado] - prev;
+                            if (topera && num_ejes[lado] == 0 && arr[0] >= 2) normalizado = true;
                             if (ejes <= 0) arr.pop_back();
                         }
                     } else {

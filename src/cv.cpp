@@ -32,6 +32,12 @@ cv_impl::cv_impl(const std::string &id, const json &j) : cv(id), topic("cv/"+id_
     normalizado = false;
     perdida_secuencia = false;
     estado_raw = estado = estado_previo = EstadoCV::Prenormalizado;
+
+    lados<bool> lados_cejes;
+    for (auto &[id, pos] : cejes) {
+        lados_cejes[pos.lado] = true;
+    }
+    if (!lados_cejes[Lado::Impar] || !lados_cejes[Lado::Par]) topera = true;
 }
 void from_json(const json &j, cv_impl::cejes_position &position)
 {
