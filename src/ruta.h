@@ -62,6 +62,8 @@ protected:
     std::shared_ptr<timer> diferimetro_dai;
     std::shared_ptr<timer> diferimetro_dei;
     std::shared_ptr<timer> diferimetro_deslizamiento;
+    std::vector<std::pair<seccion_via*,Lado>> proximidad0;
+    std::vector<seccion_via*> proximidad0_next;
     std::vector<std::pair<seccion_via*,Lado>> proximidad;
     std::set<std::string> ultimos_cvs_proximidad;
     señal_impl *señal_inicio;
@@ -312,4 +314,5 @@ public:
     }
 protected:
     void construir_proximidad();
+    void construir_proximidad0(seccion_via *next, seccion_via *sec, Lado dir);
 };

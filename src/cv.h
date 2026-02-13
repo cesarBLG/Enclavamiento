@@ -122,7 +122,8 @@ public:
         } else {
             estado_raw = normalizado ? EstadoCV::Libre : EstadoCV::Prenormalizado;
         }
-        if (estado_raw > EstadoCV::Prenormalizado && !averia_cejes.empty()) {
+        averia = !averia_cejes.empty();
+        if (estado_raw > EstadoCV::Prenormalizado && !averia) {
             bool normalizar = true;
             for (auto lado : {Lado::Impar, Lado::Par}) {
                 if (num_ejes[lado] == 0) continue;
@@ -135,7 +136,6 @@ public:
             }
             if (normalizar) estado_raw = EstadoCV::Prenormalizado;
         }
-        averia = !averia_cejes.empty();
         if (estado_raw >= estado) {
             estado = estado_raw;
             send_state();

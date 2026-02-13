@@ -49,6 +49,14 @@ void señal_impl::determinar_aspecto()
         if (sec_act->get_cv() != nullptr && sec_act->get_cv()->is_btv()) prohibir_abrir = true;
         Lado l = dir;
         seccion_via *next = sec_act->siguiente_seccion(sec_prv, dir, false);
+        for (auto *pn : sec_act->pns) {
+            if (!pn->is_protegido()) {
+                if (comprobar_ruta)
+                    cerrar = true;
+                else
+                    precaucion = true;
+            }
+        }
         if (comprobar_ruta) {
             if (!sec_act->is_asegurada(ruta_activa) || sec_act->siguiente_seccion(sec_prv, l, true) != next)
                 cerrar = true;
@@ -58,15 +66,11 @@ void señal_impl::determinar_aspecto()
                 cerrar = true;
             if (ruta_activa->get_secciones().back().first == sec_act) comprobar_ruta = false;
         }
-        for (auto *pn : sec_act->pns) {
-            if (!pn->is_protegido())
-                precaucion = true;
-        }
         if (sec_act->is_asegurada() && (ruta_activa == nullptr || !sec_act->is_asegurada(ruta_activa))) cerrar = true;
         if (bloq_id == "" && sec_act->bloqueo_asociado != "") bloq_id = sec_act->bloqueo_asociado;
         sec_prv = sec_act;
         sec_act = next;
-        if (sec_act != nullptr) sig_señal = sec_act->señal_inicio(dir, pin);
+        if (sec_act != nullptr) sig_señal = sec_act->señal_inicio(dir, sec_prv);
         if (sec_act == seccion) break;
     }
     // La ruta asegurada se interrumpe antes de llegar al fin de movimiento o señal siguiente
@@ -332,7 +336,7 @@ void señal_impl::message_cv(const std::string &id, estado_cv ev)
     if (id != get_id_cv_inicio()) return;
 
     // Con el paso de la circulación se cierra la señal, salvo en maniobras
-    if (ruta_activa != nullptr && ruta_activa->tipo != TipoMovimiento::Maniobra && !ruta_activa->is_sucesion_automatica() && ev.evento && ev.evento->ocupacion && ev.evento->lado == lado) {
+    if (ruta_activa != nullptr && ruta_activa->tipo != TipoMovimiento::Maniobra && !ruta_activa->is_sucesion_automatica() && ev.evento && ev.evento->ocupacion && ev.evento->lado == lado && (aspecto != Aspecto::Parada || get_milliseconds() - ultimo_paso_abierta > 30000)) {
         ruta_activa = nullptr;
     }
 

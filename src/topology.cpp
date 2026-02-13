@@ -158,7 +158,9 @@ void seccion_via::prev_secciones(seccion_via *next, Lado dir_fwd, std::vector<st
         ins.insert(route_outs[lado]);
     }
     for (int in : ins) {
-        auto p = siguientes_secciones[lado][in];
+        auto &sig = siguientes_secciones[lado];
+        if (sig.size() <= in) continue;
+        auto p = sig[in];
         secciones.push_back({::secciones[p.id], p.invertir_paridad ? lado : dir_fwd});
     }
 }

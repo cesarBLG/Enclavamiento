@@ -23,7 +23,7 @@ protected:
     Lado sentido_preferente;
     EstadoBloqueo estado_inicial;
     std::vector<seccion_via*> cvs;
-    bool ocupado;
+    lados<bool> ocupado;
     std::optional<int64_t> timer_desbloqueo;
     estado_bloqueo_lado colateral;
     estado_bloqueo estado_completo;
@@ -36,7 +36,7 @@ public:
     {
         bloqueo_siguiente = bloqueo_vinculado != nullptr;
         estado_completo.estado = estado;
-        estado_completo.ocupado = ocupado;
+        estado_completo.ocupado = ocupado.impar || ocupado.par;
         for (int i=0; i<2; i++) {
             Lado l = i == 0 ? lado : opp_lado(lado);
             estado_bloqueo_lado &e = i == 0 ? *((estado_bloqueo_lado*)this) : colateral;
@@ -66,7 +66,7 @@ public:
         // - No está prohibido el bloqueo
         // - Si no existe posibilidad de cruce en la colateral (estación cerrada sin agujas talonables),
         //   el bloqueo debe también poder establecerse de la colateral a la estación siguiente 
-        if (estado == EstadoBloqueo::Desbloqueo && colateral.estado == EstadoBloqueo::Desbloqueo && !ocupado && !escape && !colateral.escape) {
+        if (estado == EstadoBloqueo::Desbloqueo && colateral.estado == EstadoBloqueo::Desbloqueo && !ocupado[propio ? opp_lado(lado) : lado] && !escape && !colateral.escape) {
             if (propio) {
                 return !colateral.prohibido && colateral.ruta != TipoMovimiento::Itinerario && (colateral.ruta != TipoMovimiento::Maniobra || colateral.maniobra_compatible > CompatibilidadManiobra::IncompatibleBloqueo);
             } else {
@@ -89,7 +89,7 @@ public:
         // - No está establecido el cierre de señales por la colateral
         // - Si no existe posibilidad de cruce en la estación emisora (estación cerrada sin agujas talonables),
         //   esta estación no puede ser receptora de otro bloqueo
-        if (ruta == TipoMovimiento::Itinerario || colateral.ruta == TipoMovimiento::Itinerario || ocupado) return false;
+        if (ruta == TipoMovimiento::Itinerario || colateral.ruta == TipoMovimiento::Itinerario || ocupado.par || ocupado.impar) return false;
         if (tipo == TipoBloqueo::BAD || tipo == TipoBloqueo::BLAD) return false;
         if (estado == bloqueo_emisor) {
             if (bloqueo_vinculado != nullptr && (colateral.bloqueo_siguiente || bloqueo_vinculado->propagacion_completa) && (bloqueo_vinculado->estado == bloqueo_vinculado->bloqueo_receptor || bloqueo_vinculado->colateral.estado_objetivo == bloqueo_vinculado->bloqueo_receptor || bloqueo_vinculado->estado == EstadoBloqueo::SinDatos)) {
@@ -103,18 +103,20 @@ public:
     }
     void calcular_ocupacion()
     {
-        bool ocupado = false;
-        for (auto &est : estado_cvs) {
-            if (est.second > EstadoCV::Prenormalizado) {
-                ocupado = true;
-                break;
+        lados<bool> ocupado = {false,false};
+        for (auto lado : {Lado::Impar, Lado::Par}) {
+            for (auto &est : estado_cvs) {
+                if (est.second == EstadoCV::Ocupado || est.second == (lado == Lado::Impar ? EstadoCV::OcupadoImpar : EstadoCV::OcupadoPar)) {
+                    ocupado[lado] = true;
+                    break;
+                }
             }
-        }
-        for (auto &est : colateral.estado_cvs) {
-            if (estado_cvs.find(est.first) != estado_cvs.end()) continue;
-            if (est.second > EstadoCV::Prenormalizado) {
-                ocupado = true;
-                break;
+            for (auto &est : colateral.estado_cvs) {
+                if (estado_cvs.find(est.first) != estado_cvs.end()) continue;
+                if (est.second == EstadoCV::Ocupado || est.second == (lado == Lado::Impar ? EstadoCV::OcupadoImpar : EstadoCV::OcupadoPar)) {
+                    ocupado[lado] = true;
+                    break;
+                }
             }
         }
         // Desbloquear si se ha producido una secuencia de paso correcta de circulación,
@@ -125,7 +127,7 @@ public:
                 estado_objetivo = EstadoBloqueo::Desbloqueo;
             }
             this->ocupado = ocupado;
-            if (ocupado) log(this->id, "ocupado");
+            if (ocupado.par || ocupado.impar) log(this->id, "ocupado");
         }
     }
     void update();

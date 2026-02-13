@@ -63,6 +63,14 @@ void bloqueo::message_cv(const std::string &id, estado_cv ecv)
         estado_cvs[sec->id] = sec->get_cv()->get_state();
     }
     calcular_ocupacion();
+
+    // Si se ocupa el primer CV y la estación está cerrada, establecer bloqueo si no lo estaba
+    /*if (ecv.evento && ecv.evento->lado == lado && estado == EstadoBloqueo::Desbloqueo
+        && (ecv.estado_previo == EstadoCV::Libre || ecv.estado_previo == EstadoCV::Prenormalizado) && (ecv.estado != EstadoCV::Libre && ecv.estado != EstadoCV::Prenormalizado)
+        && index == 0 && dependencias[estacion]->cerrada && bloqueo_permitido(true)) {
+
+        estado_objetivo = bloqueo_emisor;
+    }*/
     /*estado_cantones_inicio[Lado::Impar] = EstadoCanton::Libre;
     estado_cantones_inicio[Lado::Par] = EstadoCanton::Libre;
     for (int i=0; i<cvs.size() && (i == 0 || cvs[i]->señal_inicio(Lado::Impar, 0) == nullptr); i++) {
