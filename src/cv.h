@@ -97,6 +97,7 @@ protected:
     lados<int> num_ejes;
     lados<std::vector<int>> num_trenes;
     lados<int64_t> ultimo_eje;
+    lados<int64_t> ultimo_tren_liberado;
     EstadoCV estado_raw;
 
     bool normalizado;
@@ -215,7 +216,10 @@ public:
                             int prev = arr.size() > 1 ? arr[arr.size() - 2] : 0;
                             int ejes = num_ejes[lado] - prev;
                             if (topera && num_ejes[lado] == 0 && arr[0] >= 2) normalizado = true;
-                            if (ejes <= 0) arr.pop_back();
+                            if (ejes <= 0) {
+                                arr.pop_back();
+                                ultimo_tren_liberado[lado] = get_milliseconds();
+                            }
                         }
                     } else {
                         Lado opLado = opp_lado(lado);
@@ -230,6 +234,11 @@ public:
                                     arr.erase(arr.begin());
                                     for (int &n : arr) {
                                         n -= val0;
+                                    }
+                                    ultimo_tren_liberado[opLado] = get_milliseconds();
+                                } else if (get_milliseconds() - ultimo_tren_liberado[opLado] < 15000) {
+                                    for (int &n : arr) {
+                                        n -= diff;
                                     }
                                 }
                             }

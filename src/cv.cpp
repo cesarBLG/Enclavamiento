@@ -26,6 +26,7 @@ cv_impl::cv_impl(const std::string &id, const json &j) : cv(id), topic("cv/"+id_
 {
     num_ejes = {0, 0};
     ultimo_eje = {0, 0};
+    ultimo_tren_liberado = {0, 0};
     tiempo_auto_prenormalizacion = parametros.diferimetro_prenormalizacion_cv;
     tiempo_auto_prenormalizacion_tren = parametros.diferimetro_prenormalizacion_cv_tren;
     fraccion_ejes_prenormalizacion = parametros.fraccion_ejes_prenormalizacion;
