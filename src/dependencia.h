@@ -20,6 +20,7 @@ struct dependencia
     std::set<ruta*> rutas;
     std::map<std::string, bloqueo*> bloqueos;
     std::optional<config_servicio_intermitente> servicio_intermitente;
+    TipoSoneria soneria;
     dependencia(const std::string id, const json &j);
     void update()
     {
@@ -35,6 +36,7 @@ struct dependencia
                 anular_bloqueos.insert(ruta->bloqueo_salida);
             }
         }
+        TipoSoneria son = TipoSoneria::Apagada;
         for (auto &[id, bloq] : bloqueos) {
             auto it = movimiento_bloqueos.find(id);
             if (it == movimiento_bloqueos.end()) {
@@ -42,6 +44,11 @@ struct dependencia
             } else {
                 bloq->set_ruta(it->second->tipo, it->second->maniobra_compatible, false);
             }
+            son = std::max(bloq->update_soneria(), son);
+        }
+        if (soneria != son) {
+            soneria = son;
+            send_message("soneria/"+id, json(soneria).dump());
         }
     }
     void send_state()
@@ -78,6 +85,17 @@ struct dependencia
             if (cerrada && set_servicio_intermitente(false)) {
                 log(id, "abrir estación", LOG_DEBUG);
                 return RespuestaMando::Aceptado;
+            }
+        } else if (cmd == "RST") {
+            if (me) {
+                log(id, "reinicio", LOG_DEBUG);
+                extern bool running;
+                running = false;
+                return RespuestaMando::Aceptado;
+            } else {
+                me_pendiente = true;
+                send_state();
+                return RespuestaMando::MandoEspecialNecesario;
             }
         }
         return RespuestaMando::OrdenRechazada;

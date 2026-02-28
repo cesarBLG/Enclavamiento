@@ -97,7 +97,7 @@ protected:
     lados<int> num_ejes;
     lados<std::vector<int>> num_trenes;
     lados<int64_t> ultimo_eje;
-    lados<int64_t> ultimo_tren_liberado;
+    lados<std::pair<int64_t,double>> ultimo_tren_liberado;
     EstadoCV estado_raw;
 
     bool normalizado;
@@ -217,8 +217,8 @@ public:
                             int ejes = num_ejes[lado] - prev;
                             if (topera && num_ejes[lado] == 0 && arr[0] >= 2) normalizado = true;
                             if (ejes <= 0) {
+                                ultimo_tren_liberado[lado] = {get_milliseconds(), arr.back() - prev};
                                 arr.pop_back();
-                                ultimo_tren_liberado[lado] = get_milliseconds();
                             }
                         }
                     } else {
@@ -235,11 +235,12 @@ public:
                                     for (int &n : arr) {
                                         n -= val0;
                                     }
-                                    ultimo_tren_liberado[opLado] = get_milliseconds();
-                                } else if (get_milliseconds() - ultimo_tren_liberado[opLado] < 15000) {
+                                    ultimo_tren_liberado[opLado] = {get_milliseconds(), val0};
+                                } else if (get_milliseconds() - ultimo_tren_liberado[opLado].first < 15000 && diff < ultimo_tren_liberado[opLado].second * (1 - fraccion_ejes_prenormalizacion)) {
                                     for (int &n : arr) {
                                         n -= diff;
                                     }
+                                    ultimo_tren_liberado[opLado].second -= diff / (1-fraccion_ejes_prenormalizacion);
                                 }
                             }
                         }
@@ -271,7 +272,7 @@ public:
     void message_cv(const std::string &msg)
     {
         if (msg == "Normalizar") normalizar();
-        else if (msg == "Prenormalizar") normalizar();
+        else if (msg == "Prenormalizar") prenormalizar();
         else if (msg == "NormalizarSecuencia") perdida_secuencia = false;
         else if (msg == "PérdidaSecuencia") perdida_secuencia = true;
     }

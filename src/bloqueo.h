@@ -30,6 +30,7 @@ protected:
     bool me_pendiente;
     bloqueo *bloqueo_vinculado = nullptr;
     bool propagacion_completa = false;
+    std::map<TipoSoneria,int64_t> sonerias;
 public:
     bloqueo(const std::string &estacion, const json &j);
     void send_state()
@@ -131,6 +132,19 @@ public:
         }
     }
     void update();
+    TipoSoneria update_soneria()
+    {
+        auto it = sonerias.find(TipoSoneria::EstablecimientoBloqueo);
+        if (it != sonerias.end() && get_milliseconds() - it->second > 3000) sonerias.erase(it);
+        it = sonerias.find(TipoSoneria::OcupacionProximidad);
+        if (it != sonerias.end() && get_milliseconds() - it->second > 10000) sonerias.erase(it);
+        auto son = TipoSoneria::Apagada;
+        for (auto &[s, t] : sonerias) {
+            if ((s == TipoSoneria::EstablecimientoBloqueo || s == TipoSoneria::OcupacionProximidad) && mando_estacion.puesto == colateral.mando_estacion.puesto) continue;
+            if (s > son) son = s;
+        }
+        return son;
+    }
     void anular()
     {
         if (estado == bloqueo_emisor && desbloqueo_permitido()) {
@@ -167,9 +181,15 @@ public:
                 if (actc == ACTC::NoNecesaria) actc = ACTC::Concedida;
             }
         }
-        if (!this->colateral.escape && colateral.escape && bloqueo_vinculado != nullptr && bloqueo_vinculado->propagacion_completa) {
-            bloqueo_vinculado->escape = true;
-            bloqueo_vinculado->update();
+        if (!this->colateral.escape && colateral.escape) {
+            sonerias[TipoSoneria::EscapeMaterial] = get_milliseconds();
+            if (bloqueo_vinculado != nullptr && bloqueo_vinculado->propagacion_completa) {
+                bloqueo_vinculado->escape = true;
+                bloqueo_vinculado->update();
+            }
+        }
+        if (!this->colateral.cierre_señales && colateral.cierre_señales) {
+            sonerias[TipoSoneria::Averia] = get_milliseconds();
         }
         this->colateral = colateral;
         calcular_ocupacion();
@@ -239,6 +259,11 @@ public:
                     return RespuestaMando::MandoEspecialNecesario;
                 }
             }
+        } else if (cmd == "CSP") {
+            if (!sonerias.empty()) {
+                sonerias.clear();
+                return RespuestaMando::Aceptado;
+            }
         } /*else if (cmd == "NB") {
             if (!normalizado && !ocupado) {
                 if (me == 1) {
@@ -281,7 +306,7 @@ public:
         r.BLQ_CSB = colateral.cierre_señales ? 2 : (cierre_señales ? 1 : 0);
         r.BLQ_NB = 0;//normalizado ? 0 : 1;
         r.BLQ_ME = 0;
-        r.BLQ_PROX = 0;
+        r.BLQ_PROX = sonerias.find(TipoSoneria::OcupacionProximidad) != sonerias.end();
         return r;
     }
 

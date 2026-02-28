@@ -129,6 +129,7 @@ void loop_mqtt(int64_t timeout)
 
 void exit_mqtt()
 {
+    mosquitto_publish(mosq, nullptr, "desconexion", name.size(), name.c_str(), 0, false);
     mosquitto_disconnect(mosq);
     mosquitto_destroy(mosq);
     mosquitto_lib_cleanup();

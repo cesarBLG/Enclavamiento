@@ -20,7 +20,7 @@ parametros_predeterminados parametros;
 std::set<std::string> comandos_ruta = {"I","R","M","FAI","ID"};
 std::set<std::string> comandos_señal = {"CS","CSEÑ","NPS","BS","ABS","DS","SA","ASA","DAI","DAB","AFA"};
 std::set<std::string> comandos_destino = {"BDE","BD","ABDE","ABD","BDS","ABDS","DEI"};
-std::set<std::string> comandos_bloqueo = {"B","AB","CSB","NSB","PB","APB","NB","AS","AAS"};
+std::set<std::string> comandos_bloqueo = {"B","AB","CSB","NSB","PB","APB","NB","AS","AAS","CSP"};
 std::set<std::string> comandos_seccion = {"BV","BIV","ABV","DIV","FO","AFO"};
 std::set<std::string> comandos_aguja = {"MA","AN","AI","MAT","ATN","ATI","BA","ABA","BIA","DIA"};
 std::set<std::string> comandos_cv = {"BTV","ABTV","DTV","LC"};
@@ -28,7 +28,7 @@ std::set<std::string> comandos_ignorar_mando = {"C", "TML", "TME", "CML", "RML",
 std::set<std::string> comandos_ctc = {"C", "L", "AS", "AAS"};
 std::set<std::string> comandos_local = {"TML", "TME", "CML", "RML"};
 std::set<std::string> comandos_pn = {"APN", "CPN"};
-std::set<std::string> comandos_dependencia = {"RAL","RA","BCA","DCA","SI","ASI"};
+std::set<std::string> comandos_dependencia = {"RAL","RA","BCA","DCA","SI","ASI","RST"};
 
 RespuestaMando mando(const std::vector<std::string> &ordenes, int me)
 {

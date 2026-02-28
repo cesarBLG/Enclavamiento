@@ -26,8 +26,6 @@ void bloqueo::message_cv(const std::string &id, estado_cv ecv)
 
     bool liberar = false;
 
-    bool cvEntrada = index == 0;
-
     // Desbloqueo si se produce liberación del último CV de trayecto
     if (estado == bloqueo_receptor && index == 0 && est_cv <= EstadoCV::Prenormalizado
          && prev_est == (lado == Lado::Impar ? EstadoCV::OcupadoPar : EstadoCV::OcupadoImpar)
@@ -35,27 +33,26 @@ void bloqueo::message_cv(const std::string &id, estado_cv ecv)
             liberar = true;
     
     // Detección de escape de material
-    if (ecv.evento && ecv.evento->lado == lado && estado != bloqueo_emisor && tipo != TipoBloqueo::BAD && tipo != TipoBloqueo::BLAD) {
-        bool ocupacion = ecv.evento->ocupacion;
-        if (ocupacion && (ecv.estado_previo == EstadoCV::Libre || ecv.estado_previo == EstadoCV::Prenormalizado) && (ecv.estado != EstadoCV::Libre && ecv.estado != EstadoCV::Prenormalizado)) {
-            bool esc=false;
-            // Ocupación del primer circuito de trayecto
-            if (index == 0) {
-                // No se produce escape si está establecida maniobra que incluye el CV de trayecto
-                if (ruta != TipoMovimiento::Maniobra || !cvs[index]->is_asegurada()) {
-                    esc = true;
-                }
+    if (!escape && ((ecv.evento && ecv.evento->lado == lado && ecv.evento->ocupacion) || (!ecv.evento && ecv.estado_previo <= EstadoCV::Prenormalizado && ecv.estado > EstadoCV::Prenormalizado)) && estado != bloqueo_emisor && tipo != TipoBloqueo::BAD && tipo != TipoBloqueo::BLAD) {
+        bool esc=false;
+        // Ocupación del primer circuito de trayecto
+        if (index == 0) {
+            // No se produce escape si está establecida maniobra que incluye el CV de trayecto
+            if (ruta != TipoMovimiento::Maniobra || !cvs[index]->is_asegurada()) {
+                esc = true;
             }
-            // Ocupación del siguiente circuito de trayecto por la maniobra
-            if (index == 1) {
-                if (ruta == TipoMovimiento::Maniobra) {
-                    esc = true;
-                }
+        }
+        // Ocupación del siguiente circuito de trayecto por la maniobra
+        if (index == 1) {
+            if (ruta == TipoMovimiento::Maniobra) {
+                esc = true;
             }
-            if (esc && (estado != EstadoBloqueo::Desbloqueo || !dependencias[estacion]->cerrada)) {
-                escape = true;
-                log(this->id, "escape emisor", LOG_WARNING);
-            }
+        }
+        if (esc && estado == EstadoBloqueo::Desbloqueo && dependencias[estacion]->cerrada && !colateral.prohibido && colateral.actc != ACTC::Denegada) esc = false;
+        if (esc) {
+            escape = true;
+            sonerias[TipoSoneria::EscapeMaterial] = get_milliseconds();
+            log(this->id, "escape emisor", LOG_WARNING);
         }
     }
 
@@ -90,6 +87,12 @@ void bloqueo::message_cv(const std::string &id, estado_cv ecv)
         if (desbloqueo_permitido()) estado_objetivo = EstadoBloqueo::Desbloqueo;
         else if (!cierre_señales) timer_desbloqueo = get_milliseconds();
     }
+
+    // Soneria proximidad
+    if (index == 0 && ecv.estado_previo <= EstadoCV::Prenormalizado && ecv.estado > EstadoCV::Prenormalizado && estado == bloqueo_receptor) {
+        sonerias[TipoSoneria::OcupacionProximidad] = get_milliseconds();
+    }
+
     update();
 }
 void bloqueo::vincular(const std::string &id, bool propagacion_completa)
@@ -195,6 +198,7 @@ void bloqueo::update()
             if (bloqueo_permitido(false)) {
                 estado = estado_objetivo = bloqueo_receptor;
                 log(id, "bloqueo receptor", LOG_DEBUG);
+                sonerias[TipoSoneria::EstablecimientoBloqueo] = get_milliseconds();
             } else if (bloqueo_vinculado != nullptr && bloqueo_vinculado->bloqueo_permitido(true)) {
                 bloqueo_vinculado->update();
             }
