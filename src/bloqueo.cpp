@@ -3,10 +3,10 @@
 bloqueo::bloqueo(const std::string &estacion, const json &j) : estacion(estacion), estacion_colateral(j["Colateral"]), via(j.value("Vía", "")), lado(j["Lado"]), id(estacion+":"+estacion_colateral+via), topic("bloqueo/"+estacion+"/"+estacion_colateral+via+"/state"), topic_colateral("bloqueo/"+estacion_colateral+"/"+estacion+via+"/colateral"),
 tipo(j.value("Tipo", TipoBloqueo::BAU)), bloqueo_emisor(lado == Lado::Impar ? EstadoBloqueo::BloqueoImpar : EstadoBloqueo::BloqueoPar), bloqueo_receptor(lado == Lado::Par ? EstadoBloqueo::BloqueoImpar : EstadoBloqueo::BloqueoPar)
 {
-    estado_objetivo = EstadoBloqueo::Desbloqueo;
     me_pendiente = false;
     if (tipo != TipoBloqueo::BAU && tipo != TipoBloqueo::BLAU) sentido_preferente = j["SentidoPreferente"];
-    if (tipo == TipoBloqueo::BAD || tipo == TipoBloqueo::BLAD) estado_inicial = estado_objetivo = sentido_preferente == Lado::Impar ? EstadoBloqueo::BloqueoImpar : EstadoBloqueo::BloqueoPar;
+    if (tipo == TipoBloqueo::BAD || tipo == TipoBloqueo::BLAD) estado_inicial = sentido_preferente == Lado::Impar ? EstadoBloqueo::BloqueoImpar : EstadoBloqueo::BloqueoPar;
+    else estado_inicial = EstadoBloqueo::Desbloqueo;
     for (auto &cv : j["CVs"]) {
         cvs.push_back(secciones[cv]);
     }
@@ -118,7 +118,8 @@ void bloqueo::update()
     if (timer_desbloqueo && estado != bloqueo_receptor) timer_desbloqueo = std::nullopt;
     // Bloqueo sin datos
     if (colateral.estado == EstadoBloqueo::SinDatos) {
-        estado_objetivo = estado_inicial;
+        bool cambio = estado_objetivo != estado_inicial;
+        if (cambio) estado_objetivo = estado_inicial;
         // Fallo de conexión con la colateral, mantener bloqueo sin datos
         if (colateral.estado_objetivo == colateral.estado && estado != EstadoBloqueo::SinDatos) {
             estado = EstadoBloqueo::SinDatos;
@@ -126,6 +127,8 @@ void bloqueo::update()
         // Conexión con colateral recuperada, restablecer bloqueo a situación inicial
         } else if (colateral.estado_objetivo == estado_inicial && estado != estado_inicial) {
             estado = estado_inicial;
+            send_state();
+        } else if (cambio) {
             send_state();
         }
         return;

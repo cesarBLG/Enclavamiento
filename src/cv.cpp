@@ -32,13 +32,18 @@ cv_impl::cv_impl(const std::string &id, const json &j) : cv(id), topic("cv/"+id_
     fraccion_ejes_prenormalizacion = parametros.fraccion_ejes_prenormalizacion;
     normalizado = false;
     perdida_secuencia = false;
-    estado_raw = estado = estado_previo = EstadoCV::Prenormalizado;
+    estado_raw = estado = estado_previo = EstadoCV::Ocupado;
 
     lados<bool> lados_cejes;
     for (auto &[id, pos] : cejes) {
         lados_cejes[pos.lado] = true;
     }
     if (!lados_cejes[Lado::Impar] || !lados_cejes[Lado::Par]) topera = true;
+
+    for (auto &[idc, pos] : cejes) {
+        if (pos.ocupar) desconexion_cejes.insert(idc);
+    }
+    averia = !desconexion_cejes.empty();
 }
 void from_json(const json &j, cv_impl::cejes_position &position)
 {

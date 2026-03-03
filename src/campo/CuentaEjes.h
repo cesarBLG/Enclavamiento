@@ -23,6 +23,7 @@ class ContadorEjes : public mqtt_device {
   std::vector<Event> eventBuffer;
   int dirTren = -1;
   unsigned long ultimaActivacion;
+  unsigned long ultimoMensaje = 0;
 public:
   const char *id;
   std::string topic;
@@ -195,6 +196,11 @@ public:
       if (timeSinceLast > MAX_TRAIN_INTERVAL_MS) processTrain();
     }
     if (dirTren >= 0 && timeSinceLast > MAX_TRAIN_INTERVAL_MS) dirTren = -1;
+
+    if (ultimoMensaje == 0 || millis() - ultimoMensaje > 30000) {
+      client->publish(topic.c_str(), "conexion");
+    }
+
 #ifdef DEBUG_CEJES
     std::pair<bool,bool> state_dbg = {!digitalRead(pinA), !digitalRead(pinB)};
     if (state_dbg != prev_dbg) {

@@ -165,7 +165,7 @@ public:
         if (tipo != ruta || maniobra_compatible != this->maniobra_compatible) {
             ruta = tipo;
             this->maniobra_compatible = maniobra_compatible;
-            if (ruta == TipoMovimiento::Ninguno && anular_bloqueo && estado == bloqueo_emisor && desbloqueo_permitido()) estado_objetivo = EstadoBloqueo::Desbloqueo;
+            if (ruta == TipoMovimiento::Ninguno && anular_bloqueo && (estado == bloqueo_emisor || (estado == EstadoBloqueo::Desbloqueo && estado_objetivo == bloqueo_emisor)) && desbloqueo_permitido()) estado_objetivo = EstadoBloqueo::Desbloqueo;
             update();
         }
     }

@@ -83,6 +83,7 @@ public:
 protected:
     std::map<std::string, cejes_position> cejes;
     std::set<std::string> averia_cejes;
+    std::set<std::string> desconexion_cejes;
     bool topera = false;
 
     int64_t tiempo_auto_prenormalizacion;
@@ -114,6 +115,9 @@ public:
         for (auto &id : averia_cejes) {
             ocupado[cejes[id].lado] = true;
         }
+        for (auto &id : desconexion_cejes) {
+            ocupado[cejes[id].lado] = true;
+        }
         if (ocupado[Lado::Impar] && ocupado[Lado::Par]) {
             estado_raw = EstadoCV::Ocupado;
         } else if (ocupado[Lado::Impar]) {
@@ -123,7 +127,7 @@ public:
         } else {
             estado_raw = normalizado ? EstadoCV::Libre : EstadoCV::Prenormalizado;
         }
-        averia = !averia_cejes.empty();
+        if (!averia_cejes.empty() || !desconexion_cejes.empty()) averia = true;
         if (estado_raw > EstadoCV::Prenormalizado && !averia) {
             bool normalizar = true;
             for (auto lado : {Lado::Impar, Lado::Par}) {
@@ -143,6 +147,7 @@ public:
         } else if (timer_liberacion == nullptr) {
             timer_liberacion = set_timer([this]() {
                 estado = estado_raw;
+                if (averia_cejes.empty() && desconexion_cejes.empty()) averia = false;
                 timer_liberacion = nullptr;
                 send_state();
             }, 1000);
@@ -167,8 +172,15 @@ public:
         if (payload == "Error" || payload == "desconexion") {
             if (it->second.ocupar) {
                 log(id, "avería contador ejes", LOG_DEBUG);
-                averia_cejes.insert(id);
+                if (payload == "desconexion") desconexion_cejes.insert(id);
+                else averia_cejes.insert(id);
                 normalizado = false;
+                update();
+            }
+        } else if (payload == "conexion") {
+            auto it2 = desconexion_cejes.find(id);
+            if (it2 != desconexion_cejes.end()) {
+                desconexion_cejes.erase(it2);
                 update();
             }
         } else {
@@ -187,6 +199,9 @@ public:
                 if (msg == "Nominal") msg = "Reverse";
                 else if (msg == "Reverse") msg = "Nominal";
             }
+            averia_cejes.erase(id);
+            desconexion_cejes.erase(id);
+            bool averia = !averia_cejes.empty() || !desconexion_cejes.empty();
             auto now = get_milliseconds();
             for (int i=0; i<num; i++) {
                 if (msg == "Nominal" && it->second.ocupar) {
@@ -215,7 +230,7 @@ public:
                         if (!arr.empty()) {
                             int prev = arr.size() > 1 ? arr[arr.size() - 2] : 0;
                             int ejes = num_ejes[lado] - prev;
-                            if (topera && num_ejes[lado] == 0 && arr[0] >= 2) normalizado = true;
+                            if (topera && num_ejes[lado] == 0 && arr[0] >= 2) normalizado = !averia;
                             if (ejes <= 0) {
                                 ultimo_tren_liberado[lado] = {get_milliseconds(), arr.back() - prev};
                                 arr.pop_back();
@@ -225,7 +240,7 @@ public:
                         Lado opLado = opp_lado(lado);
                         if (num_ejes[opLado] > 0) {
                             --num_ejes[opLado];
-                            if (num_ejes[opLado] == 0/* && num_ejes[lado] == 0*/) normalizado = true;
+                            if (num_ejes[opLado] == 0/* && num_ejes[lado] == 0*/) normalizado = !averia;
                             auto &arr = num_trenes[opLado];
                             if (!arr.empty()) {
                                 int diff = arr[arr.size()-1] - num_ejes[opLado];
@@ -263,7 +278,6 @@ public:
                 }, tiempo_auto_prenormalizacion);
             }
             set_timer_auto_prenormalizacion_tren();
-            averia_cejes.erase(id);
             evento = {lado, msg == "Nominal", it->second.cv_colateral};
             update();
         }

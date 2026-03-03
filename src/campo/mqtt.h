@@ -61,7 +61,7 @@ class mqtt_client
     mqtt_cfg.session.last_will.topic = "desconexion";
     mqtt_cfg.session.last_will.msg = client_id;
     mqtt_cfg.session.last_will.qos = 1;
-    mqtt_cfg.session.keepalive = 15;
+    mqtt_cfg.session.keepalive = 8;
     mqtt = esp_mqtt_client_init(&mqtt_cfg);
     esp_mqtt_client_register_event(mqtt, MQTT_EVENT_ANY, mqtt_event_handler, this);
     esp_mqtt_client_start(mqtt);
