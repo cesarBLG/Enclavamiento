@@ -278,6 +278,7 @@ void to_json(json &j, const estado_bloqueo &estado)
     j["Ocupado"] = estado.ocupado;
     j["Prohibido"] = estado.prohibido;
     j["Ruta"] = estado.ruta;
+    j["Prioridad"] = estado.prioridad_itinerario;
     j["Escape"] = estado.escape;
     j["CierreSeñales"] = estado.cierre_señales;
     j["A/CTC"] = estado.actc;
@@ -296,6 +297,7 @@ void from_json(const json &j, estado_bloqueo &estado)
     estado.ocupado = j["Ocupado"];
     estado.prohibido = j["Prohibido"];
     estado.ruta = j["Ruta"];
+    estado.prioridad_itinerario = j.value("Prioridad", lados<int>({0,0}));
     estado.escape = j["Escape"];
     estado.cierre_señales = j["CierreSeñales"];
     estado.actc = j["A/CTC"];
@@ -311,6 +313,7 @@ void to_json(json &j, const estado_bloqueo_lado &estado)
     j["EstadoCVs"] = estado.estado_cvs;
     j["Prohibido"] = estado.prohibido;
     j["Ruta"] = estado.ruta;
+    j["Prioridad"] = estado.prioridad_itinerario;
     j["Escape"] = estado.escape;
     j["CierreSeñales"] = estado.cierre_señales;
     j["A/CTC"] = estado.actc;
@@ -330,6 +333,7 @@ void from_json(const json &j, estado_bloqueo_lado &estado)
     estado.estado_cvs = j["EstadoCVs"];
     estado.prohibido = j["Prohibido"];
     estado.ruta = j["Ruta"];
+    estado.prioridad_itinerario = j.value("Prioridad", 0);
     estado.escape = j["Escape"];
     estado.cierre_señales = j["CierreSeñales"];
     estado.actc = j["A/CTC"];

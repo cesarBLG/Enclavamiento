@@ -14,6 +14,7 @@ struct estado_bloqueo
     lados<bool> cierre_señales;
     lados<EstadoCanton> estado_cantones_inicio;
     lados<TipoMovimiento> ruta;
+    lados<int> prioridad_itinerario;
     lados<CompatibilidadManiobra> maniobra_compatible;
     lados<estado_mando> mando_estacion;
     bool operator<=>(const estado_bloqueo &o) const = default;
@@ -26,6 +27,7 @@ struct estado_bloqueo_lado
     ACTC actc=ACTC::NoNecesaria;
     bool cierre_señales=false;
     TipoMovimiento ruta=TipoMovimiento::Ninguno;
+    int prioridad_itinerario=0;
     CompatibilidadManiobra maniobra_compatible=CompatibilidadManiobra::IncompatibleBloqueo;
     estado_mando mando_estacion;
     EstadoBloqueo estado=EstadoBloqueo::SinDatos;

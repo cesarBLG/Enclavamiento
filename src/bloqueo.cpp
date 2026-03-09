@@ -61,13 +61,19 @@ void bloqueo::message_cv(const std::string &id, estado_cv ecv)
     }
     calcular_ocupacion();
 
-    // Si se ocupa el primer CV y la estación está cerrada, establecer bloqueo si no lo estaba
-    /*if (ecv.evento && ecv.evento->lado == lado && estado == EstadoBloqueo::Desbloqueo
-        && (ecv.estado_previo == EstadoCV::Libre || ecv.estado_previo == EstadoCV::Prenormalizado) && (ecv.estado != EstadoCV::Libre && ecv.estado != EstadoCV::Prenormalizado)
-        && index == 0 && dependencias[estacion]->cerrada && bloqueo_permitido(true)) {
+    // Gestión de bloqueo en estaciones cerradas
+    if (dependencias[estacion]->cerrada) {
+        // Si se ocupa el primer CV, establecer bloqueo si no lo estaba
+        if (ecv.evento && ecv.evento->lado == lado && estado == EstadoBloqueo::Desbloqueo
+            && ecv.estado_previo <= EstadoCV::Prenormalizado && ecv.estado > EstadoCV::Prenormalizado
+            && index == 0 && bloqueo_permitido(true)) {
 
-        estado_objetivo = bloqueo_emisor;
-    }*/
+            estado_objetivo = bloqueo_emisor;
+        }
+        // Si el trayecto se libera, anular bloqueo emisor
+        if (!ocupado.par && !ocupado.impar && estado == bloqueo_emisor) liberar = true;
+    }
+
     /*estado_cantones_inicio[Lado::Impar] = EstadoCanton::Libre;
     estado_cantones_inicio[Lado::Par] = EstadoCanton::Libre;
     for (int i=0; i<cvs.size() && (i == 0 || cvs[i]->señal_inicio(Lado::Impar, 0) == nullptr); i++) {
@@ -81,12 +87,7 @@ void bloqueo::message_cv(const std::string &id, estado_cv ecv)
     if (liberar && tipo != TipoBloqueo::BAU && tipo != TipoBloqueo::BLAU && (estado == EstadoBloqueo::BloqueoImpar ? Lado::Impar : Lado::Par) == sentido_preferente) liberar = false;
 
     // Gestionar desbloqueo
-    // También se produce desbloqueo si el trayecto se libera con cierto retardo respecto al último paso
-    // de un tren por el último CV de trayecto (por fallo de detección)
-    if (liberar) {
-        if (desbloqueo_permitido()) estado_objetivo = EstadoBloqueo::Desbloqueo;
-        else if (!cierre_señales) timer_desbloqueo = get_milliseconds();
-    }
+    if (liberar && desbloqueo_permitido()) estado_objetivo = EstadoBloqueo::Desbloqueo;
 
     // Soneria proximidad
     if (index == 0 && ecv.estado_previo <= EstadoCV::Prenormalizado && ecv.estado > EstadoCV::Prenormalizado && estado == bloqueo_receptor) {
@@ -114,8 +115,6 @@ void bloqueo::vincular(const std::string &id, bool propagacion_completa)
 }
 void bloqueo::update()
 {
-    //log(id, to_string(estado)+" "+to_string(estado_objetivo)+" "+to_string(colateral.estado)+" "+to_string(colateral.estado_objetivo), LOG_DEBUG);
-    if (timer_desbloqueo && estado != bloqueo_receptor) timer_desbloqueo = std::nullopt;
     // Bloqueo sin datos
     if (colateral.estado == EstadoBloqueo::SinDatos) {
         bool cambio = estado_objetivo != estado_inicial;

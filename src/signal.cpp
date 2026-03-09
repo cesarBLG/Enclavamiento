@@ -103,7 +103,7 @@ void señal_impl::determinar_aspecto()
         // y no hay señales intermedias suficientes que puedan proteger la maniobra
         cerrar_itinerario |= tipo_opp == TipoMovimiento::Maniobra && bloqueo_act.maniobra_compatible[opp_lado(dir)] == CompatibilidadManiobra::IncompatibleItinerario;
         // No permitir la apertura en itinerario de la señal de salida con bloqueo prohibido o A/CTC denegada
-        prohibir_abrir_itinerario |= tipo == TipoSeñal::Salida && (bloqueo_act.prohibido[dir] || bloqueo_act.actc[dir] == ACTC::Denegada);
+        prohibir_abrir_itinerario |= tipo == TipoSeñal::Salida && (bloqueo_act.prohibido[dir] || bloqueo_act.actc[dir] == ACTC::Denegada || (!ruta_necesaria && bloqueo_act.prioridad_itinerario[dir] < bloqueo_act.prioridad_itinerario[opp_lado(dir)]));
     }
     // Cerrar señal con el cantón ocupado en sentido contrario
     cerrar_itinerario |= canton == EstadoCanton::Ocupado;

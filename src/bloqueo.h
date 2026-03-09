@@ -24,7 +24,6 @@ protected:
     EstadoBloqueo estado_inicial;
     std::vector<seccion_via*> cvs;
     lados<bool> ocupado;
-    std::optional<int64_t> timer_desbloqueo;
     estado_bloqueo_lado colateral;
     estado_bloqueo estado_completo;
     bool me_pendiente;
@@ -49,6 +48,7 @@ public:
             estado_completo.maniobra_compatible[l] = e.maniobra_compatible;
             estado_completo.prohibido[l] = o.prohibido;
             estado_completo.ruta[l] = e.ruta;
+            estado_completo.prioridad_itinerario[l] = e.prioridad_itinerario;
         }
         json j = *((estado_bloqueo_lado*)this);
         send_message(topic_colateral, j.dump());
@@ -104,6 +104,8 @@ public:
     }
     void calcular_ocupacion()
     {
+        // Distinción de ocupación por sentido
+        // Sólo se utiliza si se permite establecer el bloqueo con posterioridad a la ocupación
         lados<bool> ocupado = {false,false};
         for (auto lado : {Lado::Impar, Lado::Par}) {
             for (auto &est : estado_cvs) {
@@ -120,13 +122,7 @@ public:
                 }
             }
         }
-        // Desbloquear si se ha producido una secuencia de paso correcta de circulación,
-        // pero el trayecto se libera con retardo debido al fallo de detección en algún CV
         if (this->ocupado != ocupado) {
-            if (timer_desbloqueo && get_milliseconds() - *timer_desbloqueo < 30000 && desbloqueo_permitido()) {
-                timer_desbloqueo = std::nullopt;
-                estado_objetivo = EstadoBloqueo::Desbloqueo;
-            }
             this->ocupado = ocupado;
             if (ocupado.par || ocupado.impar) log(this->id, "ocupado");
         }
@@ -160,12 +156,13 @@ public:
         mando_estacion = mando;
         update();
     }
-    void set_ruta(TipoMovimiento tipo, CompatibilidadManiobra maniobra_compatible, bool anular_bloqueo)
+    void set_ruta(TipoMovimiento tipo, CompatibilidadManiobra maniobra_compatible, bool anular_bloqueo, int prioridad_itinerario)
     {
-        if (tipo != ruta || maniobra_compatible != this->maniobra_compatible) {
+        if (tipo != ruta || maniobra_compatible != this->maniobra_compatible || prioridad_itinerario != this->prioridad_itinerario) {
             ruta = tipo;
             this->maniobra_compatible = maniobra_compatible;
             if (ruta == TipoMovimiento::Ninguno && anular_bloqueo && (estado == bloqueo_emisor || (estado == EstadoBloqueo::Desbloqueo && estado_objetivo == bloqueo_emisor)) && desbloqueo_permitido()) estado_objetivo = EstadoBloqueo::Desbloqueo;
+            this->prioridad_itinerario = prioridad_itinerario;
             update();
         }
     }

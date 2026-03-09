@@ -26,23 +26,29 @@ struct dependencia
     {
         std::map<std::string, ruta*> movimiento_bloqueos;
         std::set<std::string> anular_bloqueos;
+        std::set<std::string> solicitud_bloqueos;
         // Para cada bloqueo de salida, indicar el itinerario o maniobra establecido
         for (auto *ruta : rutas) {
             ruta->update();
             if (ruta->is_mandada()) {
                 movimiento_bloqueos[ruta->bloqueo_salida] = ruta;
-            } else if (ruta->anulacion_bloqueo_pendiente) {
-                ruta->anulacion_bloqueo_pendiente = false;
-                anular_bloqueos.insert(ruta->bloqueo_salida);
+                if (ruta->tipo == TipoMovimiento::Itinerario) solicitud_bloqueos.insert(ruta->bloqueo_salida);
+            } else {
+                if (ruta->anulacion_bloqueo_pendiente) {
+                    ruta->anulacion_bloqueo_pendiente = false;
+                    anular_bloqueos.insert(ruta->bloqueo_salida);
+                }
+                if (ruta->get_estado_fai() == EstadoFAI::Solicitud) solicitud_bloqueos.insert(ruta->bloqueo_salida);
             }
         }
         TipoSoneria son = TipoSoneria::Apagada;
         for (auto &[id, bloq] : bloqueos) {
             auto it = movimiento_bloqueos.find(id);
+            int pri = solicitud_bloqueos.find(id) != solicitud_bloqueos.end() ? (cerrada ? 1 : 2) : 0;
             if (it == movimiento_bloqueos.end()) {
-                bloq->set_ruta(TipoMovimiento::Ninguno, CompatibilidadManiobra::IncompatibleBloqueo, anular_bloqueos.find(id) != anular_bloqueos.end());
+                bloq->set_ruta(TipoMovimiento::Ninguno, CompatibilidadManiobra::IncompatibleBloqueo, anular_bloqueos.find(id) != anular_bloqueos.end(), pri);
             } else {
-                bloq->set_ruta(it->second->tipo, it->second->maniobra_compatible, false);
+                bloq->set_ruta(it->second->tipo, it->second->maniobra_compatible, false, pri);
             }
             son = std::max(bloq->update_soneria(), son);
         }

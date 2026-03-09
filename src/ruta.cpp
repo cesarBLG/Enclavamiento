@@ -262,10 +262,6 @@ void ruta::update()
 {
     construir_proximidad();
     bool activar_fai = false;
-    bool aut_salida = true;
-    if (bloqueo_salida != "") {
-        aut_salida &= !bloqueo_act.cierre_señales[lado] && !bloqueo_act.prohibido[lado] && bloqueo_act.actc[lado] != ACTC::Denegada;
-    }
     bool proximidad_ocupada = false;
     bool proximidad_ocupada_fai = false;
     for (auto &[sec, dir] : proximidad) {
@@ -278,6 +274,12 @@ void ruta::update()
     }
     // Con FAI activo, el itinerario se establece si la proximidad está ocupada y se permite la salida al bloqueo (en señales de salida)
     if (fai) {
+        bool aut_salida = true;
+        int prioridad = 0;
+        if (bloqueo_salida != "") {
+            aut_salida &= !bloqueo_act.cierre_señales[lado] && !bloqueo_act.prohibido[lado] && bloqueo_act.actc[lado] != ACTC::Denegada;
+            prioridad = bloqueo_act.prioridad_itinerario[lado]-bloqueo_act.prioridad_itinerario[opp_lado(lado)];
+        }
         bool cv_anterior_ocupado = false;
         for (auto &[sec, dir] : proximidad0) {
             if (sec->get_cv()->get_state() > EstadoCV::Prenormalizado) {
@@ -289,7 +291,7 @@ void ruta::update()
             // Retrasar itinerario respecto al último lanzamiento para evitar que el mismo tren active la ruta dos veces
             // No retrasar si se libera la proximidad (son realmente dos trenes distintos)
             if (!cv_anterior_ocupado) inicio_temporizacion_fai = 0;
-            if (aut_salida && proximidad_ocupada_fai && get_milliseconds() - inicio_temporizacion_fai > tiempo_espera_fai) {
+            if (aut_salida && proximidad_ocupada_fai && prioridad >= 0 && get_milliseconds() - inicio_temporizacion_fai > tiempo_espera_fai) {
                 estado_fai = EstadoFAI::Solicitud;
                 inicio_temporizacion_fai = get_milliseconds();
             }
@@ -297,7 +299,7 @@ void ruta::update()
         // Si se ha cancelado manualmente el FAI, se resetea al liberarse la proximidad
         if (estado_fai == EstadoFAI::Cancelado && !proximidad_ocupada) estado_fai = EstadoFAI::EnEspera;
         // Si no se cumplen las condiciones, disolvemos la ruta automáticamente
-        if ((!aut_salida || !proximidad_ocupada) && !fai_disparo_unico && estado_fai != EstadoFAI::EnEspera && estado_fai != EstadoFAI::Cancelado) {
+        if ((!aut_salida || !proximidad_ocupada || prioridad < 0) && !fai_disparo_unico && estado_fai != EstadoFAI::EnEspera && estado_fai != EstadoFAI::Cancelado) {
             dai(true);
             estado_fai = EstadoFAI::EnEspera;
             inicio_temporizacion_fai = 0;
