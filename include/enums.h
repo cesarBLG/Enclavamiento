@@ -111,6 +111,12 @@ enum struct TipoSeccion
     Cruzamiento,
     Aguja
 };
+enum struct TipoPN
+{
+    Automatico,
+    Afectado,
+    Enclavado
+};
 enum struct TipoSoneria
 {
     Apagada,
@@ -133,6 +139,7 @@ std::string to_string(CompatibilidadManiobra comp);
 std::string to_string(TipoSeñal tipo);
 std::string to_string(ACTC actc);
 std::string to_string(TipoBloqueo tipo);
+std::string to_string(TipoPN tipo);
 std::string to_string(TipoSoneria soneria);
 #ifndef WITHOUT_JSON
 #include "json.h"
@@ -157,6 +164,8 @@ void from_json(const json &j, ACTC &actc);
 void from_json(const json &j, TipoDestino &tipo);
 void to_json(json &j, const TipoBloqueo &tipo);
 void from_json(const json &j, TipoBloqueo &tipo);
+void to_json(json &j, const TipoPN &tipo);
+void from_json(const json &j, TipoPN &tipo);
 void to_json(json &j, const TipoSoneria &tipo);
 void from_json(const json &j, TipoSoneria &tipo);
 #endif

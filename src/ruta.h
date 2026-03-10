@@ -69,6 +69,7 @@ protected:
     señal_impl *señal_inicio;
     std::vector<std::pair<señal_impl*, Lado>> señales;
     destino_ruta *destino;
+    std::vector<std::pair<pn_enclavado*, Lado>> pn_afectados;
     Lado lado;
     Lado lado_bloqueo;
     estado_bloqueo bloqueo_act;
@@ -266,44 +267,7 @@ public:
         return RespuestaMando::OrdenRechazada;
     }
 
-    void message_cv(const std::string &id, estado_cv ecv)
-    {
-        /*if (estado_fai == EstadoFAI::EnEspera || estado_fai == EstadoFAI::Cancelado || estado_fai == EstadoFAI::AperturaNoPosible || estado_fai == EstadoFAI::AperturaNoPosibleReconocida) {
-            for (auto &[s, l] : proximidad) {
-                if (id == s->id_cv && ecv.evento && ecv.evento->ocupacion && ecv.evento->lado == l) {
-                    inicio_temporizacion_fai = 0;
-                    estado_fai = EstadoFAI::EnEspera;
-                }
-            }
-        }*/
-        if (!mandada) return;
-        // Ocupación del primer CV de la ruta
-        if (id == señal_inicio->get_id_cv_inicio() && ecv.evento && ecv.evento->ocupacion && ecv.evento->lado == lado) {
-            if (!supervisada) {
-                // La ruta pasa a estar supervisada aunque la señal no haya llegado a abrir
-                supervisada = true;
-                log(this->id, "supervisada");
-            }
-            if (!ocupada) {
-                // Comprobación de si la ruta debe mantenerse enclavada por sucesión automática
-                sucesion_automatica = tipo == TipoMovimiento::Itinerario && señal_inicio->sucesion_automatica;
-                ocupada = true;
-                // Si la ruta se ocupa con diferímetro de disolución, se cancela la disolución
-                if (diferimetro_dai != nullptr) {
-                    clear_timer(diferimetro_dai);
-                    diferimetro_dai = nullptr;
-                    diferimetro_cancelado = true;
-                    log(this->id, "ocupada con dai activo", LOG_WARNING);
-                } else {
-                    log(this->id, "ocupada");
-                }
-            }
-            // Rearme de FAI
-            if (estado_fai == EstadoFAI::Activo) estado_fai = EstadoFAI::EnEspera;
-            // Impedir nueva activación de FAI hasta que transcurra cierto tiempo
-            if (estado_fai == EstadoFAI::EnEspera) inicio_temporizacion_fai = get_milliseconds();
-        }
-    }
+    void message_cv(const std::string &id, estado_cv ecv);
     void message_bloqueo(const std::string &id, estado_bloqueo eb)
     {
         if (id != bloqueo_salida) return;
@@ -315,4 +279,6 @@ public:
 protected:
     void construir_proximidad();
     void construir_proximidad0(seccion_via *next, seccion_via *sec, Lado dir);
+    void activar_pns();
+    void desactivar_pns();
 };

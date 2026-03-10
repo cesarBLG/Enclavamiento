@@ -12,4 +12,10 @@ pn_enclavado::pn_enclavado(const std::string &id, const json &j) : id(id), topic
     } else {
         tiempo_apertura[Lado::Impar] = tiempo_apertura[Lado::Par] = 0;
     }
+    if (j.contains("Tipo"))
+        tipo = j["Tipo"];
+    else if (seccion->is_trayecto())
+        tipo = {TipoPN::Automatico, TipoPN::Automatico};
+    else
+        tipo = {TipoPN::Enclavado, TipoPN::Enclavado};
 }

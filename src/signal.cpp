@@ -28,7 +28,6 @@ void señal_impl::determinar_aspecto()
     señal *sig_señal = nullptr;
     // Condiciones que provocan el cierre de señal
     bool cerrar = false;
-    bool precaucion = false;
     // Condiciones que impiden abrir la señal, pero no la cierran si estaba abierta
     bool prohibir_abrir = false;
     // Requerir secciones asegurado por ruta (no necesario en trayecto)
@@ -51,10 +50,8 @@ void señal_impl::determinar_aspecto()
         seccion_via *next = sec_act->siguiente_seccion(sec_prv, dir, false);
         for (auto *pn : sec_act->pns) {
             if (!pn->is_protegido()) {
-                if (comprobar_ruta)
+                if (pn->get_tipo(l) != TipoPN::Automatico)
                     cerrar = true;
-                else
-                    precaucion = true;
             }
         }
         if (comprobar_ruta) {
@@ -127,7 +124,6 @@ void señal_impl::determinar_aspecto()
     } else {
         // Permitir o no la apertura con cantón ocupado en el mismo sentido, o en prenormalización
         aspecto = aspecto_maximo_ocupacion[canton];
-        if (aspecto > Aspecto::Precaucion && precaucion) aspecto = Aspecto::Precaucion;
         // Itinerarios ERTMS pueden abrir como máximo en parada selectiva
         if (ruta_activa != nullptr && ruta_activa->ertms && aspecto > Aspecto::ParadaSelectivaDestellos) aspecto = Aspecto::ParadaSelectivaDestellos;
         // Aspecto máximo permitido para cumplir las órdenes de la señal siguiente
@@ -336,7 +332,7 @@ void señal_impl::message_cv(const std::string &id, estado_cv ev)
     if (id != get_id_cv_inicio()) return;
 
     // Con el paso de la circulación se cierra la señal, salvo en maniobras
-    if (ruta_activa != nullptr && ruta_activa->tipo != TipoMovimiento::Maniobra && !ruta_activa->is_sucesion_automatica() && ev.evento && ev.evento->ocupacion && ev.evento->lado == lado && (aspecto != Aspecto::Parada || get_milliseconds() - ultimo_paso_abierta > 30000)) {
+    if (ruta_activa != nullptr && ruta_activa->tipo != TipoMovimiento::Maniobra && (!sucesion_automatica || ruta_activa->tipo != TipoMovimiento::Itinerario) && ev.evento && ev.evento->ocupacion && ev.evento->lado == lado && (aspecto != Aspecto::Parada || get_milliseconds() - ultimo_paso_abierta > 30000)) {
         ruta_activa = nullptr;
     }
 

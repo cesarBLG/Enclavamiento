@@ -38,6 +38,7 @@ protected:
     lados<std::map<int,int>> active_outs;
     lados<int> route_outs;
     ruta *ruta_asegurada = nullptr;
+    Lado lado_ruta;
 
     lados<int> ocupacion_outs;
 

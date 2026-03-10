@@ -335,11 +335,7 @@ void ruta::update()
 
     // Mandar cierre de PN si la proximidad está ocupada
     if ((proximidad_ocupada || proximidad.empty()) && señal_inicio->ruta_activa != nullptr) {
-        for (auto &[sec, l] : secciones) {
-            for (auto *pn : sec->pns) {
-                pn->enclavar();
-            }
-        }
+        activar_pns();
     }
 
     // Desenclavar ruta al paso de la circulación
@@ -422,6 +418,45 @@ void ruta::update()
         log(id, "supervisada");
     }
 }
+void ruta::message_cv(const std::string &id, estado_cv ecv)
+{
+    /*if (estado_fai == EstadoFAI::EnEspera || estado_fai == EstadoFAI::Cancelado || estado_fai == EstadoFAI::AperturaNoPosible || estado_fai == EstadoFAI::AperturaNoPosibleReconocida) {
+        for (auto &[s, l] : proximidad) {
+            if (id == s->id_cv && ecv.evento && ecv.evento->ocupacion && ecv.evento->lado == l) {
+                inicio_temporizacion_fai = 0;
+                estado_fai = EstadoFAI::EnEspera;
+            }
+        }
+    }*/
+    if (!mandada) return;
+    // Ocupación del primer CV de la ruta
+    if (id == señal_inicio->get_id_cv_inicio() && ecv.evento && ecv.evento->ocupacion && ecv.evento->lado == lado) {
+        if (!supervisada) {
+            // La ruta pasa a estar supervisada aunque la señal no haya llegado a abrir
+            supervisada = true;
+            log(this->id, "supervisada");
+            activar_pns();
+        }
+        if (!ocupada) {
+            // Comprobación de si la ruta debe mantenerse enclavada por sucesión automática
+            sucesion_automatica = tipo == TipoMovimiento::Itinerario && señal_inicio->sucesion_automatica;
+            ocupada = true;
+            // Si la ruta se ocupa con diferímetro de disolución, se cancela la disolución
+            if (diferimetro_dai != nullptr) {
+                clear_timer(diferimetro_dai);
+                diferimetro_dai = nullptr;
+                diferimetro_cancelado = true;
+                log(this->id, "ocupada con dai activo", LOG_WARNING);
+            } else {
+                log(this->id, "ocupada");
+            }
+        }
+        // Rearme de FAI
+        if (estado_fai == EstadoFAI::Activo) estado_fai = EstadoFAI::EnEspera;
+        // Impedir nueva activación de FAI hasta que transcurra cierto tiempo
+        if (estado_fai == EstadoFAI::EnEspera) inicio_temporizacion_fai = get_milliseconds();
+    }
+    }
 bool ruta::dai(bool anular_bloqueo)
 {
     if (!mandada) return false;
@@ -494,6 +529,7 @@ bool ruta::dei()
             if (señal_inicio != nullptr && señal_inicio->frontera_salida) {
                 señal_inicio->frontera_salida->disolver_entrada();
             }
+            desactivar_pns();
         }, temporizador_dei);
     }
     return true;
@@ -531,6 +567,7 @@ void ruta::disolucion_parcial(bool anular_bloqueo)
         frontera *f = destino->get_frontera();
         disolver();
         if (f != nullptr) f->disolver_salida();
+        desactivar_pns();
         return;
     }
     if (señal_inicio->ruta_activa == this) señal_inicio->ruta_activa = nullptr;
@@ -617,4 +654,21 @@ void ruta::construir_proximidad()
         }
     }
     proximidad0_next.clear();
+}
+void ruta::activar_pns()
+{
+    for (auto &[sec, l] : secciones) {
+        for (auto *pn : sec->pns) {
+            pn->activar_ruta(l);
+        }
+    }
+    for (auto &[pn, l] : pn_afectados) {
+        pn->activar_ruta(l);
+    }
+}
+void ruta::desactivar_pns()
+{
+    for (auto &[pn, l] : pn_afectados) {
+        pn->desactivar_ruta(l);
+    } 
 }

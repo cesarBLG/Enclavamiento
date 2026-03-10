@@ -108,6 +108,15 @@ std::string to_string(TipoBloqueo tipo)
     }
     return "";
 }
+std::string to_string(TipoPN tipo)
+{
+    switch (tipo) {
+        case TipoPN::Automatico: return "Automático";
+        case TipoPN::Afectado: return "Afectado";
+        case TipoPN::Enclavado: return "Enclavado";
+    }
+    return "";
+}
 std::string to_string(TipoSoneria tipo)
 {
     switch (tipo) {
@@ -435,6 +444,16 @@ void from_json(const json &j, TipoBloqueo &tipo)
     else if (j == "BLAU") tipo = TipoBloqueo::BLAU;
     else if (j == "BLAD") tipo = TipoBloqueo::BLAD;
     else if (j == "BLAB") tipo = TipoBloqueo::BLAB;
+}
+void to_json(json &j, const TipoPN &tipo)
+{
+    j = to_string(tipo);
+}
+void from_json(const json &j, TipoPN &tipo)
+{
+    if (j == "Automático") tipo = TipoPN::Automatico;
+    else if (j == "Afectado") tipo = TipoPN::Afectado;
+    else if (j == "Enclavado") tipo = TipoPN::Enclavado;
 }
 void to_json(json &j, const TipoSoneria &tipo)
 {

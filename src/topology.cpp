@@ -36,6 +36,7 @@ void seccion_via::asegurar(ruta *ruta, seccion_via *prev, seccion_via *next, Lad
     if (in < 0 || out < 0) return;
     log(id, "enclavada", LOG_DEBUG);
     ruta_asegurada = ruta;
+    lado_ruta = dir;
     route_outs[dir] = out;
     route_outs[opp_lado(dir)] = in;
     remota_cambio_elemento(ElementoRemota::CV, id_cv);
@@ -47,7 +48,7 @@ void seccion_via::liberar(ruta *ruta)
         ruta_asegurada = nullptr;
         route_outs = {-1, -1};
         for (auto *pn : pns) {
-            pn->update();
+            pn->desactivar_ruta(lado_ruta);
         }
         remota_cambio_elemento(ElementoRemota::CV, id_cv);
     }
