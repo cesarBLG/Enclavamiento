@@ -3,6 +3,7 @@
 #include "signal.h"
 #include "bloqueo.h"
 #include "ruta.h"
+#include "deslizamiento.h"
 #include "topology.h"
 #include "dependencia.h"
 #include "pn_enclavado.h"

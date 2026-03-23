@@ -6,7 +6,6 @@ seccion_via::seccion_via(const std::string &id, const json &j, TipoSeccion tipo)
 {
     active_outs[Lado::Impar][0] = 0;
     active_outs[Lado::Par][0] = 0;
-    route_outs = {-1, -1};
     auto cv_it = cvs.find(id_cv);
     if (cv_it != cvs.end()) {
         cv_seccion = cvs[id_cv];
@@ -21,42 +20,39 @@ seccion_via::seccion_via(const std::string &id, const json &j, TipoSeccion tipo)
 }
 void seccion_via::asegurar(ruta *ruta, int in, int out, Lado dir)
 {
-    if (ruta_asegurada != nullptr || ruta == nullptr) return;
+    auto r = reserva_seccion();
+    r.ruta_asegurada = ruta;
+    r.outs[dir] = out;
+    r.outs[opp_lado(dir)] = in;
+    r.lado = dir;
+    if (ruta_asegurada || ruta == nullptr) return;
     log(id, "enclavada", LOG_DEBUG);
-    ruta_asegurada = ruta;
-    route_outs[dir] = out;
-    route_outs[opp_lado(dir)] = in;
+    ruta_asegurada = r;
     remota_cambio_elemento(ElementoRemota::CV, id_cv);
 }
-void seccion_via::asegurar(ruta *ruta, seccion_via *prev, seccion_via *next, Lado dir)
+void seccion_via::asegurar_deslizamiento(ruta *ruta, nodo_deslizamiento* nodo)
 {
-    if (ruta_asegurada != nullptr || ruta == nullptr) return;
-    int in = get_in(prev, dir);
-    int out = get_out(next, dir);
-    if (in < 0 || out < 0) return;
-    log(id, "enclavada", LOG_DEBUG);
-    ruta_asegurada = ruta;
-    lado_ruta = dir;
-    route_outs[dir] = out;
-    route_outs[opp_lado(dir)] = in;
+    this->deslizamiento[ruta] = nodo;
     remota_cambio_elemento(ElementoRemota::CV, id_cv);
 }
 void seccion_via::liberar(ruta *ruta)
 {
-    if (ruta_asegurada == ruta) {
+    if (ruta_asegurada && ruta_asegurada->ruta_asegurada == ruta) {
         log(id, "desenclavada");
-        ruta_asegurada = nullptr;
-        route_outs = {-1, -1};
         for (auto *pn : pns) {
-            pn->desactivar_ruta(lado_ruta);
+            pn->desactivar_ruta(ruta_asegurada->lado);
         }
+        ruta_asegurada = std::nullopt;
+        remota_cambio_elemento(ElementoRemota::CV, id_cv);
+    } else if (deslizamiento.find(ruta) != deslizamiento.end()) {
+        deslizamiento.erase(ruta);
         remota_cambio_elemento(ElementoRemota::CV, id_cv);
     }
 }
 TipoMovimiento seccion_via::get_tipo_movimiento()
 {
-    if (ruta_asegurada != nullptr)
-        return ruta_asegurada->tipo;
+    if (ruta_asegurada)
+        return ruta_asegurada->ruta_asegurada->tipo;
     if (bloqueo_asociado != "") {
         if (bloqueo_act.estado != EstadoBloqueo::Desbloqueo && bloqueo_act.estado != EstadoBloqueo::SinDatos)
             return TipoMovimiento::Itinerario;
@@ -69,8 +65,10 @@ void seccion_via::message_cv(const std::string &id, estado_cv ev)
     if (ev.evento && ev.evento->ocupacion && ev.estado > EstadoCV::Prenormalizado && ocupacion_outs[Lado::Impar] < 0 && ocupacion_outs[Lado::Par] < 0) {
         if (trayecto) {
             ocupacion_outs = {0, 0};
+        } else if (ruta_asegurada) {
+            ocupacion_outs = ruta_asegurada->outs;
         } else {
-            ocupacion_outs = route_outs;
+            ocupacion_outs = {-1, -1};
         }
     }
     if (ev.estado <= EstadoCV::Prenormalizado)
@@ -83,13 +81,13 @@ void seccion_via::message_cv(const std::string &id, estado_cv ev)
                 //intempestiva = true;
             }
         } else {
-            if (ruta_asegurada == nullptr) {
+            if (!ruta_asegurada) {
                 intempestiva = true;
             } else if (ev.evento->cv_colateral != "") {
                 Lado l = opp_lado(ev.evento->lado);
                 auto &sigs = siguientes_secciones[l];
                 for (int i=0; i<sigs.size(); i++) {
-                    if (secciones[sigs[i].id]->id_cv == ev.evento->cv_colateral && route_outs[l] != i) {
+                    if (secciones[sigs[i].id]->id_cv == ev.evento->cv_colateral && ruta_asegurada->outs[l] != i) {
                         intempestiva = true;
                         break;
                     }
@@ -128,7 +126,7 @@ seccion_via* seccion_via::siguiente_seccion(seccion_via *prev, Lado &dir, bool u
     int in = get_in(prev, dir);
     if (in < 0) return nullptr;
     int out;
-    if (usar_ruta_asegurada) out = route_outs[dir];
+    if (usar_ruta_asegurada) out = ruta_asegurada ? ruta_asegurada->outs[dir] : -1;
     else out = active_outs[dir][in];
     if (out < 0 || siguientes_secciones[dir].empty()) return nullptr;
     auto p = siguientes_secciones[dir][out];
@@ -155,8 +153,8 @@ void seccion_via::prev_secciones(seccion_via *next, Lado dir_fwd, std::vector<st
             ins.insert(in);
         }
     }
-    if (route_outs[dir_fwd] == out) {
-        ins.insert(route_outs[lado]);
+    if (ruta_asegurada && ruta_asegurada->outs[dir_fwd] == out) {
+        ins.insert(ruta_asegurada->outs[lado]);
     }
     for (int in : ins) {
         auto &sig = siguientes_secciones[lado];

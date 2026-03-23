@@ -5,6 +5,7 @@
 #include "bloqueo.h"
 #include "cv.h"
 #include "signal.h"
+#include "deslizamiento.h"
 #include "log.h"
 #include "remota.h"
 class ruta;
@@ -40,6 +41,13 @@ public:
     }
     frontera* get_frontera();
 };
+struct elemento_ruta
+{
+    seccion_via *seccion;
+    Lado dir;
+    int in;
+    int out;
+};
 class ruta
 {
 public:
@@ -55,7 +63,7 @@ public:
 
     bool anulacion_bloqueo_pendiente = false;
 protected:
-    std::vector<std::pair<seccion_via*,Lado>> secciones;
+    std::vector<elemento_ruta> secciones;
     std::map<seccion_via*, EstadoCanton> ocupacion_maxima_secciones;
     std::map<seccion_via*, std::pair<int, int>> posicion_aparatos;
     std::set<seccion_via*> secciones_aseguradas;
@@ -70,6 +78,8 @@ protected:
     std::vector<std::pair<señal_impl*, Lado>> señales;
     destino_ruta *destino;
     std::vector<std::pair<pn_enclavado*, Lado>> pn_afectados;
+    ruta_deslizamiento* deslizamiento;
+    std::map<ruta*,int> deslizamientos_afectados;
     Lado lado;
     Lado lado_bloqueo;
     estado_bloqueo bloqueo_act;
@@ -147,7 +157,7 @@ public:
         else r.FMV_EST = tipo == TipoMovimiento::Maniobra ? 2 : 1;
         switch (destino->tipo) {
             case TipoDestino::Colateral:
-                if (!secciones.empty() && secciones.back().first->is_trayecto()) r.FMV_DIF_ELEM = 3;
+                if (!secciones.empty() && secciones.back().seccion->is_trayecto()) r.FMV_DIF_ELEM = 3;
                 else r.FMV_DIF_ELEM = 2;
                 break;
             case TipoDestino::Señal:
@@ -196,7 +206,7 @@ public:
     {
         return sucesion_automatica;
     }
-    const std::vector<std::pair<seccion_via*,Lado>> &get_secciones()
+    const std::vector<elemento_ruta> &get_secciones()
     {
         return secciones;
     }
@@ -223,6 +233,10 @@ public:
     señal_impl *get_señal_inicio()
     {
         return señal_inicio;
+    }
+    bool deslizamiento_asegurado()
+    {
+        return deslizamiento == nullptr || deslizamiento->is_asegurado();
     }
     bool set_fai(bool activar) {
         if (activar) {

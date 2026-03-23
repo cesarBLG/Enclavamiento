@@ -31,12 +31,16 @@ void señal_impl::determinar_aspecto()
     // Condiciones que impiden abrir la señal, pero no la cierran si estaba abierta
     bool prohibir_abrir = false;
     // Requerir secciones asegurado por ruta (no necesario en trayecto)
-    bool comprobar_ruta = ruta_activa != nullptr && !ruta_activa->get_secciones().empty() && ruta_activa->get_secciones().back().first != seccion_prev;
+    bool comprobar_ruta = ruta_activa != nullptr && !ruta_activa->get_secciones().empty() && ruta_activa->get_secciones().back().seccion != seccion_prev;
     // Nombre del bloqueo asociado
     std::string bloq_id = bloqueo_asociado;
     if (bloq_id == "" && ruta_activa != nullptr && ruta_activa->bloqueo_salida != "") {
         auto &señales = ruta_activa->get_señales();
         if (señales.empty() || señales.back().first == this || tipo == TipoSeñal::Salida) bloq_id = ruta_activa->bloqueo_salida;
+    }
+    if (ruta_activa != nullptr) {
+        auto &señales = ruta_activa->get_señales();
+        if ((señales.empty() || señales.back().first == this) && !ruta_activa->deslizamiento_asegurado()) cerrar = true;
     }
     // Comprobamos todos los CVs hasta la señal siguiente o fin de movimiento
     while (sec_act != nullptr && sig_señal == nullptr) {
@@ -61,7 +65,11 @@ void señal_impl::determinar_aspecto()
                 cerrar = true;
             if (sec_ocup == EstadoCanton::Ocupado && sec_act->get_cv()->ocupacion_intempestiva)
                 cerrar = true;
-            if (ruta_activa->get_secciones().back().first == sec_act) comprobar_ruta = false;
+            if (ruta_activa->get_secciones().back().seccion == sec_act) comprobar_ruta = false;
+        }
+        for (auto &[r, d] : sec_act->get_deslizamiento()) {
+            if (!d->asegurado && !d->acceso_impedido)
+                cerrar = true;
         }
         if (sec_act->is_asegurada() && (ruta_activa == nullptr || !sec_act->is_asegurada(ruta_activa))) cerrar = true;
         if (bloq_id == "" && sec_act->bloqueo_asociado != "") bloq_id = sec_act->bloqueo_asociado;

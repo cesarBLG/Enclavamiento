@@ -14,6 +14,13 @@
 class ruta;
 class señal;
 class pn_enclavado;
+class nodo_deslizamiento;
+struct reserva_seccion
+{
+    ruta *ruta_asegurada;
+    Lado lado;
+    lados<int> outs;
+};
 class seccion_via
 {
 public:
@@ -36,9 +43,9 @@ protected:
 
     lados<std::vector<conexion>> siguientes_secciones;
     lados<std::map<int,int>> active_outs;
-    lados<int> route_outs;
-    ruta *ruta_asegurada = nullptr;
-    Lado lado_ruta;
+    std::optional<reserva_seccion> ruta_asegurada;
+
+    std::map<ruta*, nodo_deslizamiento*> deslizamiento;
 
     lados<int> ocupacion_outs;
 
@@ -62,21 +69,40 @@ public:
         return cv_seccion;
     }
     void asegurar(ruta *ruta, int in, int out, Lado dir);
-    void asegurar(ruta *ruta, seccion_via *prev, seccion_via *next, Lado dir);
+    void asegurar_deslizamiento(ruta *ruta, nodo_deslizamiento* nodo);
     void liberar(ruta *ruta);
     bool is_asegurada(ruta *ruta=nullptr)
     {
-        if (ruta == nullptr) return ruta_asegurada != nullptr;
-        return ruta_asegurada == ruta;
+        if (ruta_asegurada) {
+            return ruta == nullptr || ruta == ruta_asegurada->ruta_asegurada;
+        } else {
+            return false;
+        }
     }
-    bool asegurar_posible(ruta *ruta)
+    bool asegurar_posible(ruta *ruta, int in, int out, Lado dir)
     {
         if (cv_seccion != nullptr) {
             for (auto &sec : cv_seccion->secciones) {
                 if (sec->is_asegurada() && !sec->is_asegurada(ruta)) return false;
             }
         }
-        return ruta_asegurada == ruta || ruta_asegurada == nullptr;
+        if (ruta_asegurada && ruta_asegurada->ruta_asegurada != ruta) return false;
+        return true;
+    }
+    bool deslizamiento_posible(int in, int out, Lado dir)
+    {
+        if (ruta_asegurada && (ruta_asegurada->lado != dir || ruta_asegurada->outs[dir] != in || ruta_asegurada->outs[opp_lado(dir)] != out)) {
+            return false;
+        }
+        return true;
+    }
+    std::optional<reserva_seccion> get_ruta_asegurada()
+    {
+        return ruta_asegurada;
+    }
+    const std::map<ruta*, nodo_deslizamiento*> &get_deslizamiento()
+    {
+        return deslizamiento;
     }
     TipoMovimiento get_tipo_movimiento();
     bool is_bloqueo_seccion() { return bloqueo_seccion; }
@@ -123,9 +149,12 @@ public:
         señales[lado][pin] = sig;
     }
     EstadoCanton get_ocupacion(seccion_via* prev, Lado dir);
-protected:
     int get_in(seccion_via* prev, Lado dir);
     int get_out(seccion_via* next, Lado dir);
+    int num_outs(Lado l)
+    {
+        return siguientes_secciones[l].size();
+    }
 };
 class aguja : public seccion_via, public estado_aguja
 {
