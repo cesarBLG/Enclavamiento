@@ -488,18 +488,18 @@ bool ruta::dai(bool anular_bloqueo)
             diferimetro_dai = nullptr;
             disolucion_parcial(anular_bloqueo);
         }, temporizador);
-        if (señal_inicio->ruta_activa == this) señal_inicio->clear_request = false;
+        if (señal_inicio->ruta_activa == this && señal_inicio->ruta_necesaria) señal_inicio->clear_request = false;
         for (int i=0; i<secciones.size(); i++) {
             auto *sec = secciones[i].seccion;
             auto *prev = i>0 ? secciones[i-1].seccion : señal_inicio->seccion_prev;
             for (auto &[sig, dir] : señales) {
-                if (sig->seccion == sec && sig->ruta_activa == this) sig->clear_request = false;
+                if (sig->seccion == sec && sig->ruta_activa == this && sig->ruta_necesaria) sig->clear_request = false;
             }
             if (!sec->is_asegurada(this)) break;
             if (sec->get_ocupacion(prev, secciones[i].dir) > EstadoCanton::Prenormalizado) break;
             if (i + 1 == secciones.size() && !señales.empty()) {
                 auto *sig = señales.back().first;
-                if (sig->seccion_prev == sec && sig->ruta_activa == this) sig->clear_request = false;
+                if (sig->seccion_prev == sec && sig->ruta_activa == this && sig->ruta_necesaria) sig->clear_request = false;
             }
         }
     }
