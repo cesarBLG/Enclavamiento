@@ -199,6 +199,7 @@ public:
 
     if (ultimoMensaje == 0 || millis() - ultimoMensaje > 30000) {
       client->publish(topic.c_str(), "conexion");
+      ultimoMensaje = millis();
     }
 
 #ifdef DEBUG_CEJES

@@ -169,10 +169,10 @@ public:
     {
         auto it = cejes.find(id);
         if (it == cejes.end()) return;
-        if (payload == "Error" || payload == "desconexion") {
+        if (payload == "Error" || payload == "\"desconexion\"") {
             if (it->second.ocupar) {
                 log(id, "avería contador ejes", LOG_DEBUG);
-                if (payload == "desconexion") desconexion_cejes.insert(id);
+                if (payload == "\"desconexion\"") desconexion_cejes.insert(id);
                 else averia_cejes.insert(id);
                 normalizado = false;
                 update();
