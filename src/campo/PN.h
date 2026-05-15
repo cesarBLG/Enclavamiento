@@ -1,4 +1,5 @@
 #include <HardwareSerial.h>
+#include "mqtt.h"
 class SPPN : public mqtt_device
 {
     bool cierre = false;
@@ -106,10 +107,10 @@ public:
             }
         }
     }
-    void msg_callback(const char *topic, const char *payload) override
+    void msg_callback(const std::string_view topic, const std::string_view payload) override
     {
-        if (strcmp(topic, this->topic.c_str()) != 0) return;
-        setCierre(!strcmp(payload, "true"));
+        if (topic != this->topic) return;
+        setCierre(payload == "true");
     }
     void sendState()
     {

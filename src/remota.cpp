@@ -99,6 +99,13 @@ void update_remota()
             push(j, comp, r);
         }
     }
+    for (auto &[id, ag] : agujas) {
+        std::pair<ElementoRemota,std::string> comp(ElementoRemota::AG, id);
+        if (sendall || update_components.find(comp) != update_components.end()) {
+            auto r = json(ag->get_estado_remota());
+            push(j, comp, r);
+        }
+    }
     for (auto &[id, bloq] : bloqueos) {
         std::pair<ElementoRemota,std::string> comp(ElementoRemota::BLQ, bloq->id);
         if (sendall || update_components.find(comp) != update_components.end()) {

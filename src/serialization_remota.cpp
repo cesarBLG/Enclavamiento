@@ -253,3 +253,39 @@ void from_json(const nlohmann::json& j, RemotaPN& p)
     p.PN_PRX1 = j.value("PN_PRX1", 0u);
     p.PN_PRX2 = j.value("PN_PRX2", 0u);
 }
+
+// ---------------- RemotaAG ----------------
+
+void to_json(nlohmann::json& j, const RemotaAG& p)
+{
+    j = nlohmann::json{
+        {"AG_DAT", p.AG_DAT},
+        {"AG_ME", p.AG_ME},
+        {"AG_BIA", p.AG_BIA},
+        {"AG_OCUP_TIPO", p.AG_OCUP_TIPO},
+        {"AG_EST", p.AG_EST},
+        {"AG_DIR", p.AG_DIR},
+        {"AG_DES_N", p.AG_DES_N},
+        {"AG_DES_I", p.AG_DES_I},
+        {"AG_COMP", p.AG_COMP},
+        {"AG_BA", p.AG_BA},
+        {"AG_ENC", p.AG_ENC},
+        {"AG_GAL", p.AG_GAL}
+    };
+}
+
+void from_json(const nlohmann::json& j, RemotaAG& p)
+{
+    p.AG_DAT       = j.value("AG_DAT", 0);
+    p.AG_ME        = j.value("AG_ME", 0);
+    p.AG_BIA       = j.value("AG_BIA", 0);
+    p.AG_OCUP_TIPO = j.value("AG_OCUP_TIPO", 0);
+    p.AG_EST       = j.value("AG_EST", 0);
+    p.AG_DIR       = j.value("AG_DIR", 0);
+    p.AG_DES_N     = j.value("AG_DES_N", 0);
+    p.AG_DES_I     = j.value("AG_DES_I", 0);
+    p.AG_COMP      = j.value("AG_COMP", 0);
+    p.AG_BA        = j.value("AG_BA", 0);
+    p.AG_ENC       = j.value("AG_ENC", 0);
+    p.AG_GAL       = j.value("AG_GAL", 0);
+}

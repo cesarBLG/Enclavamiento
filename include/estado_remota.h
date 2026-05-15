@@ -64,6 +64,21 @@ struct RemotaCV
     unsigned int CV_UC:3;
     unsigned int CV_NSEC:1;
 };
+struct RemotaAG
+{
+    unsigned int AG_DAT:1;
+    unsigned int AG_ME:1;
+    unsigned int AG_BIA:1;
+    unsigned int AG_OCUP_TIPO:1;
+    unsigned int AG_EST:2;
+    unsigned int AG_DIR:2;
+    unsigned int AG_DES_N:2;
+    unsigned int AG_DES_I:2;
+    unsigned int AG_COMP:3;
+    unsigned int AG_BA:1;
+    unsigned int AG_ENC:2;
+    unsigned int AG_GAL:1;
+};
 struct RemotaIMV
 {
     unsigned int IMV_DAT:1;
@@ -136,6 +151,9 @@ void from_json(const json& j, RemotaPV& p);
 
 void to_json(json& j, const RemotaCV& p);
 void from_json(const json& j, RemotaCV& p);
+
+void to_json(json& j, const RemotaAG& p);
+void from_json(const json& j, RemotaAG& p);
 
 void to_json(json& j, const RemotaIMV& p);
 void from_json(const json& j, RemotaIMV& p);

@@ -30,6 +30,7 @@ void on_connect(struct mosquitto *mosq, void *userdata, int rc)
         mosquitto_subscribe(mosq, nullptr, "bloqueo/+/+/colateral", 0);
         mosquitto_subscribe(mosq, nullptr, "signal/+/+/state", 0);
         mosquitto_subscribe(mosq, nullptr, "pn/+/+/comprobacion", 0);
+        mosquitto_subscribe(mosq, nullptr, "aguja/+/+/comprobacion", 0);
         mosquitto_subscribe(mosq, nullptr, "fec/+", 0);
     } else {
         log("mqtt", "connection failed", LOG_DEBUG);

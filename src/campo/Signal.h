@@ -1,4 +1,5 @@
 #include <enclavamiento.h>
+#include "mqtt.h"
 class Signal : public mqtt_device
 {
     int pinRojo;
@@ -11,9 +12,9 @@ public:
     {
       topic = std::string("signal/")+id+"/state";
     }
-    void msg_callback(const char *topic, const char *payload) override
+    void msg_callback(const std::string_view topic, const std::string_view payload) override
     {
-      if (strcmp(topic, this->topic.c_str()) != 0) return;
+      if (this->topic != topic) return;
       estado = json::parse(payload);
     }
     void setup() override

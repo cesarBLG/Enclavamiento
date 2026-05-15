@@ -323,6 +323,13 @@ void handle_message(const std::string &topic, const std::string &payload)
         if (it != pns.end()) it->second->message_pn(payload == "true");
         return;
     }
+    std::regex comprobacionAgujaPattern(R"(^aguja/([a-zA-Z0-9_-]+/[a-zA-Z0-9_'-]+)/comprobacion$)");
+    if (std::regex_match(topic, match, comprobacionAgujaPattern)) {
+        std::string id = id_from_mqtt(match[1]);
+        auto it = agujas.find(id);
+        if (it != agujas.end()) it->second->message_aguja(payload);
+        return;
+    }
 
     std::regex fecPattern(R"(^fec/([a-zA-Z0-9_-]+)$)");
     if (std::regex_match(topic, match, fecPattern)) {

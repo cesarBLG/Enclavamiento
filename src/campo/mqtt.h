@@ -3,6 +3,7 @@
 #include <vector>
 #include <mdns.h>
 #include <WiFiClient.h>
+#include <string_view>
 class mqtt_client;
 class mqtt_device
 {
@@ -14,7 +15,7 @@ class mqtt_device
   virtual ~mqtt_device()=default;
   virtual void setup()=0;
   virtual void loop()=0;
-  virtual void msg_callback(const char *topic, const char *payload) {}
+  virtual void msg_callback(const std::string_view topic, const std::string_view payload) {}
 };
 struct mqtt_subscribe
 {
@@ -87,7 +88,7 @@ class mqtt_client
     snprintf(ip_str+7, 16, IPSTR, IP2STR(&addr));
     return ip_str;
   }
-  void send_all_devices(const char *topic, const char *payload)
+  void send_all_devices(const std::string_view topic, const std::string_view payload)
   {
     for (auto *device : device_list)
     {
@@ -128,7 +129,7 @@ class mqtt_client
         Serial.println("mqtt: disconnected");
         for (int i=0; i<subscribed_topics.size(); i++)
         {
-          send_all_devices(subscribed_topics[i].topic.c_str(), "\"desconexion\"");
+          send_all_devices(subscribed_topics[i].topic, "\"desconexion\"");
         }
         break;
       case MQTT_EVENT_SUBSCRIBED:
@@ -139,23 +140,19 @@ class mqtt_client
         break;
       case MQTT_EVENT_DATA:
       {
-        char topic[event->topic_len+1];
-        memcpy(topic, event->topic, event->topic_len);
-        topic[event->topic_len] = 0;
-        char payload[event->data_len+1];
-        payload[event->data_len] = 0;
-        memcpy(payload, event->data, event->data_len);
-        Serial.print(topic);
+        std::string topic(event->topic, event->topic_len);
+        std::string payload(event->data, event->data_len);
+        /*Serial.print(topic.c_str());
         Serial.print('=');
-        Serial.println(payload);
-        if (!strcmp(topic, "gestor_conexion"))
+        Serial.println(payload.c_str());*/
+        if (topic == "gestor_conexion")
         {
-          gestor_conectado = !strcmp(payload, "on");
+          gestor_conectado = payload == "on";
           if (!gestor_conectado)
           {
             for (int i=0; i<subscribed_topics.size(); i++)
             {
-              send_all_devices(subscribed_topics[i].topic.c_str(), "\"desconexion\"");
+              send_all_devices(subscribed_topics[i].topic, "\"desconexion\"");
             }
           }
         }
@@ -175,13 +172,9 @@ class mqtt_client
   {
     ((mqtt_client*)client)->handle_event(event_base, event_id, event_data);
   }
-  void publish(const char *topic, const char* payload)
+  void publish(const std::string_view topic, const std::string_view payload)
   {
-    if (connected) esp_mqtt_client_enqueue(mqtt, topic, payload, 0, 0, 0, true);
-  }
-  void publish(const std::string &topic, const std::string &payload)
-  {
-    if (connected) esp_mqtt_client_enqueue(mqtt, topic.c_str(), payload.c_str(), payload.size(), 0, 0, true);
+    if (connected) esp_mqtt_client_enqueue(mqtt, topic.data(), payload.data(), payload.size(), 0, 0, true);
   }
   void subscribe(const char *topic)
   {

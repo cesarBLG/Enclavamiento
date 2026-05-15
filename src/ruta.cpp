@@ -138,7 +138,9 @@ ruta::ruta(const std::string &estacion, const json &j) : estacion(estacion), tip
     if (j.contains("SeñalLiberación")) {
         señales.push_back({señal_impls[j["SeñalLiberación"]], secciones.back().dir});
     }
+    deslizamiento = nullptr;
     valid = true;
+    if (j.value("FAI", false)) set_fai(true);
 }
 bool ruta::establecer()
 {
@@ -229,8 +231,13 @@ bool ruta::establecer()
         for (auto &[r,d] : sec->get_deslizamiento()) {
             deslizamientos_afectados[r] = -1;
         }
+        // Agujas no enclavadas o bloqueadas
+        if (sec->tipo == TipoSeccion::Aguja && posicion_aparatos.find(sec) != posicion_aparatos.end()) {
+            aguja *a = (aguja*)sec;
+            auto pos = a->get_posicion(secciones[i].dir, secciones[i].in, secciones[i].out);
+            if (!a->posible_mover(pos)) return false;
+        }
     }
-    // TODO: comprobar agujas enclavadas o bloqueadas
     if (deslizamiento) deslizamientos_afectados[this] = -1;
     for (auto &[r, id] : deslizamientos_afectados) {
         int compat = r->deslizamiento->compatible(this);
@@ -240,7 +247,7 @@ bool ruta::establecer()
     log(id, "mandada", LOG_DEBUG);
     clear_timer(diferimetro_dei);
     diferimetro_dei = nullptr;
-    mandada = formada = true;
+    mandada = true;
     señal_inicio->clear_request = true;
     señal_inicio->ruta_activa = this;
     for (auto &[sig, dir] : señales) {
@@ -248,11 +255,18 @@ bool ruta::establecer()
         sig->clear_request = true;
     }
     destino->ruta_activa = this;
-    // Asegurar todas las secciones en el sentido de la ruta
     for (int i=0; i<secciones.size(); i++) {
+        // Asegurar todas las secciones en el sentido de la ruta
         auto *sec = secciones[i].seccion;
         sec->asegurar(this, secciones[i].in, secciones[i].out, secciones[i].dir);
         secciones_aseguradas.insert(sec);
+
+        // Mover agujas
+        if (sec->tipo == TipoSeccion::Aguja && posicion_aparatos.find(sec) != posicion_aparatos.end()) {
+            aguja *a = (aguja*)sec;
+            auto pos = a->get_posicion(secciones[i].dir, secciones[i].in, secciones[i].out);
+            a->mover(pos);
+        }
     }
     for (auto &[r, id] : deslizamientos_afectados) {
         r->deslizamiento->activar(id);
@@ -334,6 +348,21 @@ void ruta::update()
         }
     }
     if (!mandada) return;
+
+    if (!formada) {
+        bool agujas_dispuestas = true;
+        for (auto &sec : secciones) {
+            if (sec.seccion->tipo == TipoSeccion::Aguja && posicion_aparatos.find(sec.seccion) != posicion_aparatos.end()) {
+
+                aguja *a = (aguja*)sec.seccion;
+                if (!a->enclavar(this, a->get_posicion(sec.dir, sec.in, sec.out))) agujas_dispuestas = false;
+            }
+        }
+        if (agujas_dispuestas) {
+            formada = true;
+            log(id, "formada", LOG_INFO);
+        }
+    }
 
     // Mandar cierre de PN si la proximidad está ocupada
     if ((proximidad_ocupada || proximidad.empty()) && señal_inicio->ruta_activa != nullptr) {

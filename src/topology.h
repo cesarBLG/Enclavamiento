@@ -70,7 +70,7 @@ public:
     }
     void asegurar(ruta *ruta, int in, int out, Lado dir);
     void asegurar_deslizamiento(ruta *ruta, nodo_deslizamiento* nodo);
-    void liberar(ruta *ruta);
+    virtual void liberar(ruta *ruta);
     bool is_asegurada(ruta *ruta=nullptr)
     {
         if (ruta_asegurada) {
@@ -154,78 +154,6 @@ public:
     int num_outs(Lado l)
     {
         return siguientes_secciones[l].size();
-    }
-};
-class aguja : public seccion_via, public estado_aguja
-{
-    std::optional<PosicionAguja> comprobacion;
-    std::optional<PosicionAguja> mandada;
-    std::optional<PosicionAguja> talonable;
-    bool cedida_mantenimiento;
-    Lado lado;
-    public:
-    aguja(const std::string &id, const json &j);
-    void update()
-    {
-        if (talonable) comprobacion = talonable;
-        if (talonable) {
-            active_outs[opp_lado(lado)][0] = 0;
-            active_outs[opp_lado(lado)][1] = 0;
-        } else if (comprobacion) {
-            bool invertida = comprobacion == PosicionAguja::Invertida;
-            active_outs[opp_lado(lado)][invertida ? 1 : 0] = 0;
-            active_outs[opp_lado(lado)][invertida ? 0 : 1] = -1;
-        } else {
-            active_outs[opp_lado(lado)][0] = -1;
-            active_outs[opp_lado(lado)][1] = -1;
-        }
-        active_outs[lado][0] = comprobacion == PosicionAguja::Invertida ? 1 : (comprobacion ? 0 : -1);
-    }
-    void message_aguja(estado_aguja estado)
-    {
-        *((estado_aguja*)this) = estado;
-        update();
-    }
-    void message_cv(const std::string &id, estado_cv ev) override
-    {
-        if (id != id_cv) return;
-        seccion_via::message_cv(id, ev);
-    }
-    bool is_ruta_fija(seccion_via *prev, Lado dir)
-    {
-        if (!talonable) return false;
-        if (dir == lado) return true;
-        int in = get_in(prev, dir);
-        return in == (talonable == PosicionAguja::Invertida ? 1 : 0);
-    }
-    RespuestaMando mando(const std::string &cmd, int me) override
-    {
-        if (cmd == "MAT") {
-            if (talonable) {
-                talonable = talonable == PosicionAguja::Invertida ? PosicionAguja::Normal : PosicionAguja::Invertida;
-                update();
-                return RespuestaMando::Aceptado;
-            }
-        } else if (cmd == "ATN") {
-            if (talonable != PosicionAguja::Normal) {
-                talonable = PosicionAguja::Normal;
-                update();
-                return RespuestaMando::Aceptado;
-            }
-        } else if (cmd == "ATI") {
-            if (talonable != PosicionAguja::Invertida) {
-                talonable = PosicionAguja::Invertida;
-                update();
-                return RespuestaMando::Aceptado;
-            }
-        } else if (cmd == "BA") {
-        } else if (cmd == "ABA") {
-        } else if (cmd == "BIA") {
-            return seccion_via::mando("BIV", me);
-        } else if (cmd == "DIA") {
-            return seccion_via::mando("DIV", me);
-        }
-        return RespuestaMando::OrdenRechazada;
     }
 };
 void from_json(const json &j, seccion_via::conexion &conex);

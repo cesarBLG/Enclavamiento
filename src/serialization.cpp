@@ -257,6 +257,7 @@ void from_json(const json &j, estado_cv &estado)
     if (j == "desconexion") {
         estado.estado = estado.estado_previo = EstadoCV::Ocupado;
         estado.sin_datos = true;
+        estado.averia = true;
         return;
     }
     estado.estado = j["Estado"];

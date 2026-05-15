@@ -26,7 +26,7 @@ void seccion_via::asegurar(ruta *ruta, int in, int out, Lado dir)
     r.outs[opp_lado(dir)] = in;
     r.lado = dir;
     if (ruta_asegurada || ruta == nullptr) return;
-    log(id, "enclavada", LOG_DEBUG);
+    log(id, "reservada", LOG_DEBUG);
     ruta_asegurada = r;
     remota_cambio_elemento(ElementoRemota::CV, id_cv);
 }
@@ -186,14 +186,6 @@ int seccion_via::get_out(seccion_via* next, Lado dir)
         }
     }
     return -1;
-}
-
-aguja::aguja(const std::string &id, const json &j) : seccion_via(id, j, TipoSeccion::Aguja), lado(j["Lado"])
-{
-    if (j.contains("SecciónPunta")) siguientes_secciones[opp_lado(lado)] = std::vector<conexion>({j["SecciónPunta"].get<conexion>()});
-    if (j.contains("SeccionesTalón")) siguientes_secciones[lado] = j["SeccionesTalón"];
-    talonable = PosicionAguja::Normal;
-    update();
 }
 void from_json(const json &j, seccion_via::conexion &conex)
 {

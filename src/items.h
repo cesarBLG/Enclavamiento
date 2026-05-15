@@ -8,6 +8,7 @@
 #include "dependencia.h"
 #include "pn_enclavado.h"
 #include "frontera.h"
+#include "aguja.h"
 #include "nlohmann/json.hpp"
 using json = nlohmann::json;
 extern std::map<std::string, cv*> cvs;
