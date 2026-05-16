@@ -4,8 +4,15 @@
 #include "pn_enclavado.h"
 seccion_via::seccion_via(const std::string &id, const json &j, TipoSeccion tipo) : id(id), bloqueo_asociado(j.value("Bloqueo", "")), tipo(tipo), id_cv(j.value("CV", id))
 {
-    active_outs[Lado::Impar][0] = 0;
-    active_outs[Lado::Par][0] = 0;
+    if (tipo == TipoSeccion::Lineal) {
+        active_outs[Lado::Impar][0] = 0;
+        active_outs[Lado::Par][0] = 0;
+    } else if (tipo == TipoSeccion::Cruzamiento) {
+        for (int i=0; i<2; i++) {
+            active_outs[Lado::Impar][i] = i;
+            active_outs[Lado::Par][i] = i;
+        }
+    }
     auto cv_it = cvs.find(id_cv);
     if (cv_it != cvs.end()) {
         cv_seccion = cvs[id_cv];

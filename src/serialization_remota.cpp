@@ -96,6 +96,72 @@ void from_json(const json& j, RemotaCV& p)
     p.CV_NSEC       = j.value("CV_NSEC", 0);
 }
 
+// ---------------- RemotaCVX ----------------
+
+void to_json(nlohmann::json& j, const RemotaCVX& p)
+{
+    j = nlohmann::json{
+        {"CVX_DAT",         p.CVX_DAT},
+        {"CVX_ME",          p.CVX_ME},
+        {"CVX_BV",          p.CVX_BV},
+        {"CVX_OCUP_TIPO",   p.CVX_OCUP_TIPO},
+        {"CVX_EST",         p.CVX_EST},
+        {"CVX_DIR",         p.CVX_DIR},
+        {"CVX_DES_N",       p.CVX_DES_N},
+        {"CVX_DES_I",       p.CVX_DES_I},
+        {"CVX_GAL",         p.CVX_GAL},
+        {"CVX_CEJES_AV",    p.CVX_CEJES_AV},
+        {"CVX_CEJES_PREN",  p.CVX_CEJES_PREN}
+    };
+}
+
+void from_json(const nlohmann::json& j, RemotaCVX& p)
+{
+    p.CVX_DAT        = j.value("CVX_DAT",        0u);
+    p.CVX_ME         = j.value("CVX_ME",         0u);
+    p.CVX_BV         = j.value("CVX_BV",         0u);
+    p.CVX_OCUP_TIPO  = j.value("CVX_OCUP_TIPO",  0u);
+    p.CVX_EST        = j.value("CVX_EST",        0u);
+    p.CVX_DIR        = j.value("CVX_DIR",        0u);
+    p.CVX_DES_N      = j.value("CVX_DES_N",      0u);
+    p.CVX_DES_I      = j.value("CVX_DES_I",      0u);
+    p.CVX_GAL        = j.value("CVX_GAL",        0u);
+    p.CVX_CEJES_AV   = j.value("CVX_CEJES_AV",   0u);
+    p.CVX_CEJES_PREN = j.value("CVX_CEJES_PREN", 0u);
+}
+
+// ---------------- RemotaCVA ----------------
+
+void to_json(nlohmann::json& j, const RemotaCVA& p)
+{
+    j = nlohmann::json{
+        {"CVA_DAT",         p.CVA_DAT},
+        {"CVA_ME",          p.CVA_ME},
+        {"CVA_R1",          p.CVA_R1},
+        {"CVA_OCUP_TIPO",   p.CVA_OCUP_TIPO},
+        {"CVA_EST",         p.CVA_EST},
+        {"CVA_R2",          p.CVA_R2},
+        {"CVA_CEJES_AV",    p.CVA_CEJES_AV},
+        {"CVA_CEJES_PREN",  p.CVA_CEJES_PREN},
+        {"CVA_UC",          p.CVA_UC},
+        {"CVA_NSEC",        p.CVA_NSEC}
+    };
+}
+
+void from_json(const nlohmann::json& j, RemotaCVA& p)
+{
+    p.CVA_DAT        = j.value("CVA_DAT",        0u);
+    p.CVA_ME         = j.value("CVA_ME",         0u);
+    p.CVA_R1         = j.value("CVA_R1",         0u);
+    p.CVA_OCUP_TIPO  = j.value("CVA_OCUP_TIPO",  0u);
+    p.CVA_EST        = j.value("CVA_EST",        0u);
+    p.CVA_R2         = j.value("CVA_R2",         0u);
+    p.CVA_CEJES_AV   = j.value("CVA_CEJES_AV",   0u);
+    p.CVA_CEJES_PREN = j.value("CVA_CEJES_PREN", 0u);
+    p.CVA_UC         = j.value("CVA_UC",         0u);
+    p.CVA_NSEC       = j.value("CVA_NSEC",       0u);
+}
+
 // ---------------- RemotaIMV ----------------
 
 void to_json(json& j, const RemotaIMV& p)

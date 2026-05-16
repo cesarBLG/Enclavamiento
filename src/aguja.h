@@ -29,6 +29,15 @@ class aguja : public seccion_via, public estado_aguja
             active_outs[opp_lado(lado)][1] = -1;
         }
         active_outs[lado][0] = comprobacion == PosicionAguja::Invertida ? 1 : (comprobacion ? 0 : -1);
+
+        if (mandada && mandada->second != 0) {
+            if (mandada->first == comprobacion) {
+                mandada->second = 0;
+            } else if (get_milliseconds() - mandada->second > 15000) {
+                mandada->second = 0;
+            }
+        }
+
         remota_cambio_elemento(ElementoRemota::AG, id);
     }
     void message_aguja(const std::string &comp)
@@ -42,6 +51,7 @@ class aguja : public seccion_via, public estado_aguja
             else if (comprobacion == PosicionAguja::Invertida) log(id, "comprobando a invertida", LOG_INFO);
             else log(id, "sin comprobación", LOG_INFO);
         }
+        if (!mandada && comprobacion) mandada = {*comprobacion, 0};
         update();
     }
     void message_cv(const std::string &id, estado_cv ev) override
@@ -49,10 +59,16 @@ class aguja : public seccion_via, public estado_aguja
         if (id != id_cv) return;
         seccion_via::message_cv(id, ev);
     }
+    virtual void asegurar(ruta *ruta, int in, int out, Lado dir) override
+    {
+        seccion_via::asegurar(ruta, in, out, dir);
+        remota_cambio_elemento(ElementoRemota::AG, id);
+    }
     void liberar(ruta *ruta)
     {
         seccion_via::liberar(ruta);
         enclavada.erase(ruta);
+        remota_cambio_elemento(ElementoRemota::AG, id);
     }
     bool is_ruta_fija(seccion_via *prev, Lado dir)
     {
@@ -61,17 +77,25 @@ class aguja : public seccion_via, public estado_aguja
         int in = get_in(prev, dir);
         return in == (talonable_muelle == PosicionAguja::Invertida ? 1 : 0);
     }
-    bool posible_mover(PosicionAguja pos)
+    bool posible_mover(PosicionAguja pos, bool anular_pedal=false)
     {
         if ((mandada && mandada->first == pos) || comprobacion == pos) return true;
         if (bloqueo || !enclavada.empty() || talonable_muelle) return false;
+        if (!anular_pedal && cv_seccion != nullptr && cv_seccion->get_state() > EstadoCV::Prenormalizado) return false;
         return true;
     }
-    bool mover(PosicionAguja pos)
+    bool mover(PosicionAguja pos, bool anular_pedal=false)
     {
-        if (!posible_mover(pos)) return false;
-        if (comprobacion == pos) return true;
+        if (!posible_mover(pos, anular_pedal)) return false;
+        if (comprobacion == pos) {
+            if (mandada && mandada->first != pos) {
+                mandada = {pos, 0};
+                update();
+            }
+            return true;
+        }
         mandada = {pos, get_milliseconds()};
+        if (mandada->second == 0) mandada->second = 1;
         comprobacion = std::nullopt;
         send_message(topic_mando, pos == PosicionAguja::Invertida ? "1" : "0");
         update();
@@ -92,6 +116,10 @@ class aguja : public seccion_via, public estado_aguja
     }
     RespuestaMando mando(const std::string &cmd, int me) override
     {
+        if (me_pendiente && me == 0) return RespuestaMando::MandoEspecialEnCurso;
+        bool pend = me_pendiente;
+        me_pendiente = false;
+        if (me < 0) return pend ? RespuestaMando::Aceptado : RespuestaMando::OrdenRechazada;
         if (cmd == "MAT") {
             if (talonable_muelle) {
                 talonable_muelle = talonable_muelle == PosicionAguja::Invertida ? PosicionAguja::Normal : PosicionAguja::Invertida;
@@ -120,15 +148,20 @@ class aguja : public seccion_via, public estado_aguja
                 return RespuestaMando::OrdenRechazada;
             if (mover(pos))
                 return RespuestaMando::Aceptado;
-        } else if (cmd == "BA") {
-            if (!bloqueo) {
-                bloqueo = true;
-                return RespuestaMando::Aceptado;
-            }
-        } else if (cmd == "ABA") {
-            if (bloqueo) {
+        } else if (cmd == "BA" && !bloqueo) {
+            bloqueo = true;
+            log(id, "bloqueo aguja", LOG_DEBUG);
+            return RespuestaMando::Aceptado;
+        } else if (cmd == "ABA" && bloqueo) {
+            if (me) {
                 bloqueo = false;
+                log(id, "desbloqueo aguja", LOG_DEBUG);
+                remota_cambio_elemento(ElementoRemota::AG, id);
                 return RespuestaMando::Aceptado;
+            } else {
+                me_pendiente = true;
+                remota_cambio_elemento(ElementoRemota::AG, id);
+                return RespuestaMando::MandoEspecialNecesario;
             }
         } else if (cmd == "BIA") {
             return seccion_via::mando("BIV", me);

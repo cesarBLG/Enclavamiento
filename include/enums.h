@@ -141,6 +141,7 @@ std::string to_string(ACTC actc);
 std::string to_string(TipoBloqueo tipo);
 std::string to_string(TipoPN tipo);
 std::string to_string(TipoSoneria soneria);
+std::string to_string(TipoSeccion tipo);
 #ifndef WITHOUT_JSON
 #include "json.h"
 void to_json(json &j, const Lado &lado);
@@ -168,4 +169,6 @@ void to_json(json &j, const TipoPN &tipo);
 void from_json(const json &j, TipoPN &tipo);
 void to_json(json &j, const TipoSoneria &tipo);
 void from_json(const json &j, TipoSoneria &tipo);
+void to_json(json &j, const TipoSeccion &tipo);
+void from_json(const json &j, TipoSeccion &tipo);
 #endif

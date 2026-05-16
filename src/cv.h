@@ -17,9 +17,10 @@ protected:
     bool me_pendiente=false;
 public:
     const std::string id;
+    const TipoSeccion tipo;
     std::set<seccion_via*> secciones;
     bool ocupacion_intempestiva = false;
-    cv(const std::string &id) : id(id) {}
+    cv(const std::string &id, TipoSeccion tipo = TipoSeccion::Lineal) : id(id), tipo(tipo) {}
     virtual ~cv() = default;
     
     EstadoCV get_state()
@@ -68,6 +69,8 @@ public:
     }
 
     RemotaCV get_estado_remota();
+    RemotaCVA get_estado_remota_agujas();
+    RemotaCVX get_estado_remota_cruzamiento();
 };
 class cv_impl : public cv
 {

@@ -68,7 +68,7 @@ public:
     {
         return cv_seccion;
     }
-    void asegurar(ruta *ruta, int in, int out, Lado dir);
+    virtual void asegurar(ruta *ruta, int in, int out, Lado dir);
     void asegurar_deslizamiento(ruta *ruta, nodo_deslizamiento* nodo);
     virtual void liberar(ruta *ruta);
     bool is_asegurada(ruta *ruta=nullptr)

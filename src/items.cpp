@@ -353,19 +353,20 @@ void init_items_ordered(const json &j, std::string tipo)
                     }
                     cvs[ic] = cv_impls[ic];
                 } else {
-                    cvs[ic] = new cv(ic);
+                    cvs[ic] = new cv(ic, TipoSeccion::Lineal);
                 }
             }
         }
         if (tipo == "Secciones") {
             for (auto &[id, jsec] : jdep["Secciones"].items()) {
                 std::string is = estacion+":"+id;
-                if (jsec.contains("Tipo") && jsec["Tipo"] == "Aguja") {
+                TipoSeccion tipo = jsec.value("Tipo", TipoSeccion::Lineal);
+                if (tipo == TipoSeccion::Aguja) {
                     auto *ag = new aguja(is, jsec);
                     secciones[is] = ag;
                     agujas[is] = ag;
                 } else {
-                    secciones[is] = new seccion_via(is, jsec);
+                    secciones[is] = new seccion_via(is, jsec, tipo);
                 }
             }
         }

@@ -128,6 +128,15 @@ std::string to_string(TipoSoneria tipo)
     }
     return "";
 }
+std::string to_string(TipoSeccion tipo)
+{
+    switch (tipo) {
+        case TipoSeccion::Lineal: return "Lineal";
+        case TipoSeccion::Aguja: return "Aguja";
+        case TipoSeccion::Cruzamiento: return "Cruzamiento";
+    }
+    return "";
+}
 void to_json(json &j, const Lado &lado)
 {
     j = to_string(lado);
@@ -467,4 +476,14 @@ void from_json(const json &j, TipoSoneria &tipo)
     else if (j == "EstablecimientoBloqueo") tipo = TipoSoneria::EstablecimientoBloqueo;
     else if (j == "OcupacionProximidad") tipo = TipoSoneria::OcupacionProximidad;
     else if (j == "EscapeMaterial") tipo = TipoSoneria::EscapeMaterial;
+}
+void to_json(json &j, const TipoSeccion &tipo)
+{
+    j = to_string(tipo);
+}
+void from_json(const json &j, TipoSeccion &tipo)
+{
+    if (j == "Lineal") tipo = TipoSeccion::Lineal;
+    else if (j == "Cruzamiento") tipo = TipoSeccion::Cruzamiento;
+    else if (j == "Aguja") tipo = TipoSeccion::Aguja;
 }

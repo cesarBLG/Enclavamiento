@@ -95,8 +95,10 @@ void update_remota()
     for (auto &[id, cv] : cvs) {
         std::pair<ElementoRemota,std::string> comp(ElementoRemota::CV, id);
         if (sendall || update_components.find(comp) != update_components.end()) {
-            auto r = json(cv->get_estado_remota());
-            push(j, comp, r);
+            json r;
+            if (cv->tipo == TipoSeccion::Aguja) push(j, {ElementoRemota::CVA, id}, json(cv->get_estado_remota_agujas()));
+            else if (cv->tipo == TipoSeccion::Cruzamiento) push(j, {ElementoRemota::CVX, id}, json(cv->get_estado_remota_cruzamiento()));
+            else push(j, {ElementoRemota::CV, id}, json(cv->get_estado_remota()));
         }
     }
     for (auto &[id, ag] : agujas) {

@@ -64,6 +64,33 @@ struct RemotaCV
     unsigned int CV_UC:3;
     unsigned int CV_NSEC:1;
 };
+struct RemotaCVA
+{
+    unsigned int CVA_DAT:1;
+    unsigned int CVA_ME:1;
+    unsigned int CVA_R1:1;
+    unsigned int CVA_OCUP_TIPO:1;
+    unsigned int CVA_EST:2;
+    unsigned int CVA_R2:2;
+    unsigned int CVA_CEJES_AV:1;
+    unsigned int CVA_CEJES_PREN:1;
+    unsigned int CVA_UC:3;
+    unsigned int CVA_NSEC:1;
+};
+struct RemotaCVX
+{
+    unsigned int CVX_DAT:1;
+    unsigned int CVX_ME:1;
+    unsigned int CVX_BV:1;
+    unsigned int CVX_OCUP_TIPO:1;
+    unsigned int CVX_EST:2;
+    unsigned int CVX_DIR:2;
+    unsigned int CVX_DES_N:2;
+    unsigned int CVX_DES_I:2;
+    unsigned int CVX_GAL:1;
+    unsigned int CVX_CEJES_AV:1;
+    unsigned int CVX_CEJES_PREN:1;
+};
 struct RemotaAG
 {
     unsigned int AG_DAT:1;
@@ -151,6 +178,12 @@ void from_json(const json& j, RemotaPV& p);
 
 void to_json(json& j, const RemotaCV& p);
 void from_json(const json& j, RemotaCV& p);
+
+void to_json(json& j, const RemotaCVX& p);
+void from_json(const json& j, RemotaCVX& p);
+
+void to_json(json& j, const RemotaCVA& p);
+void from_json(const json& j, RemotaCVA& p);
 
 void to_json(json& j, const RemotaAG& p);
 void from_json(const json& j, RemotaAG& p);
