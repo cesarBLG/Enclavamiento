@@ -13,7 +13,7 @@ class aguja : public seccion_via, public estado_aguja
     Lado lado;
     public:
     const std::string topic_mando;
-    aguja(const std::string &id, const json &j);
+    aguja(const id_elemento &id, const json &j);
     void update()
     {
         if (talonable_muelle) comprobacion = talonable_muelle;
@@ -54,7 +54,7 @@ class aguja : public seccion_via, public estado_aguja
         if (!mandada && comprobacion) mandada = {*comprobacion, 0};
         update();
     }
-    void message_cv(const std::string &id, estado_cv ev) override
+    void message_cv(const id_elemento &id, estado_cv ev) override
     {
         if (id != id_cv) return;
         seccion_via::message_cv(id, ev);

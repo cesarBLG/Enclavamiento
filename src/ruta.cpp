@@ -1,6 +1,6 @@
 #include "ruta.h"
 #include "items.h"
-destino_ruta::destino_ruta(const std::string &id, const json &j) : id(id), tipo(j["Tipo"]), topic("destino/"+id_to_mqtt(id)+"/state")
+destino_ruta::destino_ruta(const id_elemento &id, const json &j) : id(id), tipo(j["Tipo"]), topic("destino/"+id_to_mqtt(id.id)+"/state")
 {
     auto it = señal_impls.find(id);
     if (it != señal_impls.end()) señal_fin = it->second;
@@ -65,25 +65,26 @@ frontera *destino_ruta::get_frontera()
     }
     return nullptr;
 }
-ruta::ruta(const std::string &estacion, const json &j) : estacion(estacion), tipo(j["Tipo"]), id_inicio(j["Inicio"]), id_destino(j["Destino"]), id((tipo == TipoMovimiento::Itinerario ? (ertms ? "ER " : "I ") : (tipo == TipoMovimiento::Rebase ? "R " : "M "))+estacion+" "+id_inicio+" "+id_destino), bloqueo_salida(j.value("Bloqueo", ""))
+ruta::ruta(const std::string &estacion, const json &j) : estacion(estacion), tipo(j["Tipo"]), id_inicio(j["Inicio"]), id_destino(j["Destino"]), id((tipo == TipoMovimiento::Itinerario ? (ertms ? "ER " : "I ") : (tipo == TipoMovimiento::Rebase ? "R " : "M "))+estacion+" "+id_inicio+" "+id_destino), bloqueo_salida(j.contains("Bloqueo") ? std::optional<id_elemento>(id_elemento(j["Bloqueo"])) : std::nullopt)
 {
-    std::string id_señal = estacion+":"+id_inicio;
+    id_elemento id_señal = id_elemento(estacion, id_inicio);
     if (señal_impls.find(id_señal) == señal_impls.end()) {
         log(id, "señal de inicio inválida", LOG_ERROR);
         return;
     }
 
     tiempo_espera_fai = parametros.tiempo_espera_fai;
-    temporizador_dai1 = parametros.diferimetro_dai1;
-    temporizador_dai2 = parametros.diferimetro_dai2;
-    temporizador_dei = parametros.diferimetro_dei;
+    desactivar_diferimetro = j.value("DesactivarDiferímetroDAI", false);
+    temporizador_dai1 = j.value("DiferímetroDAI1", tipo == TipoMovimiento::Maniobra ? 0 : parametros.diferimetro_dai1);
+    temporizador_dai2 = j.value("DiferímetroDAI2", parametros.diferimetro_dai2);
+    temporizador_dei = j.value("DiferímetroDEI", parametros.diferimetro_dei);
 
     señal_inicio = señal_impls[id_señal];
     lado = señal_inicio->lado;
     if (secciones.empty()) lado_bloqueo = lado;
     else lado_bloqueo = secciones.back().dir;
 
-    std::string full_id_destino = id_destino.find(':') != std::string::npos ? id_destino : estacion+":"+id_destino;
+    id_elemento full_id_destino = id_elemento::from_default_dep(id_destino, estacion);
     if (destinos_ruta.find(full_id_destino) == destinos_ruta.end()) {
         log(id, "destino inválido", LOG_ERROR);
         return;
@@ -92,7 +93,9 @@ ruta::ruta(const std::string &estacion, const json &j) : estacion(estacion), tip
 
     maniobra_compatible = j.value("Compatible", CompatibilidadManiobra::IncompatibleBloqueo);
     if (j.contains("LímiteProximidad")) {
-        ultimos_cvs_proximidad = j["LímiteProximidad"];
+        for (auto &jprox : j["LímiteProximidad"]) {
+            ultimos_cvs_proximidad.insert(id_elemento(jprox.get<std::string>()));
+        }
     }
     if (j.contains("PosiciónAparatos")) {
         for (auto &[sec_id, jpos] : j["PosiciónAparatos"].items()) {
@@ -103,7 +106,8 @@ ruta::ruta(const std::string &estacion, const json &j) : estacion(estacion), tip
         auto *prv = señal_inicio->seccion_prev;
         auto *sec = señal_inicio->seccion;
         Lado dir = lado;
-        auto *fin = ::secciones[j["SecciónFin"]];
+        Lado sig_dir = lado;
+        auto *fin = ::secciones[id_elemento(j["SecciónFin"])];
         do
         {
             ocupacion_maxima_secciones[sec] = EstadoCanton::Prenormalizado;
@@ -118,25 +122,26 @@ ruta::ruta(const std::string &estacion, const json &j) : estacion(estacion), tip
             if (posicion_aparatos.find(sec) != posicion_aparatos.end()) {
                 auto p = sec->get_seccion_in(opp_lado(dir), posicion_aparatos[sec].second);
                 next = p.first;
-                dir = opp_lado(p.second);
+                sig_dir = opp_lado(p.second);
                 pins = posicion_aparatos[sec];
             } else {
-                next = sec->siguiente_seccion(prv, dir, false);
+                next = sec->siguiente_seccion(prv, sig_dir, false);
                 pins = {sec->get_in(prv, dir), sec->get_out(next, dir)};
             }
             secciones.push_back({sec, dir, pins.first, pins.second});
             prv = sec;
             sec = next;
+            dir = sig_dir;
         }
         while (sec != nullptr && prv != fin);
     }
     if (j.contains("Deslizamiento")) {
-        if (j.contains("InicioTemporizador")) seccion_inicio_temporizador_deslizamiento = ::secciones[j["InicioTemporizador"]];
+        if (j.contains("InicioTemporizador")) seccion_inicio_temporizador_deslizamiento = ::secciones[id_elemento(j["InicioTemporizador"])];
         else seccion_inicio_temporizador_deslizamiento = secciones.back().seccion;
         temporizador_deslizamiento = j.value("Diferímetro", 15000);
     }
     if (j.contains("SeñalLiberación")) {
-        señales.push_back({señal_impls[j["SeñalLiberación"]], secciones.back().dir});
+        señales.push_back({señal_impls[id_elemento(j["SeñalLiberación"])], secciones.back().dir});
     }
     deslizamiento = nullptr;
     valid = true;
@@ -151,6 +156,16 @@ bool ruta::establecer()
         señal_inicio->clear_request = true;
         for (auto &[sig, dir] : señales) {
             sig->clear_request = true;
+        }
+        if (!dependencias[estacion]->bloqueo_agujas) {
+            // Mover agujas
+            for (auto &sec : secciones) {
+                if (sec.seccion->tipo == TipoSeccion::Aguja && posicion_aparatos.find(sec.seccion) != posicion_aparatos.end()) {
+                    aguja *a = (aguja*)sec.seccion;
+                    auto pos = a->get_posicion(sec.dir, sec.in, sec.out);
+                    a->mover(pos);
+                }
+            }
         }
         log(id, "re-mandada", LOG_DEBUG);
         return true;
@@ -167,13 +182,19 @@ bool ruta::establecer()
     if (destino->ruta_activa != nullptr && destino->ruta_activa != this) {
         return false;
     }
+    // Existe otro itinerario en sentido contrario con el mismo origen
+    if (señal_inicio->seccion_prev != nullptr) {
+        auto ruta_opp = señal_inicio->seccion_prev->get_ruta_asegurada();
+        if (ruta_opp && ruta_opp->lado != señal_inicio->lado_prev)
+            return false;
+    }
     if (señal_inicio->frontera_salida != nullptr && !señal_inicio->frontera_salida->salida_permitida(this)) {
         return false;
     }
     if (destino->get_frontera() != nullptr && !destino->get_frontera()->entrada_permitida(this)) {
         return false;
     }
-    if (bloqueo_salida != "") {
+    if (bloqueo_salida) {
         // Existe una maniobra establecida en la colateral y no se permiten maniobras simultáneas
         if (bloqueo_act.ruta[opp_lado(lado)] == TipoMovimiento::Maniobra) {
             CompatibilidadManiobra compat = bloqueo_act.maniobra_compatible[opp_lado(lado)];
@@ -261,11 +282,13 @@ bool ruta::establecer()
         sec->asegurar(this, secciones[i].in, secciones[i].out, secciones[i].dir);
         secciones_aseguradas.insert(sec);
 
-        // Mover agujas
-        if (sec->tipo == TipoSeccion::Aguja && posicion_aparatos.find(sec) != posicion_aparatos.end()) {
-            aguja *a = (aguja*)sec;
-            auto pos = a->get_posicion(secciones[i].dir, secciones[i].in, secciones[i].out);
-            a->mover(pos);
+        if (!dependencias[estacion]->bloqueo_agujas) {
+            // Mover agujas
+            if (sec->tipo == TipoSeccion::Aguja && posicion_aparatos.find(sec) != posicion_aparatos.end()) {
+                aguja *a = (aguja*)sec;
+                auto pos = a->get_posicion(secciones[i].dir, secciones[i].in, secciones[i].out);
+                a->mover(pos);
+            }
         }
     }
     for (auto &[r, id] : deslizamientos_afectados) {
@@ -292,7 +315,7 @@ void ruta::update()
     if (fai) {
         bool aut_salida = true;
         int prioridad = 0;
-        if (bloqueo_salida != "") {
+        if (bloqueo_salida) {
             aut_salida &= !bloqueo_act.cierre_señales[lado] && !bloqueo_act.prohibido[lado] && bloqueo_act.actc[lado] != ACTC::Denegada;
             prioridad = bloqueo_act.prioridad_itinerario[lado]-bloqueo_act.prioridad_itinerario[opp_lado(lado)];
         }
@@ -449,7 +472,7 @@ void ruta::update()
         log(id, "supervisada");
     }
 }
-void ruta::message_cv(const std::string &id, estado_cv ecv)
+void ruta::message_cv(const id_elemento &id, estado_cv ecv)
 {
     /*if (estado_fai == EstadoFAI::EnEspera || estado_fai == EstadoFAI::Cancelado || estado_fai == EstadoFAI::AperturaNoPosible || estado_fai == EstadoFAI::AperturaNoPosibleReconocida) {
         for (auto &[s, l] : proximidad) {
@@ -508,11 +531,14 @@ bool ruta::dai(bool anular_bloqueo)
     }
     // Si la proximidad está libre, la disolución es inmediata
     // Si no hay secciones aseguradas por la ruta, ni un bloqueo tomado, no es necesario temporizar
-    // Señales de salida de estaciones abiertas no necesitan temporizador por necesitar señal de marche el tren
-    if ((proximidad_libre && proximidad.size() > 0) || (secciones.size() == 0 && bloqueo_salida == "") || (señal_inicio->tipo == TipoSeñal::Salida && !dependencias[estacion]->cerrada)) {
+    if ((proximidad_libre && proximidad.size() > 0) || (secciones.size() == 0 && !bloqueo_salida) || (desactivar_diferimetro && !dependencias[estacion]->cerrada)) {
         disolucion_parcial(anular_bloqueo);
     } else if (diferimetro_dai == nullptr) {
         int64_t temporizador = proximidad.size() > proximidad0.size() ? temporizador_dai2 : temporizador_dai1;
+        if (temporizador == 0) {
+            disolucion_parcial(anular_bloqueo);
+            return true;
+        }
         diferimetro_dai = set_timer([this, anular_bloqueo]() {
             diferimetro_dai = nullptr;
             disolucion_parcial(anular_bloqueo);
@@ -710,4 +736,44 @@ void ruta::desactivar_pns()
     for (auto &[pn, l] : pn_afectados) {
         pn->desactivar_ruta(l);
     } 
+}
+RespuestaMando ruta::mando(const std::string &inicio, const std::string &fin, const std::string &cmd)
+{
+    if (inicio != id_inicio || fin != id_destino) return RespuestaMando::OrdenNoAplicable;
+
+    auto mando0 = dependencias[señal_inicio->id.dependencia]->mando_actual;
+    for (auto &sec : secciones) {
+        if (sec.seccion->is_trayecto()) continue;
+        auto it = dependencias.find(sec.seccion->id.dependencia);
+        if (it == dependencias.end() || it->second->mando_actual.central != mando0.central || it->second->mando_actual.puesto != mando0.puesto) {
+            return RespuestaMando::NoMando;
+        }
+    }
+    for (auto &[sig,_] : señales) {
+        auto it = dependencias.find(sig->id.dependencia);
+        if (it == dependencias.end() || it->second->mando_actual.central != mando0.central || it->second->mando_actual.puesto != mando0.puesto) {
+            return RespuestaMando::NoMando;
+        }
+    }
+
+    if ((cmd == "I" || cmd == "FAI" || cmd == "AFA" || cmd == "ID") && (tipo != TipoMovimiento::Itinerario || ertms)) return RespuestaMando::OrdenNoAplicable;
+    if (cmd == "M" && tipo != TipoMovimiento::Maniobra) return RespuestaMando::OrdenNoAplicable;
+    if (cmd == "R" && tipo != TipoMovimiento::Rebase) return RespuestaMando::OrdenNoAplicable;
+    if (cmd == "ER" && !ertms) return RespuestaMando::OrdenNoAplicable;
+    if (cmd == "I" || cmd == "ER" || cmd == "R" || cmd == "M") return establecer() ? RespuestaMando::Aceptado : RespuestaMando::OrdenRechazada;
+    else if (cmd == "ID") {
+        if (establecer()) return RespuestaMando::Aceptado;
+        if (!fai_disparo_unico && (estado_fai == EstadoFAI::Cancelado || estado_fai == EstadoFAI::EnEspera)) {
+            fai_disparo_unico = true;
+            señal_inicio->ruta_fai = this;
+            estado_fai = EstadoFAI::Solicitud;
+            inicio_temporizacion_fai = get_milliseconds();
+            return RespuestaMando::Aceptado;
+        }
+    } else if (cmd == "FAI") {
+        if (set_fai(true)) return RespuestaMando::Aceptado;
+    } else if (cmd == "AFA") {
+        if (set_fai(false)) return RespuestaMando::Aceptado;
+    }
+    return RespuestaMando::OrdenRechazada;
 }

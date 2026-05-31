@@ -21,7 +21,7 @@ void dependencia::calcular_vinculacion_bloqueos()
     // los bloqueos de las estaciones colaterales
     for (auto &[id, bloq] : bloqueos) {
         if (cerrada) {
-            std::string vinculo = "";
+            std::optional<id_elemento> vinculo;
             bool señal_ruta = false;
             Lado dir = opp_lado(bloq->lado);
             seccion_via *prev = bloq->get_cvs()[0];
@@ -31,7 +31,7 @@ void dependencia::calcular_vinculacion_bloqueos()
                 auto *sig = sec->señal_inicio(dir, prev);
                 if (sig != nullptr && señal_impls.find(sig->id) != señal_impls.end() && señal_impls[sig->id]->ruta_necesaria)
                     señal_ruta = true;
-                if (sec->bloqueo_asociado != "") {
+                if (sec->bloqueo_asociado) {
                     for (auto &[id2, bloq2] : bloqueos) {
                         if (bloq2->get_cvs()[0] == sec) {
                             vinculo = id2;
@@ -44,9 +44,10 @@ void dependencia::calcular_vinculacion_bloqueos()
                 prev = sec;
                 sec = next;
             }
-            bloq->vincular(vinculo, !señal_ruta);
+            if (vinculo) bloq->vincular(*vinculo, !señal_ruta);
+            else bloq->desvincular();
         } else {
-            bloq->vincular("");
+            bloq->desvincular();
         }
     }
 }
@@ -62,7 +63,7 @@ bool dependencia::set_servicio_intermitente(bool cerrar)
             while (sec != nullptr) {
                 if (sec->tipo == TipoSeccion::Aguja && !((aguja*)sec)->is_ruta_fija(prev, dir)) break;
                 auto *sig = sec->señal_inicio(dir, prev);
-                if (sec->bloqueo_asociado != "") {
+                if (sec->bloqueo_asociado) {
                     for (auto &[id2, bloq2] : bloqueos) {
                         if (bloq2->get_cvs()[0] == sec) {
                             auto e1 = bloq->get_estado();
@@ -92,11 +93,8 @@ bool dependencia::set_servicio_intermitente(bool cerrar)
         }
     }
     for (auto &[ids, sig] : señal_impls) {
-        size_t idx = ids.find_first_of(':');
-        std::string dep = ids.substr(0, idx);
-        std::string elem = ids.substr(idx+1);
-        if (dep == id) {
-            if (servicio_intermitente->señales_abiertas.find(elem) != servicio_intermitente->señales_abiertas.end()) {
+        if (ids.dependencia == id) {
+            if (servicio_intermitente->señales_abiertas.find(ids.id_corto) != servicio_intermitente->señales_abiertas.end()) {
                 sig->cierre_stick = !cerrar;
                 sig->ruta_necesaria = !cerrar;
                 if (cerrar) sig->clear_request = true;

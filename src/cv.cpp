@@ -71,7 +71,7 @@ RemotaCVX cv::get_estado_remota_cruzamiento()
     r.CVX_CEJES_PREN = estado == EstadoCV::Prenormalizado ? 1 : 0;
     return r;
 }
-cv_impl::cv_impl(const std::string &id, const json &j) : cv(id, j.value("Tipo", TipoSeccion::Lineal)), topic("cv/"+id_to_mqtt(id)+"/state"), cejes(j["ContadoresEjes"])
+cv_impl::cv_impl(const id_elemento &id, const json &j) : cv(id, j.value("Tipo", TipoSeccion::Lineal)), topic("cv/"+id_to_mqtt(id.id)+"/state"), cejes(j["ContadoresEjes"])
 {
     num_ejes = {0, 0};
     ultimo_eje = {0, 0};

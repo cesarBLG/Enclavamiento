@@ -7,16 +7,17 @@ class frontera;
 class señal : public estado_señal
 {
 public:
-    const std::string id;
-    const std::string bloqueo_asociado;
+    const id_elemento id;
+    const std::optional<id_elemento> bloqueo_asociado;
     const Lado lado;
     const TipoSeñal tipo;
     const bool señal_virtual=false;
     const int pin;
     seccion_via * const seccion;
     seccion_via * const seccion_prev;
+    const Lado lado_prev;
     frontera *frontera_entrada=nullptr;
-    señal(const std::string &estacion, const json &j);
+    señal(const id_elemento &id, const json &j);
     virtual ~señal() {}
     Aspecto get_state()
     {
@@ -61,7 +62,7 @@ public:
 
     frontera *frontera_salida=nullptr;
 
-    señal_impl(const std::string &estacion, const json &j);
+    señal_impl(const id_elemento &id, const json &j);
     void send_state(bool aspecto=true, bool inicio=true)
     {
         if (aspecto) send_message(topic, json(*(estado_señal*)this).dump());
@@ -69,8 +70,8 @@ public:
     }
     void determinar_aspecto();
     void update();
-    void message_cv(const std::string &id, estado_cv ev);
-    const std::string &get_id_cv_inicio();
+    void message_cv(const id_elemento &id, estado_cv ev);
+    const id_elemento &get_id_cv_inicio();
     void message_señal(estado_señal est) override {}
     RespuestaMando mando(const std::string &cmd, int me);
     std::pair<RemotaSIG, RemotaIMV> get_estado_remota();

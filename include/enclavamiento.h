@@ -1,6 +1,7 @@
 #pragma once
 #include "enums.h"
 #include "lado.h"
+#include "id_elemento.h"
 #include "estado_bloqueo.h"
 #include "estado_mando.h"
 #include "estado_cv.h"

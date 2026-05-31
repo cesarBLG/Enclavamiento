@@ -10,3 +10,7 @@ void log(const std::string &id, const std::string &msg, LogLevel level)
 {
     log(id+": "+msg, level);
 }
+void log(const id_elemento &id, const std::string &msg, LogLevel level)
+{
+    log(id.id, msg, level);
+}

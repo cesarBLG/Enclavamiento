@@ -1,6 +1,7 @@
 #include "CuentaEjes.h"
 #include "mqtt.h"
 #include "PN.h"
+#include "Semaforica.h"
 #include "Signal.h"
 #include "Mando.h"
 #include "Aguja.h"

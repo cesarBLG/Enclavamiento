@@ -3,18 +3,18 @@
 #include "items.h"
 #include <set>
 using nlohmann::json;
-std::set<std::pair<ElementoRemota, std::string>> update_components;
-std::map<std::string, json> sigs;
-std::map<std::string, json> imvs;
-std::map<std::string, json> fmvs;
+std::set<std::pair<ElementoRemota, id_elemento>> update_components;
+std::map<id_elemento, json> sigs;
+std::map<id_elemento, json> imvs;
+std::map<id_elemento, json> fmvs;
 bool sendall = false;
-void remota_cambio_elemento(ElementoRemota el, std::string id)
+void remota_cambio_elemento(ElementoRemota el, const id_elemento &id)
 {
     update_components.insert({el, id});
 }
-void push(json &j, std::pair<ElementoRemota,std::string> comp, json j2)
+void push(json &j, std::pair<ElementoRemota,id_elemento> comp, json j2)
 {
-    j2["Id"] = comp.second;
+    j2["Id"] = comp.second.id;
     j2["Tipo"] = (int)comp.first;
     j.push_back(j2);
 }
@@ -93,7 +93,7 @@ void update_remota()
         imvs[id] = r;
     }
     for (auto &[id, cv] : cvs) {
-        std::pair<ElementoRemota,std::string> comp(ElementoRemota::CV, id);
+        std::pair<ElementoRemota,id_elemento> comp(ElementoRemota::CV, id);
         if (sendall || update_components.find(comp) != update_components.end()) {
             json r;
             if (cv->tipo == TipoSeccion::Aguja) push(j, {ElementoRemota::CVA, id}, json(cv->get_estado_remota_agujas()));
@@ -102,28 +102,28 @@ void update_remota()
         }
     }
     for (auto &[id, ag] : agujas) {
-        std::pair<ElementoRemota,std::string> comp(ElementoRemota::AG, id);
+        std::pair<ElementoRemota,id_elemento> comp(ElementoRemota::AG, id);
         if (sendall || update_components.find(comp) != update_components.end()) {
             auto r = json(ag->get_estado_remota());
             push(j, comp, r);
         }
     }
     for (auto &[id, bloq] : bloqueos) {
-        std::pair<ElementoRemota,std::string> comp(ElementoRemota::BLQ, bloq->id);
+        std::pair<ElementoRemota,id_elemento> comp(ElementoRemota::BLQ, bloq->id);
         if (sendall || update_components.find(comp) != update_components.end()) {
             auto eb = json(bloq->get_estado_remota());
             push(j, {ElementoRemota::BLQ, id}, eb);
         }
     }
     for (auto &[id, dep] : dependencias) {
-        std::pair<ElementoRemota,std::string> comp(ElementoRemota::DEP, id+":DEP");
+        std::pair<ElementoRemota,id_elemento> comp(ElementoRemota::DEP, id+":DEP");
         if (sendall || update_components.find(comp) != update_components.end()) {
             auto r = json(dep->get_estado_remota());
             push(j, comp, r);
         }
     }
     for (auto &[id, pn] : pns) {
-        std::pair<ElementoRemota,std::string> comp(ElementoRemota::PN, id);
+        std::pair<ElementoRemota,id_elemento> comp(ElementoRemota::PN, id);
         if (sendall || update_components.find(comp) != update_components.end()) {
             auto r = json(pn->get_estado_remota());
             push(j, comp, r);

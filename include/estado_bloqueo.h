@@ -34,6 +34,7 @@ struct estado_bloqueo_lado
     EstadoBloqueo estado_objetivo=EstadoBloqueo::SinDatos;
     bool normalizar_escape;
     bool bloqueo_siguiente = false;
+    bool cerrada = false;;
     bool operator<=>(const estado_bloqueo_lado &o) const = default;
 };
 #ifndef WITHOUT_JSON

@@ -4,6 +4,7 @@
 #include <vector>
 #include "lado.h"
 #include "enums.h"
+#include "id_elemento.h"
 #include "mqtt.h"
 #include "time.h"
 #include "log.h"
@@ -26,13 +27,13 @@ class seccion_via
 public:
     struct conexion
     {
-        std::string id;
+        id_elemento id;
         bool invertir_paridad;
     };
-    const std::string id;
-    const std::string bloqueo_asociado;
+    const id_elemento id;
+    const std::optional<id_elemento> bloqueo_asociado;
     const TipoSeccion tipo;
-    const std::string id_cv;
+    const id_elemento id_cv;
 
     std::set<pn_enclavado*> pns;
 protected:
@@ -52,7 +53,7 @@ protected:
     bool me_pendiente = false;
     bool bloqueo_seccion = false;
 public:
-    seccion_via(const std::string &id, const json &j, TipoSeccion tipo=TipoSeccion::Lineal);
+    seccion_via(const id_elemento &id, const json &j, TipoSeccion tipo=TipoSeccion::Lineal);
     virtual ~seccion_via() = default;
     seccion_via* siguiente_seccion(seccion_via *prev, Lado &dir, bool usar_ruta_asegurada=false);
     std::pair<seccion_via*,Lado> get_seccion_in(Lado dir, int pin);
@@ -108,10 +109,10 @@ public:
     bool is_bloqueo_seccion() { return bloqueo_seccion; }
     bool is_me_pendiente() { return me_pendiente; }
     bool is_trayecto() { return trayecto; }
-    virtual void message_cv(const std::string &id, estado_cv ev);
-    void message_bloqueo(const std::string &id, estado_bloqueo eb)
+    virtual void message_cv(const id_elemento &id, estado_cv ev);
+    void message_bloqueo(const id_elemento &id, estado_bloqueo eb)
     {
-        if (id != bloqueo_asociado) return;
+        if (!bloqueo_asociado || id != *bloqueo_asociado) return;
         bloqueo_act = eb;
         remota_cambio_elemento(ElementoRemota::CV, id_cv);
     }

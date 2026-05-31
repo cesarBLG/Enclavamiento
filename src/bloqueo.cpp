@@ -1,6 +1,6 @@
 #include "bloqueo.h"
 #include "items.h"
-bloqueo::bloqueo(const std::string &estacion, const json &j) : estacion(estacion), estacion_colateral(j["Colateral"]), via(j.value("Vía", "")), lado(j["Lado"]), id(estacion+":"+estacion_colateral+via), topic("bloqueo/"+estacion+"/"+estacion_colateral+via+"/state"), topic_colateral("bloqueo/"+estacion_colateral+"/"+estacion+via+"/colateral"),
+bloqueo::bloqueo(const std::string &estacion, const json &j) : estacion(estacion), estacion_colateral(j["Colateral"]), via(j.value("Vía", "")), lado(j["Lado"]), id(estacion,estacion_colateral+via), topic("bloqueo/"+estacion+"/"+estacion_colateral+via+"/state"), topic_colateral("bloqueo/"+estacion_colateral+"/"+estacion+via+"/colateral"),
 tipo(j.value("Tipo", TipoBloqueo::BAU)), bloqueo_emisor(lado == Lado::Impar ? EstadoBloqueo::BloqueoImpar : EstadoBloqueo::BloqueoPar), bloqueo_receptor(lado == Lado::Par ? EstadoBloqueo::BloqueoImpar : EstadoBloqueo::BloqueoPar)
 {
     me_pendiente = false;
@@ -8,10 +8,35 @@ tipo(j.value("Tipo", TipoBloqueo::BAU)), bloqueo_emisor(lado == Lado::Impar ? Es
     if (tipo == TipoBloqueo::BAD || tipo == TipoBloqueo::BLAD) estado_inicial = sentido_preferente == Lado::Impar ? EstadoBloqueo::BloqueoImpar : EstadoBloqueo::BloqueoPar;
     else estado_inicial = EstadoBloqueo::Desbloqueo;
     for (auto &cv : j["CVs"]) {
-        cvs.push_back(secciones[cv]);
+        cvs.push_back(secciones[id_elemento(cv)]);
     }
 }
-void bloqueo::message_cv(const std::string &id, estado_cv ecv)
+void bloqueo::send_state()
+{
+    bloqueo_siguiente = bloqueo_vinculado != nullptr;
+    cerrada = dependencias[estacion]->cerrada;
+    estado_completo.estado = estado;
+    estado_completo.ocupado = ocupado.impar || ocupado.par;
+    for (int i=0; i<2; i++) {
+        Lado l = i == 0 ? lado : opp_lado(lado);
+        estado_bloqueo_lado &e = i == 0 ? *((estado_bloqueo_lado*)this) : colateral;
+        estado_bloqueo_lado &o = i == 1 ? *((estado_bloqueo_lado*)this) : colateral;
+        estado_completo.actc[l] = o.actc;
+        estado_completo.cierre_señales[l] = o.cierre_señales;
+        estado_completo.escape[l] = e.escape;
+        estado_completo.mando_estacion[l] = e.mando_estacion;
+        estado_completo.maniobra_compatible[l] = e.maniobra_compatible;
+        estado_completo.prohibido[l] = o.prohibido;
+        estado_completo.ruta[l] = e.ruta;
+        estado_completo.prioridad_itinerario[l] = e.prioridad_itinerario;
+    }
+    json j = *((estado_bloqueo_lado*)this);
+    send_message(topic_colateral, j.dump());
+    j = estado_completo;
+    send_message(topic, j.dump());
+    remota_cambio_elemento(ElementoRemota::BLQ, id);
+}
+void bloqueo::message_cv(const id_elemento &id, estado_cv ecv)
 {
     int index = -1;
     for (int i=0; i<cvs.size(); i++) {
@@ -33,7 +58,7 @@ void bloqueo::message_cv(const std::string &id, estado_cv ecv)
             liberar = true;
     
     // Detección de escape de material
-    if (!escape && ((ecv.evento && ecv.evento->lado == lado && ecv.evento->ocupacion) || (!ecv.evento && ecv.estado_previo <= EstadoCV::Prenormalizado && ecv.estado > EstadoCV::Prenormalizado)) && estado != bloqueo_emisor && tipo != TipoBloqueo::BAD && tipo != TipoBloqueo::BLAD) {
+    if (!escape && ((ecv.evento && ecv.evento->lado == lado && ecv.evento->ocupacion) || (!ecv.evento && ecv.estado_previo <= EstadoCV::Prenormalizado && ecv.estado > EstadoCV::Prenormalizado && !ecv.averia)) && estado != bloqueo_emisor && tipo != TipoBloqueo::BAD && tipo != TipoBloqueo::BLAD) {
         bool esc=false;
         // Ocupación del primer circuito de trayecto
         if (index == 0) {
@@ -57,7 +82,7 @@ void bloqueo::message_cv(const std::string &id, estado_cv ecv)
     }
 
     for (auto *sec : cvs) {
-        estado_cvs[sec->id] = sec->get_cv()->get_state();
+        estado_cvs[sec->id.id] = sec->get_cv()->get_state();
     }
     calcular_ocupacion();
 
@@ -84,7 +109,7 @@ void bloqueo::message_cv(const std::string &id, estado_cv ecv)
     }*/
 
     // No liberar bloqueos con sentido preferente
-    if (liberar && tipo != TipoBloqueo::BAU && tipo != TipoBloqueo::BLAU && (estado == EstadoBloqueo::BloqueoImpar ? Lado::Impar : Lado::Par) == sentido_preferente) liberar = false;
+    if (liberar && tipo != TipoBloqueo::BAU && tipo != TipoBloqueo::BLAU && (estado == EstadoBloqueo::BloqueoImpar ? Lado::Impar : Lado::Par) == sentido_preferente && !colateral.cerrada) liberar = false;
 
     // Gestionar desbloqueo
     if (liberar && desbloqueo_permitido()) estado_objetivo = EstadoBloqueo::Desbloqueo;
@@ -96,22 +121,24 @@ void bloqueo::message_cv(const std::string &id, estado_cv ecv)
 
     update();
 }
-void bloqueo::vincular(const std::string &id, bool propagacion_completa)
+void bloqueo::desvincular()
 {
-    if (id == "") {
-        if (bloqueo_vinculado != nullptr) {
-            bloqueo_vinculado->bloqueo_vinculado = nullptr;
-            bloqueo_vinculado = nullptr;
-            this->propagacion_completa = false;
-            log(this->id, "desvinculado");
-        }
-        return;
+    if (bloqueo_vinculado != nullptr) {
+        bloqueo_vinculado->bloqueo_vinculado = nullptr;
+        bloqueo_vinculado = nullptr;
+        this->propagacion_completa = false;
+        log(this->id, "desvinculado");
+        update();
     }
+}
+void bloqueo::vincular(const id_elemento &id, bool propagacion_completa)
+{
     this->propagacion_completa = propagacion_completa;
     if (bloqueo_vinculado && bloqueo_vinculado->id == id) return;
     bloqueo_vinculado = bloqueos[id];
     bloqueo_vinculado->bloqueo_vinculado = this;
-    log(this->id, "vinculado a "+id);
+    log(this->id, "vinculado a "+id.id);
+    update();
 }
 void bloqueo::update()
 {
@@ -168,7 +195,7 @@ void bloqueo::update()
         estado_objetivo = estado;
         log(id, "solicitud cancelada, bloqueo no posible", LOG_DEBUG);
     }
-    if (colateral.escape && (bloqueo_vinculado == nullptr || !propagacion_completa) && dependencias[estacion]->cerrada) {
+    if (colateral.escape && (bloqueo_vinculado == nullptr || !propagacion_completa || !bloqueo_vinculado->escape) && dependencias[estacion]->cerrada) {
         normalizar_escape = true;
     }
     if (normalizar_escape && (!colateral.escape || !desbloqueo_permitido())) {

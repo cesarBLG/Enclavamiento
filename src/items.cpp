@@ -4,17 +4,17 @@
 #include "log.h"
 #include "remota.h"
 
-std::map<std::string, cv*> cvs;
-std::map<std::string, cv_impl*> cv_impls;
-std::map<std::string, señal*> señales;
-std::map<std::string, señal_impl*> señal_impls;
-std::map<std::string, bloqueo*> bloqueos;
+std::map<id_elemento, cv*> cvs;
+std::map<id_elemento, cv_impl*> cv_impls;
+std::map<id_elemento, señal*> señales;
+std::map<id_elemento, señal_impl*> señal_impls;
+std::map<id_elemento, bloqueo*> bloqueos;
 std::set<ruta*> rutas;
-std::map<std::string, destino_ruta*> destinos_ruta;
-std::map<std::string, seccion_via*> secciones;
-std::map<std::string, aguja*> agujas;
+std::map<id_elemento, destino_ruta*> destinos_ruta;
+std::map<id_elemento, seccion_via*> secciones;
+std::map<id_elemento, aguja*> agujas;
 std::map<std::string, dependencia*> dependencias;
-std::map<std::string, pn_enclavado*> pns;
+std::map<id_elemento, pn_enclavado*> pns;
 parametros_predeterminados parametros;
 
 std::set<std::string> comandos_ruta = {"I","R","M","FAI","ID"};
@@ -28,21 +28,21 @@ std::set<std::string> comandos_ignorar_mando = {"C", "TML", "TME", "CML", "RML",
 std::set<std::string> comandos_ctc = {"C", "L", "AS", "AAS"};
 std::set<std::string> comandos_local = {"TML", "TME", "CML", "RML"};
 std::set<std::string> comandos_pn = {"APN", "CPN"};
-std::set<std::string> comandos_dependencia = {"RAL","RA","BCA","DCA","SI","ASI","RST"};
+std::set<std::string> comandos_dependencia = {"RAL","RA","LD","LN","BCA","DCA","SI","ASI","RST"};
 
 RespuestaMando mando(const std::vector<std::string> &ordenes, int me)
 {
     std::string cmd = ordenes[0];
     if (comandos_cv.find(cmd) != comandos_cv.end()) {
-        std::string id = "";
+        id_elemento id;
         if (ordenes.size() == 3) {
-            id = ordenes[1]+":"+ordenes[2];
+            id = id_elemento(ordenes[1], ordenes[2]);
         } else if (ordenes.size() == 4) {
             std::string colat = ordenes[3];
             for (auto &[idd, dest] : destinos_ruta) {
                 if (dest->tipo != TipoDestino::Colateral) continue;
-                if (idd.starts_with(ordenes[1]+":"+colat)) {
-                    id = colat+":"+ordenes[2];
+                if (idd.id.starts_with(ordenes[1]+":"+colat)) {
+                    id = id_elemento(colat, ordenes[2]);
                     break;
                 }
             }
@@ -52,7 +52,7 @@ RespuestaMando mando(const std::vector<std::string> &ordenes, int me)
     }
     if (comandos_bloqueo.find(cmd) != comandos_bloqueo.end()) {
         if (ordenes.size() == 3) {
-            std::string id = ordenes[1]+":"+ordenes[2];
+            id_elemento id(ordenes[1],ordenes[2]);
             auto it = bloqueos.find(id);
             if (it != bloqueos.end()) return it->second->mando(ordenes[0], me);
         }
@@ -61,48 +61,43 @@ RespuestaMando mando(const std::vector<std::string> &ordenes, int me)
         auto it = dependencias.find(ordenes[1]);
         if (it != dependencias.end()) {
             if (ordenes.size() == 4) return it->second->mando_ruta(ordenes[2] ,ordenes[3], ordenes[0]);
-            if (ordenes.size() == 5) {
-                auto it2 = dependencias.find(ordenes[3]);
-                if (it2 != dependencias.end()) {
-                    if (it2->second->mando_actual.central == it->second->mando_actual.central && it2->second->mando_actual.puesto == it->second->mando_actual.puesto) {
-                        return it->second->mando_ruta(ordenes[2], ordenes[3]+":"+ordenes[4], ordenes[0]);
-                    } else {
-                        return RespuestaMando::NoMando;
-                    }
-                }
-            }
+            if (ordenes.size() == 5) return it->second->mando_ruta(ordenes[2], ordenes[3]+":"+ordenes[4], ordenes[0]);
         }
     }
     if (comandos_destino.find(cmd) != comandos_destino.end()) {
-        std::string id = ordenes[1]+":"+ordenes[2];
+        id_elemento id(ordenes[1],ordenes[2]);
         auto it = destinos_ruta.find(id);
         if (it != destinos_ruta.end()) return it->second->mando(ordenes[0], me);
     }
     if (comandos_señal.find(cmd) != comandos_señal.end()) {
         if (ordenes.size() == 3) {
-            auto it = señal_impls.find(ordenes[1]+":"+ordenes[2]);
+            id_elemento id(ordenes[1],ordenes[2]);
+            auto it = señal_impls.find(id);
             if (it != señal_impls.end()) return it->second->mando(ordenes[0], me);
         }
     }
     if (comandos_seccion.find(cmd)  != comandos_seccion.end()) {
         if (ordenes.size() == 3) {
-            auto it = secciones.find(ordenes[1]+":"+ordenes[2]);
+            id_elemento id(ordenes[1],ordenes[2]);
+            auto it = secciones.find(id);
             if (it != secciones.end()) return it->second->mando(ordenes[0], me);
         }
     }
     if (comandos_aguja.find(cmd)  != comandos_aguja.end()) {
         if (ordenes.size() == 3) {
-            auto it = agujas.find(ordenes[1]+":"+ordenes[2]);
+            id_elemento id(ordenes[1],ordenes[2]);
+            auto it = agujas.find(id);
             if (it != agujas.end()) {
                 auto resp = it->second->mando(ordenes[0], me);
-                if (resp == RespuestaMando::Aceptado) dependencias[ordenes[1]]->calcular_vinculacion_bloqueos();
+                if (resp == RespuestaMando::Aceptado) dependencias[id.dependencia]->calcular_vinculacion_bloqueos();
                 return resp;
             }
         }
     }
     if (comandos_pn.find(cmd)  != comandos_pn.end()) {
         if (ordenes.size() == 3) {
-            auto it = pns.find(ordenes[1]+":"+ordenes[2]);
+            id_elemento id(ordenes[1],ordenes[2]);
+            auto it = pns.find(id);
             if (it != pns.end()) return it->second->mando(ordenes[0]);
         }
     }
@@ -255,7 +250,7 @@ void handle_message(const std::string &topic, const std::string &payload)
 
     std::regex cejesEventPattern(R"(^cejes/([a-zA-Z0-9_-]+/[a-zA-Z0-9_'-]+)/event$)");
     if (std::regex_match(topic, match, cejesEventPattern)) {
-        std::string id = id_from_mqtt(match[1]);
+        id_elemento id = id_elemento(id_from_mqtt(match[1]));
         for (auto &kvp : cv_impls) {
             kvp.second->message_cejes(id, payload);
         }
@@ -263,7 +258,7 @@ void handle_message(const std::string &topic, const std::string &payload)
     }
     std::regex cvStatePattern(R"(^cv/([a-zA-Z0-9_-]+/[a-zA-Z0-9_'-]+)/state$)");
     if (std::regex_match(topic, match, cvStatePattern)) {
-        std::string id = id_from_mqtt(match[1]);
+        id_elemento id = id_elemento(id_from_mqtt(match[1]));
         estado_cv ecv(json::parse(payload));
         auto it = cvs.find(id);
         if (it != cvs.end()) it->second->message_cv(ecv);
@@ -285,14 +280,14 @@ void handle_message(const std::string &topic, const std::string &payload)
     }
     std::regex cvActionPattern(R"(^cv/([a-zA-Z0-9_-]+/[a-zA-Z0-9_'-]+)/action$)");
     if (std::regex_match(topic, match, cvActionPattern)) {
-        std::string id = id_from_mqtt(match[1]);
+        id_elemento id = id_elemento(id_from_mqtt(match[1]));
         auto it = cv_impls.find(id);
         if (it != cv_impls.end()) it->second->message_cv(payload);
         return;
     }
     std::regex signalStatePattern(R"(^signal/([a-zA-Z0-9_-]+/[a-zA-Z0-9_'-]+)/state$)");
     if (std::regex_match(topic, match, signalStatePattern)) {
-        std::string id = id_from_mqtt(match[1]);
+        id_elemento id = id_elemento(id_from_mqtt(match[1]));
         auto it = señales.find(id);
         if (it != señales.end()) it->second->message_señal(json::parse(payload));
         return;
@@ -300,7 +295,7 @@ void handle_message(const std::string &topic, const std::string &payload)
     std::regex bloqueoStatePattern(R"(^bloqueo/([a-zA-Z0-9_-]+/[a-zA-Z0-9_'-]+)/state$)");
     if (std::regex_match(topic, match, bloqueoStatePattern)) {
         estado_bloqueo eb(json::parse(payload));
-        std::string id = id_from_mqtt(match[1]);
+        id_elemento id = id_elemento(id_from_mqtt(match[1]));
         for (auto *ruta : rutas) {
             ruta->message_bloqueo(id, eb);
         }
@@ -311,21 +306,21 @@ void handle_message(const std::string &topic, const std::string &payload)
     }
     std::regex bloqueoColateralPattern(R"(^bloqueo/([a-zA-Z0-9_-]+/[a-zA-Z0-9_'-]+)/colateral$)");
     if (std::regex_match(topic, match, bloqueoColateralPattern)) {
-        std::string id = id_from_mqtt(match[1]);
+        id_elemento id = id_elemento(id_from_mqtt(match[1]));
         auto it = bloqueos.find(id);
         if (it != bloqueos.end()) it->second->message_colateral(json::parse(payload));
         return;
     }
     std::regex comprobacionPNPattern(R"(^pn/([a-zA-Z0-9_-]+/[a-zA-Z0-9_'-]+)/comprobacion$)");
     if (std::regex_match(topic, match, comprobacionPNPattern)) {
-        std::string id = id_from_mqtt(match[1]);
+        id_elemento id = id_elemento(id_from_mqtt(match[1]));
         auto it = pns.find(id);
         if (it != pns.end()) it->second->message_pn(payload == "true");
         return;
     }
     std::regex comprobacionAgujaPattern(R"(^aguja/([a-zA-Z0-9_-]+/[a-zA-Z0-9_'-]+)/comprobacion$)");
     if (std::regex_match(topic, match, comprobacionAgujaPattern)) {
-        std::string id = id_from_mqtt(match[1]);
+        id_elemento id = id_elemento(id_from_mqtt(match[1]));
         auto it = agujas.find(id);
         if (it != agujas.end()) it->second->message_aguja(payload);
         return;
@@ -338,14 +333,14 @@ void handle_message(const std::string &topic, const std::string &payload)
         return;
     }
 }
-std::map<std::string,std::vector<std::string>> cejes_to_cvs;
+std::map<id_elemento,std::vector<id_elemento>> cejes_to_cvs;
 void init_items_ordered(const json &j, std::string tipo)
 {
     for (auto &[estacion, jdep] : j.items()) {
         if (!jdep.contains(tipo)) continue;
         if (tipo == "CVs") {
             for (auto &[id, jcv] : jdep["CVs"].items()) {
-                std::string ic = estacion+":"+id;
+                id_elemento ic(estacion,id);
                 if (jcv.contains("ContadoresEjes")) {
                     cv_impls[ic] = new cv_impl(ic, jcv);
                     for (auto &[key,val] : jcv["ContadoresEjes"].items()) {
@@ -359,7 +354,7 @@ void init_items_ordered(const json &j, std::string tipo)
         }
         if (tipo == "Secciones") {
             for (auto &[id, jsec] : jdep["Secciones"].items()) {
-                std::string is = estacion+":"+id;
+                id_elemento is(estacion,id);
                 TipoSeccion tipo = jsec.value("Tipo", TipoSeccion::Lineal);
                 if (tipo == TipoSeccion::Aguja) {
                     auto *ag = new aguja(is, jsec);
@@ -372,13 +367,13 @@ void init_items_ordered(const json &j, std::string tipo)
         }
         if (tipo == "PNs") {
             for (auto &[id, jpn] : jdep["PNs"].items()) {
-                std::string ipn = estacion+":"+id;
+                id_elemento ipn(estacion,id);
                 pns[ipn] = new pn_enclavado(ipn, jpn);
             }
         }
         if (tipo == "Señales") {
             for (auto &[id, js] : jdep["Señales"].items()) {
-                std::string is = estacion+":"+id;
+                id_elemento is(estacion,id);
                 if (dependencias.find(estacion) == dependencias.end()) {
                     auto *señ = new señal(is, js);
                     señales[is] = señ;
@@ -399,7 +394,7 @@ void init_items_ordered(const json &j, std::string tipo)
         }
         if (tipo == "DestinosRuta") {
             for (auto &[id, jdest] : jdep["DestinosRuta"].items()) {
-                std::string idd = estacion+":"+id;
+                id_elemento idd(estacion,id);
                 destinos_ruta[idd] = new destino_ruta(idd, jdest);
             }
         }

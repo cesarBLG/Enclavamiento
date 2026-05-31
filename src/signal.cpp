@@ -1,11 +1,11 @@
 #include "signal.h"
 #include "ruta.h"
 #include "items.h"
-señal::señal(const std::string &id, const json &j) : id(id), lado(j["Lado"]), tipo(j["Tipo"]), pin(j.value("Pin", 0)), bloqueo_asociado(j.value("Bloqueo", "")), seccion(secciones[j["Sección"]]), seccion_prev(seccion->get_seccion_in(lado, pin).first)
+señal::señal(const id_elemento &id, const json &j) : id(id), lado(j["Lado"]), tipo(j["Tipo"]), pin(j.value("Pin", 0)), bloqueo_asociado(j.contains("Bloqueo") ? std::optional<id_elemento>(id_elemento(j["Bloqueo"])) : std::nullopt), seccion(secciones[id_elemento(j["Sección"])]), seccion_prev(seccion->get_seccion_in(lado, pin).first), lado_prev(seccion->get_seccion_in(lado, pin).second)
 {
     seccion->vincular_señal(this, lado, pin);
 }
-señal_impl::señal_impl(const std::string &id, const json &j) : señal(id, j), topic("signal/"+id_to_mqtt(id)+"/state"), topic_inicio("signal/"+id_to_mqtt(id)+"/inicio")
+señal_impl::señal_impl(const id_elemento &id, const json &j) : señal(id, j), topic("signal/"+id_to_mqtt(id.id)+"/state"), topic_inicio("signal/"+id_to_mqtt(id.id)+"/inicio")
 {
     for (auto &[est, asp] : j["AspectoCanton"].items()) {
         aspecto_maximo_ocupacion[json(est)] = asp;
@@ -33,8 +33,8 @@ void señal_impl::determinar_aspecto()
     // Requerir secciones asegurado por ruta (no necesario en trayecto)
     bool comprobar_ruta = ruta_activa != nullptr && !ruta_activa->get_secciones().empty() && ruta_activa->get_secciones().back().seccion != seccion_prev;
     // Nombre del bloqueo asociado
-    std::string bloq_id = bloqueo_asociado;
-    if (bloq_id == "" && ruta_activa != nullptr && ruta_activa->bloqueo_salida != "") {
+    std::optional<id_elemento> bloq_id = bloqueo_asociado;
+    if (!bloq_id && ruta_activa != nullptr && ruta_activa->bloqueo_salida) {
         auto &señales = ruta_activa->get_señales();
         if (señales.empty() || señales.back().first == this || tipo == TipoSeñal::Salida) bloq_id = ruta_activa->bloqueo_salida;
     }
@@ -72,7 +72,7 @@ void señal_impl::determinar_aspecto()
                 cerrar = true;
         }
         if (sec_act->is_asegurada() && (ruta_activa == nullptr || !sec_act->is_asegurada(ruta_activa))) cerrar = true;
-        if (bloq_id == "" && sec_act->bloqueo_asociado != "") bloq_id = sec_act->bloqueo_asociado;
+        if (!bloq_id && sec_act->bloqueo_asociado) bloq_id = sec_act->bloqueo_asociado;
         sec_prv = sec_act;
         sec_act = next;
         if (sec_act != nullptr) sig_señal = sec_act->señal_inicio(dir, sec_prv);
@@ -84,8 +84,8 @@ void señal_impl::determinar_aspecto()
     bool cerrar_itinerario = false;
     // Condiciones que impiden la apertura de señal en itinerario, pero no la cierran si estaba abierta
     bool prohibir_abrir_itinerario = false;
-    if (bloq_id != "") {
-        bloqueo_act = bloqueos[bloq_id]->get_estado();
+    if (bloq_id) {
+        bloqueo_act = bloqueos[*bloq_id]->get_estado();
         TipoMovimiento tipo_opp = bloqueo_act.ruta[opp_lado(dir)];
         // Cerrar señales intermedias y de salida si falla comunicación con colateral
         cerrar |= bloqueo_act.estado == EstadoBloqueo::SinDatos;
@@ -113,6 +113,7 @@ void señal_impl::determinar_aspecto()
     // Cerrar señal con el cantón ocupado en sentido contrario
     cerrar_itinerario |= canton == EstadoCanton::Ocupado;
     cerrar |= sig_señal != nullptr && sig_señal->aspecto_maximo_anterior_señal == Aspecto::Parada;
+    cerrar_itinerario |= sig_señal != nullptr && sig_señal->aspecto_maximo_anterior_señal <= Aspecto::RebaseAutorizadoDestellos;
     // Señal en parada si
     // - No se permite la apertura y no había abierto previamente
     // - Las condiciones no permiten mantener abierta la señal
@@ -125,7 +126,7 @@ void señal_impl::determinar_aspecto()
     } else if (ruta_activa != nullptr && ruta_activa->tipo == TipoMovimiento::Maniobra) {
         aspecto = Aspecto::RebaseAutorizado;
     } else if (ruta_activa != nullptr && ruta_activa->tipo == TipoMovimiento::Rebase) {
-        aspecto = Aspecto::RebaseAutorizadoDestellos;
+        aspecto = tipo == TipoSeñal::Maniobra ? Aspecto::MovimientoAutorizado : Aspecto::RebaseAutorizadoDestellos;
     // Señal en parada si no se cumplen las condiciones para apertura en itinerario
     } else if (cerrar_itinerario || (prohibir_abrir_itinerario && (prev_aspecto == Aspecto::Parada || !ruta_necesaria))) {
         aspecto = Aspecto::Parada;
@@ -157,12 +158,13 @@ void señal_impl::determinar_aspecto()
         if (sig_señal != nullptr)
             aspecto_maximo_anterior_señal = std::min(aspecto_maximo_anterior_señal, sig_señal->aspecto_maximo_anterior_señal);
     }
+    if (tipo == TipoSeñal::Maniobra && sig_señal != nullptr) aspecto_maximo_anterior_señal = std::min(aspecto_maximo_anterior_señal, sig_señal->aspecto_maximo_anterior_señal);
     // Requerir pantallas virtuales en parada sin bloqueo establecido
     // Asignar el aspecto de parada después de calcular el aspecto de la señal anterior
     // Esto permite que la señal avanzada abra en función de la señal de entrada aunque
     // las pantallas estén cerradas por no haber bloqueo
     // Si la pantalla está cerrada por otro motivo, la avanzada mostrará parada selectiva
-    if (señal_virtual && bloq_id != "" && bloqueo_act.estado != (dir == Lado::Impar ? EstadoBloqueo::BloqueoImpar : EstadoBloqueo::BloqueoPar))
+    if (señal_virtual && bloq_id && bloqueo_act.estado != (dir == Lado::Impar ? EstadoBloqueo::BloqueoImpar : EstadoBloqueo::BloqueoPar))
         aspecto = Aspecto::Parada;
 }
 void señal_impl::update()
@@ -271,6 +273,9 @@ std::pair<RemotaSIG, RemotaIMV> señal_impl::get_estado_remota()
         case Aspecto::RebaseAutorizadoDestellos:
             r.SIG_IND = 5;
             break;
+        case Aspecto::MovimientoAutorizado:
+            r.SIG_IND = 6;
+            break;
         case Aspecto::ParadaDiferida:
             r.SIG_IND = 13;
             break;
@@ -335,7 +340,7 @@ estado_inicio_ruta señal_impl::get_estado_inicio()
     }
     return e;
 }
-void señal_impl::message_cv(const std::string &id, estado_cv ev)
+void señal_impl::message_cv(const id_elemento &id, estado_cv ev)
 {
     if (id != get_id_cv_inicio()) return;
 
@@ -346,7 +351,7 @@ void señal_impl::message_cv(const std::string &id, estado_cv ev)
 
     paso_circulacion = false;
     // Detección de paso de tren por la señal
-    if (ev.evento && ev.evento->ocupacion && ev.evento->lado == lado && (ev.evento->cv_colateral == "" || seccion_prev == nullptr || ev.evento->cv_colateral == seccion_prev->id_cv)) {
+    if (ev.evento && ev.evento->ocupacion && ev.evento->lado == lado && (ev.evento->cv_colateral == "" || seccion_prev == nullptr || ev.evento->cv_colateral == seccion_prev->id_cv.id)) {
         // Si la señal estaba cerrada, es un rebase de señal
         if (aspecto == Aspecto::Parada) {
             if (ruta_necesaria && get_milliseconds() - ultimo_paso_abierta > 30000) {
@@ -360,7 +365,7 @@ void señal_impl::message_cv(const std::string &id, estado_cv ev)
         }
     }
 }
-const std::string &señal_impl::get_id_cv_inicio()
+const id_elemento &señal_impl::get_id_cv_inicio()
 {
     auto *sec = seccion;
     auto *prv = seccion_prev;

@@ -34,6 +34,7 @@ std::string to_string(Aspecto aspecto)
         case Aspecto::Parada: return "Parada";
         case Aspecto::RebaseAutorizado: return "RebaseAutorizado";
         case Aspecto::RebaseAutorizadoDestellos: return "RebaseAutorizadoDestellos";
+        case Aspecto::MovimientoAutorizado: return "MovimientoAutorizado";
         case Aspecto::ParadaDiferida: return "ParadaDiferida";
         case Aspecto::ParadaSelectiva: return "ParadaSelectiva";
         case Aspecto::ParadaSelectivaDestellos: return "ParadaSelectivaDestellos";
@@ -195,6 +196,7 @@ void from_json(const json &j, Aspecto &asp)
     else if (j == "ParadaDiferida") asp = Aspecto::ParadaDiferida;
     else if (j == "RebaseAutorizadoDestellos") asp = Aspecto::RebaseAutorizadoDestellos;
     else if (j == "RebaseAutorizado") asp = Aspecto::RebaseAutorizado;
+    else if (j == "MovimientoAutorizado") asp = Aspecto::MovimientoAutorizado;
     else asp = Aspecto::Parada;
 }
 void to_json(json &j, const TipoMovimiento &tipo)
@@ -340,6 +342,7 @@ void to_json(json &j, const estado_bloqueo_lado &estado)
     j["MandoEstación"] = estado.mando_estacion;
     j["NormalizarEscape"] = estado.normalizar_escape;
     j["BloqueoSiguiente"] = estado.bloqueo_siguiente;
+    j["Cerrada"] = estado.cerrada;
 }
 void from_json(const json &j, estado_bloqueo_lado &estado)
 {
@@ -360,6 +363,7 @@ void from_json(const json &j, estado_bloqueo_lado &estado)
     estado.mando_estacion = j["MandoEstación"];
     estado.normalizar_escape = j.value("NormalizarEscape", false);
     estado.bloqueo_siguiente = j["BloqueoSiguiente"];
+    estado.cerrada = j["Cerrada"];
 }
 void to_json(json &j, const estado_mando &estado)
 {

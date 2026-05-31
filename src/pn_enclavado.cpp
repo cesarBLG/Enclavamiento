@@ -1,9 +1,9 @@
 #include "enclavamiento.h"
 #include "pn_enclavado.h"
 #include "items.h"
-pn_enclavado::pn_enclavado(const std::string &id, const json &j) : id(id), topic("pn/"+id_to_mqtt(id)+"/cierre")
+pn_enclavado::pn_enclavado(const id_elemento &id, const json &j) : id(id), topic("pn/"+id_to_mqtt(id.id)+"/cierre")
 {
-    seccion = secciones[j["Sección"]];
+    seccion = secciones[id_elemento(j["Sección"])];
     seccion->pns.insert(this);
     if (j.contains("TiempoApertura")) {
         tiempo_apertura = j["TiempoApertura"];

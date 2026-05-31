@@ -1,10 +1,11 @@
 #include "aguja.h"
 #include "ruta.h"
-aguja::aguja(const std::string &id, const json &j) : seccion_via(id, j, TipoSeccion::Aguja), lado(j["Lado"]), topic_mando("aguja/"+id_to_mqtt(id)+"/mando")
+aguja::aguja(const id_elemento &id, const json &j) : seccion_via(id, j, TipoSeccion::Aguja), lado(j["Lado"]), topic_mando("aguja/"+id_to_mqtt(id.id)+"/mando")
 {
     if (j.contains("SecciónPunta")) siguientes_secciones[opp_lado(lado)] = std::vector<conexion>({j["SecciónPunta"].get<conexion>()});
     if (j.contains("SeccionesTalón")) siguientes_secciones[lado] = j["SeccionesTalón"];
-    talonable = true;
+    talonable = j.value("Talonable", true);
+    if (j.contains("PosiciónMuelle")) talonable_muelle = j["PosiciónMuelle"] == 1 ? PosicionAguja::Invertida : PosicionAguja::Normal;
     update();
 }
 RemotaAG aguja::get_estado_remota()

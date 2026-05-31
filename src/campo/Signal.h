@@ -10,12 +10,12 @@ public:
     std::string topic;
     Signal(const char *id, mqtt_client *client, int pinRojo, int pinVerde) : mqtt_device(client), pinRojo(pinRojo), pinVerde(pinVerde), estado({Aspecto::Parada, Aspecto::Parada, false}), id(id)
     {
-      topic = std::string("signal/")+id+"/state";
+        topic = std::string("signal/")+id+"/state";
     }
     void msg_callback(const std::string_view topic, const std::string_view payload) override
     {
-      if (this->topic != topic) return;
-      estado = json::parse(payload);
+        if (this->topic != topic) return;
+        estado = json::parse(payload);
     }
     void setup() override
     {
@@ -34,10 +34,6 @@ public:
                 digitalWrite(pinVerde, HIGH);
                 break;
             case Aspecto::RebaseAutorizado:
-                digitalWrite(pinVerde, HIGH);
-                digitalWrite(pinRojo, (millis()/500)%2 ? HIGH : LOW);
-                break;
-            case Aspecto::ParadaDiferida:
                 digitalWrite(pinVerde, HIGH);
                 digitalWrite(pinRojo, (millis()/500)%2 ? HIGH : LOW);
                 break;

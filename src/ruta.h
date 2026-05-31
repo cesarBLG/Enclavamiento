@@ -15,14 +15,14 @@ class destino_ruta
 protected:
     estado_fin_ruta estado;
 public:
-    const std::string id;
+    const id_elemento id;
     const std::string topic;
     const TipoDestino tipo;
     bool bloqueo_destino = false;
     bool me_pendiente = false;
     ruta *ruta_activa = nullptr;
     señal_impl *señal_fin = nullptr;
-    destino_ruta(const std::string &id, const json &j);
+    destino_ruta(const id_elemento &id, const json &j);
     RespuestaMando mando(const std::string &cmd, int me);
     RemotaFMV get_estado_remota();
     estado_fin_ruta get_estado();
@@ -51,13 +51,13 @@ struct elemento_ruta
 class ruta
 {
 public:
-    const std::string estacion;
     const TipoMovimiento tipo;
     const bool ertms = false;
+    const std::string estacion;
     const std::string id_inicio;
     const std::string id_destino;
     const std::string id;
-    const std::string bloqueo_salida;
+    const std::optional<id_elemento> bloqueo_salida;
     CompatibilidadManiobra maniobra_compatible;
     bool valid = false;
 
@@ -73,7 +73,7 @@ protected:
     std::vector<std::pair<seccion_via*,Lado>> proximidad0;
     std::vector<seccion_via*> proximidad0_next;
     std::vector<std::pair<seccion_via*,Lado>> proximidad;
-    std::set<std::string> ultimos_cvs_proximidad;
+    std::set<id_elemento> ultimos_cvs_proximidad;
     señal_impl *señal_inicio;
     std::vector<std::pair<señal_impl*, Lado>> señales;
     destino_ruta *destino;
@@ -90,6 +90,7 @@ protected:
     bool ocupada = false;
     bool diferimetro_cancelado = false;
 
+    bool desactivar_diferimetro;
     int64_t temporizador_dai1;
     int64_t temporizador_dai2;
     int64_t temporizador_dei;
@@ -256,38 +257,15 @@ public:
         return false;
     }
 
-    RespuestaMando mando(const std::string &inicio, const std::string &fin, const std::string &cmd)
-    {
-        if (inicio != id_inicio || fin != id_destino) return RespuestaMando::OrdenNoAplicable;
-        if ((cmd == "I" || cmd == "FAI" || cmd == "AFA" || cmd == "ID") && (tipo != TipoMovimiento::Itinerario || ertms)) return RespuestaMando::OrdenNoAplicable;
-        if (cmd == "M" && tipo != TipoMovimiento::Maniobra) return RespuestaMando::OrdenNoAplicable;
-        if (cmd == "R" && tipo != TipoMovimiento::Rebase) return RespuestaMando::OrdenNoAplicable;
-        if (cmd == "ER" && !ertms) return RespuestaMando::OrdenNoAplicable;
-        if (cmd == "I" || cmd == "ER" || cmd == "R" || cmd == "M") return establecer() ? RespuestaMando::Aceptado : RespuestaMando::OrdenRechazada;
-        else if (cmd == "ID") {
-            if (establecer()) return RespuestaMando::Aceptado;
-            if (!fai_disparo_unico && (estado_fai == EstadoFAI::Cancelado || estado_fai == EstadoFAI::EnEspera)) {
-                fai_disparo_unico = true;
-                señal_inicio->ruta_fai = this;
-                estado_fai = EstadoFAI::Solicitud;
-                inicio_temporizacion_fai = get_milliseconds();
-                return RespuestaMando::Aceptado;
-            }
-        } else if (cmd == "FAI") {
-            if (set_fai(true)) return RespuestaMando::Aceptado;
-        } else if (cmd == "AFA") {
-            if (set_fai(false)) return RespuestaMando::Aceptado;
-        }
-        return RespuestaMando::OrdenRechazada;
-    }
+    RespuestaMando mando(const std::string &inicio, const std::string &fin, const std::string &cmd);
 
-    void message_cv(const std::string &id, estado_cv ecv);
-    void message_bloqueo(const std::string &id, estado_bloqueo eb)
+    void message_cv(const id_elemento &id, estado_cv ecv);
+    void message_bloqueo(const id_elemento &id, estado_bloqueo eb)
     {
         if (id != bloqueo_salida) return;
         bloqueo_act = eb;
     }
-    void message_aguja(const std::string &id, estado_aguja estado)
+    void message_aguja(const id_elemento &id, estado_aguja estado)
     {
     }
 protected:

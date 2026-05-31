@@ -25,6 +25,7 @@ enum struct Aspecto
     Parada,
     RebaseAutorizado,
     RebaseAutorizadoDestellos,
+    MovimientoAutorizado,
     ParadaSelectiva,
     ParadaSelectivaDestellos,
     ParadaDiferida,

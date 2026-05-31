@@ -16,11 +16,11 @@ class cv : protected estado_cv
 protected:
     bool me_pendiente=false;
 public:
-    const std::string id;
+    const id_elemento id;
     const TipoSeccion tipo;
     std::set<seccion_via*> secciones;
     bool ocupacion_intempestiva = false;
-    cv(const std::string &id, TipoSeccion tipo = TipoSeccion::Lineal) : id(id), tipo(tipo) {}
+    cv(const id_elemento &id, TipoSeccion tipo = TipoSeccion::Lineal) : id(id), tipo(tipo) {}
     virtual ~cv() = default;
     
     EstadoCV get_state()
@@ -57,7 +57,7 @@ public:
         if (me < 0) return pend ? RespuestaMando::Aceptado : RespuestaMando::OrdenRechazada;
         if (cmd == "LC" && estado > EstadoCV::Prenormalizado) {
             if (me) {
-                send_message("cv/"+id_to_mqtt(id)+"/action", "Prenormalizar");
+                send_message("cv/"+id_to_mqtt(id.id)+"/action", "Prenormalizar");
                 aceptado = RespuestaMando::Aceptado;
             } else {
                 me_pendiente = true;
@@ -108,7 +108,7 @@ protected:
 
 public:
     const std::string topic;
-    cv_impl(const std::string &id, const json &j);
+    cv_impl(const id_elemento &id, const json &j);
 
     void update()
     {
@@ -168,20 +168,20 @@ public:
         estado_previo = estado;
     }
 
-    void message_cejes(const std::string &id, std::string payload)
+    void message_cejes(const id_elemento &id, std::string payload)
     {
-        auto it = cejes.find(id);
+        auto it = cejes.find(id.id);
         if (it == cejes.end()) return;
         if (payload == "Error" || payload == "\"desconexion\"") {
             if (it->second.ocupar) {
                 log(id, "avería contador ejes", LOG_DEBUG);
-                if (payload == "\"desconexion\"") desconexion_cejes.insert(id);
-                else averia_cejes.insert(id);
+                if (payload == "\"desconexion\"") desconexion_cejes.insert(id.id);
+                else averia_cejes.insert(id.id);
                 normalizado = false;
                 update();
             }
         } else if (payload == "conexion") {
-            auto it2 = desconexion_cejes.find(id);
+            auto it2 = desconexion_cejes.find(id.id);
             if (it2 != desconexion_cejes.end()) {
                 desconexion_cejes.erase(it2);
                 update();
@@ -202,8 +202,8 @@ public:
                 if (msg == "Nominal") msg = "Reverse";
                 else if (msg == "Reverse") msg = "Nominal";
             }
-            averia_cejes.erase(id);
-            desconexion_cejes.erase(id);
+            averia_cejes.erase(id.id);
+            desconexion_cejes.erase(id.id);
             bool averia = !averia_cejes.empty() || !desconexion_cejes.empty();
             auto now = get_milliseconds();
             for (int i=0; i<num; i++) {
@@ -384,14 +384,14 @@ public:
         }, tiempo_auto_prenormalizacion_tren);
     }
 
-    void asignar_cejes(std::map<std::string,std::vector<std::string>> &cejes_to_cvs)
+    void asignar_cejes(std::map<id_elemento,std::vector<id_elemento>> &cejes_to_cvs)
     {
         for (auto &[idce, pos] : cejes) {
             auto it = cejes_to_cvs.find(idce);
             if (it != cejes_to_cvs.end()) {
                 for (auto &idcv : it->second) {
-                    if (idcv != id) {
-                        pos.cv_colateral = idcv;
+                    if (idcv != id.id) {
+                        pos.cv_colateral = idcv.id;
                     }
                 }
             }

@@ -2,7 +2,7 @@
 #include "ruta.h"
 #include "items.h"
 #include "pn_enclavado.h"
-seccion_via::seccion_via(const std::string &id, const json &j, TipoSeccion tipo) : id(id), bloqueo_asociado(j.value("Bloqueo", "")), tipo(tipo), id_cv(j.value("CV", id))
+seccion_via::seccion_via(const id_elemento &id, const json &j, TipoSeccion tipo) : id(id), bloqueo_asociado(j.contains("Bloqueo") ? std::optional<id_elemento>(id_elemento(j["Bloqueo"])) : std::nullopt), tipo(tipo), id_cv(j.value("CV", id.id))
 {
     if (tipo == TipoSeccion::Lineal) {
         active_outs[Lado::Impar][0] = 0;
@@ -23,7 +23,7 @@ seccion_via::seccion_via(const std::string &id, const json &j, TipoSeccion tipo)
     if (j.contains("Conexiones")) {
         siguientes_secciones = j["Conexiones"];
     }
-    trayecto = j.value("Trayecto", bloqueo_asociado != "");
+    trayecto = j.value("Trayecto", bloqueo_asociado.has_value());
 }
 void seccion_via::asegurar(ruta *ruta, int in, int out, Lado dir)
 {
@@ -60,13 +60,13 @@ TipoMovimiento seccion_via::get_tipo_movimiento()
 {
     if (ruta_asegurada)
         return ruta_asegurada->ruta_asegurada->tipo;
-    if (bloqueo_asociado != "") {
+    if (bloqueo_asociado) {
         if (bloqueo_act.estado != EstadoBloqueo::Desbloqueo && bloqueo_act.estado != EstadoBloqueo::SinDatos)
             return TipoMovimiento::Itinerario;
     }
     return TipoMovimiento::Ninguno;
 }
-void seccion_via::message_cv(const std::string &id, estado_cv ev)
+void seccion_via::message_cv(const id_elemento &id, estado_cv ev)
 {
     if (id != id_cv) return;
     if (ev.evento && ev.evento->ocupacion && ev.estado > EstadoCV::Prenormalizado && ocupacion_outs[Lado::Impar] < 0 && ocupacion_outs[Lado::Par] < 0) {
@@ -84,7 +84,7 @@ void seccion_via::message_cv(const std::string &id, estado_cv ev)
     if (ev.evento && ev.evento->ocupacion && ev.estado > EstadoCV::Prenormalizado) {
         bool intempestiva = false;
         if (trayecto) {
-            if (bloqueo_asociado != "" && bloqueo_act.estado != (ev.evento->lado == Lado::Impar ? EstadoBloqueo::BloqueoImpar : EstadoBloqueo::BloqueoPar) && bloqueo_act.ruta[ev.evento->lado] != TipoMovimiento::Maniobra) {
+            if (bloqueo_asociado && bloqueo_act.estado != (ev.evento->lado == Lado::Impar ? EstadoBloqueo::BloqueoImpar : EstadoBloqueo::BloqueoPar) && bloqueo_act.ruta[ev.evento->lado] != TipoMovimiento::Maniobra) {
                 //intempestiva = true;
             }
         } else {
@@ -145,7 +145,7 @@ std::pair<seccion_via*,Lado> seccion_via::get_seccion_in(Lado dir, int pin)
 {
     Lado lado = opp_lado(dir);
     auto &sigs = siguientes_secciones[lado];
-    if (pin < 0 || pin >= sigs.size()) return {nullptr, Lado::Impar};
+    if (pin < 0 || pin >= sigs.size()) return {nullptr, dir};
     return {secciones[sigs[pin].id],sigs[pin].invertir_paridad ? lado : dir};
 }
 
@@ -196,6 +196,6 @@ int seccion_via::get_out(seccion_via* next, Lado dir)
 }
 void from_json(const json &j, seccion_via::conexion &conex)
 {
-    conex.id = j["Id"];
+    conex.id = id_elemento(j["Id"]);
     conex.invertir_paridad = j.value("Reverse", false);
 }

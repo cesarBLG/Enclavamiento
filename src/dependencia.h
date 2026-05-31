@@ -18,27 +18,29 @@ struct dependencia
     bool cerrada = false;
     std::string mando_especial_pendiente;
     std::set<ruta*> rutas;
-    std::map<std::string, bloqueo*> bloqueos;
+    std::map<id_elemento, bloqueo*> bloqueos;
+    bool bloqueo_agujas = false;
     std::optional<config_servicio_intermitente> servicio_intermitente;
     TipoSoneria soneria;
     dependencia(const std::string id, const json &j);
     void update()
     {
-        std::map<std::string, ruta*> movimiento_bloqueos;
-        std::set<std::string> anular_bloqueos;
-        std::set<std::string> solicitud_bloqueos;
+        std::map<id_elemento, ruta*> movimiento_bloqueos;
+        std::set<id_elemento> anular_bloqueos;
+        std::set<id_elemento> solicitud_bloqueos;
         // Para cada bloqueo de salida, indicar el itinerario o maniobra establecido
         for (auto *ruta : rutas) {
             ruta->update();
+            if (!ruta->bloqueo_salida) continue;
             if (ruta->is_mandada()) {
-                movimiento_bloqueos[ruta->bloqueo_salida] = ruta;
-                if (ruta->tipo == TipoMovimiento::Itinerario) solicitud_bloqueos.insert(ruta->bloqueo_salida);
+                movimiento_bloqueos[*ruta->bloqueo_salida] = ruta;
+                if (ruta->tipo == TipoMovimiento::Itinerario) solicitud_bloqueos.insert(*ruta->bloqueo_salida);
             } else {
                 if (ruta->anulacion_bloqueo_pendiente) {
                     ruta->anulacion_bloqueo_pendiente = false;
-                    anular_bloqueos.insert(ruta->bloqueo_salida);
+                    anular_bloqueos.insert(*ruta->bloqueo_salida);
                 }
-                if (ruta->get_estado_fai() == EstadoFAI::Solicitud) solicitud_bloqueos.insert(ruta->bloqueo_salida);
+                if (ruta->get_estado_fai() == EstadoFAI::Solicitud) solicitud_bloqueos.insert(*ruta->bloqueo_salida);
             }
         }
         TipoSoneria son = TipoSoneria::Apagada;
@@ -91,6 +93,31 @@ struct dependencia
             if (cerrada && set_servicio_intermitente(false)) {
                 log(id, "abrir estación", LOG_DEBUG);
                 return RespuestaMando::Aceptado;
+            }
+        } else if (cmd == "LD") {
+            send_message("luz", "día", 0, true);
+            log(id, "luz día", LOG_DEBUG);
+            return RespuestaMando::Aceptado;
+        } else if (cmd == "LN") {
+            send_message("luz", "noche", 0, true);
+            log(id, "luz noche", LOG_DEBUG);
+            return RespuestaMando::Aceptado;
+        } else if (cmd == "LD") {
+        } else if (cmd == "BCA") {
+            if (!bloqueo_agujas) {
+                bloqueo_agujas = true;
+                return RespuestaMando::Aceptado;
+            }
+        } else if (cmd == "DCA") {
+            if (bloqueo_agujas) {
+                if (me) {
+                    bloqueo_agujas = false;
+                    return RespuestaMando::Aceptado;
+                } else {
+                    me_pendiente = true;
+                    send_state();
+                    return RespuestaMando::MandoEspecialNecesario;
+                }
             }
         } else if (cmd == "RST") {
             if (me) {

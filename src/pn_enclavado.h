@@ -4,7 +4,7 @@
 class pn_enclavado
 {
 public:
-    const std::string id;
+    const id_elemento id;
     const std::string topic;
 protected:
     seccion_via *seccion;
@@ -21,7 +21,7 @@ protected:
     std::shared_ptr<timer> temporizador_apertura;
     lados<int64_t> tiempo_apertura;
 public:
-    pn_enclavado(const std::string &id, const json &j);
+    pn_enclavado(const id_elemento &id, const json &j);
     void send_state()
     {
         if (mando_cierre != prev_state) log(id, mando_cierre ? "cierre" : "apertura");

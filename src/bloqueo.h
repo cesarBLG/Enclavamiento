@@ -12,7 +12,7 @@ public:
     const std::string estacion;
     const std::string estacion_colateral;
     const std::string via;
-    const std::string id;
+    const id_elemento id;
     const TipoBloqueo tipo;
     const Lado lado;
     const EstadoBloqueo bloqueo_emisor;
@@ -32,30 +32,7 @@ protected:
     std::map<TipoSoneria,int64_t> sonerias;
 public:
     bloqueo(const std::string &estacion, const json &j);
-    void send_state()
-    {
-        bloqueo_siguiente = bloqueo_vinculado != nullptr;
-        estado_completo.estado = estado;
-        estado_completo.ocupado = ocupado.impar || ocupado.par;
-        for (int i=0; i<2; i++) {
-            Lado l = i == 0 ? lado : opp_lado(lado);
-            estado_bloqueo_lado &e = i == 0 ? *((estado_bloqueo_lado*)this) : colateral;
-            estado_bloqueo_lado &o = i == 1 ? *((estado_bloqueo_lado*)this) : colateral;
-            estado_completo.actc[l] = o.actc;
-            estado_completo.cierre_señales[l] = o.cierre_señales;
-            estado_completo.escape[l] = e.escape;
-            estado_completo.mando_estacion[l] = e.mando_estacion;
-            estado_completo.maniobra_compatible[l] = e.maniobra_compatible;
-            estado_completo.prohibido[l] = o.prohibido;
-            estado_completo.ruta[l] = e.ruta;
-            estado_completo.prioridad_itinerario[l] = e.prioridad_itinerario;
-        }
-        json j = *((estado_bloqueo_lado*)this);
-        send_message(topic_colateral, j.dump());
-        j = estado_completo;
-        send_message(topic, j.dump());
-        remota_cambio_elemento(ElementoRemota::BLQ, id);
-    }
+    void send_state();
     bool bloqueo_permitido(bool propio)
     {
         // Condiciones para establecer bloqueo en un sentido:
@@ -317,6 +294,7 @@ public:
         return cvs;
     }
 
-    void message_cv(const std::string &id, estado_cv ecv);
-    void vincular(const std::string &id, bool propagacion_completa=false);
+    void message_cv(const id_elemento &id, estado_cv ecv);
+    void vincular(const id_elemento &id, bool propagacion_completa=false);
+    void desvincular();
 };

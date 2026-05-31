@@ -54,7 +54,7 @@ public:
     comprobacionN.update();
     comprobacionI.update();
     update_comprobacion();
-    if (mando >= 0 && millis() - tiempoMando > 2000) {
+    if (mando >= 0 && (millis() - tiempoMando > 200 || mando == comprobacion)) {
       digitalWrite(pinMotorN, LOW);
       digitalWrite(pinMotorI, LOW);
       mando = -1;
