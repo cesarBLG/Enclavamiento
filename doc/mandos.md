@@ -16,7 +16,7 @@ Estructura: *comando* *dependencia* *id*
 - ASA: anular sucesión automática
 - AFA: anular FAI
 - CS: cierre de señal
-- NPS (solo señales de trayecto): normalizar señal
+- NPS (solo señales de trayecto): normalizar señal (cancelar orden de cierre)
 
 # Ruta
 Estructura: *comando* *dependencia* *id_inicio* *id_fin*

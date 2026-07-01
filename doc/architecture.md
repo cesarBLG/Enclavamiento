@@ -14,9 +14,9 @@ de detección en campo (contadores de ejes). El funcionamiento es el siguiente:
 - El mensaje recibido de un contador de ejes incrementa o disminuye un contador
   que incluye el número de ejes en el CV.
 - Dos mensajes se asignan al mismo tren si transcurren menos de 15 segundos entre ellos
-- Se establece un temporizador que prenormaliza de forma automática el cantón tras la liberación
-  de. al menos, el 50% de los ejes de cada tren.
-- Se establece un temporizador que prenormaliza de forma automática e incondicional el cantón
+- Se establece un margen de fiabilidad que prenormaliza de forma automática el cantón tras la liberación
+  de. al menos, el 75% (configurable) de los ejes de cada tren.
+- Se establece un temporizador que prenormaliza de forma automática e incondicional el cantón (desactivado por defecto)
 
 Cada CV debe estar gestionado por un único enclavamiento, que deberá crear una clase *cv_impl*
 por cada CV que gestione. El resto de enclavamientos podrán acceder al estado de dicho CV usando
@@ -28,7 +28,8 @@ Sección de vía
 Representa cada elemento individual que construye la topología de la vía, indicando las conexiones
 con secciones de vía adyacentes. Puede corresponder a un CV lineal, una aguja, travesía, cruzamiento...
 Como norma general, cada sección de vía estará protegida por un CV. Existirá un CV por cada
-sección de vía, excepto en CV de agujas, que podrán abarcar varias agujas.
+sección de vía, excepto en CV de agujas, que podrán abarcar varias agujas. Es posible definir secciones sin
+CV, por ejemplo, para evitar instalar CVs en zonas de agujas.
 
 Por cada lado de la sección (par o impar), se asigna un número (pin) a cada punto de entrada a la sección.
 La sección de vía asigna un pin de salida para cada pin de entrada. Algunos ejemplos:
@@ -89,7 +90,9 @@ movimientos incompatibles. Pueden ser de itinerario (para circulación de trenes
 - Formación automática de itinerarios (FAI): establece la ruta de forma automática cuando un tren
   se acerca a la estación, siempre que la estación colateral autorice la apertura de la señal
   de salida. Si no se autorizan salidas (bloqueo prohibido o A/CTC denegada), no se establece el
-  itinerario.
+  itinerario. En caso de que el FAI esté establecido en dos estaciones colaterales, se transmite
+  entre ellas una prioridad respecto a qué señal debe abrir primero, en función de si hay personal
+  en la estación y el tiempo que lleva esperando cada tren.
 
 Los estados de una ruta pueden ser:
 - Desenclavada: situación inicial, sin establecer
@@ -131,15 +134,16 @@ Además, la clase *dependencia* gestiona la relación entre bloqueos y movimient
 Paso a nivel (PN)
 -----------------
 Gestiona la orden de cierre del PN. El PN se cierra si:
-- El CV del PN está ocupado
-- Existe una ruta establecida a través del PN con tren en su proximidad.
+- El CV del PN está ocupado.
+- Se ocupa la proximidad del PN o de una ruta que recorra el PN.
 - Se establece el mando individual de cierre.
 
-Cuando dejan de cumplirse todas las condiciones, el PN abre. También abre estando el CV
-ocupado si el resto de condiciones de cierre no se cumplen tras finalizar un temporizador.
+Para cada lado, el PN puede comportarse de dos formas:
+- Automático: el PN se cierra cuando se ocupa la proximidad, y se abre cuando se libera el CV del PN
+- Afectado: el PN se cierra cuando una ruta hacia el PN se establece y el tren ocupa su proximidad. El PN se abre igual que en automático.
+- Enclavado: el PN se cierra mientras la sección de vía esté reservada, desde el momento en que se ocupa la proximidad de la ruta. Se abre al desenclavar la ruta.
 
-Para la apertura de señales en itinerario o rebase, se requiere comprobación de campo
-de que el PN está cerrado.
+Existe una temporización que abre el PN con el CV ocupado.
 
 Remota
 ------

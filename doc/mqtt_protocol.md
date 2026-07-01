@@ -25,6 +25,9 @@ El cliente asumirá el estado seguro para un topic si:
 Además, el cliente rechazará nuevos mensajes si recibe el mensaje "off" del gestor de conexión,
 hasta que vuelva a estar disponible.
 
+Algunos clientes pueden enviar el mensaje "\"conexion\"" (con comillas) a un topic para indicar que vuelve
+a estar disponible tras la desconexión.
+
 # Topic reference
 Todos los topics relativos a elementos de campo siguen el formato *tipo*/*dependencia*/*id*/*topic*
 Si el ID contiene barras (/), se cambiarán por guiones bajos (_)
@@ -42,3 +45,6 @@ Si el ID contiene barras (/), se cambiarán por guiones bajos (_)
   el bloqueo)
 - pn/+/+/cierre: bool, indica si el enclavamiento ordena el cierre
 - pn/+/+/protegido: bool, indica si el PN comprueba en cerrado
+- aguja/+/+/mando: int, posición a la que se manda la aguja 0=normal 1=invertida
+- aguja/+/+/comprobacion: int, indica si la aguja comprueba. vacío=sin comprobación, 0=normal, 1=invertida
+- mando/*nombrePLO*: string, usado para envíar mandos desde el PLO al enclavamiento
