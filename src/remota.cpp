@@ -92,7 +92,7 @@ void update_remota()
         if (sendall || r != imvs[id]) push(j, {ElementoRemota::IMV, id}, r);
         imvs[id] = r;
     }
-    for (auto &[id, cv] : cvs) {
+    for (auto &[id, cv] : cv_impls) {
         std::pair<ElementoRemota,id_elemento> comp(ElementoRemota::CV, id);
         if (sendall || update_components.find(comp) != update_components.end()) {
             json r;

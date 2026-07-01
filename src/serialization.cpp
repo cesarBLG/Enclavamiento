@@ -70,8 +70,9 @@ std::string to_string(CompatibilidadManiobra comp)
     switch(comp) {
         case CompatibilidadManiobra::Compatible: return "Compatible";
         case CompatibilidadManiobra::IncompatibleBloqueo: return "IncompatibleBloqueo";
+        case CompatibilidadManiobra::IncompatibleMovimiento: return "IncompatibleMovimiento";
         case CompatibilidadManiobra::IncompatibleItinerario: return "IncompatibleItinerario";
-        case CompatibilidadManiobra::IncompatibleManiobra: return "IncompatibleManiobra";
+        case CompatibilidadManiobra::Incompatible: return "Incompatible";
     }
     return "";
 }
@@ -216,9 +217,10 @@ void to_json(json &j, const CompatibilidadManiobra &comp)
 }
 void from_json(const json &j, CompatibilidadManiobra &comp)
 {
-    if (j == "IncompatibleManiobra") comp = CompatibilidadManiobra::IncompatibleManiobra;
+    if (j == "Incompatible") comp = CompatibilidadManiobra::Incompatible;
     else if (j == "IncompatibleBloqueo") comp = CompatibilidadManiobra::IncompatibleBloqueo;
-    else if (j == "IncompatibleManiobra") comp = CompatibilidadManiobra::IncompatibleManiobra;
+    else if (j == "IncompatibleMovimiento") comp = CompatibilidadManiobra::IncompatibleMovimiento;
+    else if (j == "IncompatibleItinerario") comp = CompatibilidadManiobra::IncompatibleItinerario;
     else if (j == "Compatible") comp = CompatibilidadManiobra::Compatible;
 }
 void to_json(json &j, const TipoSeñal &tipo)
@@ -307,6 +309,7 @@ void to_json(json &j, const estado_bloqueo &estado)
     j["CantonesEntrada"] = estado.estado_cantones_inicio;
     j["ManiobraCompatible"] = estado.maniobra_compatible;
     j["MandoEstación"] = estado.mando_estacion;
+    j["EstaciónCerrada"] = estado.estacion_cerrada;
 }
 void from_json(const json &j, estado_bloqueo &estado)
 {
@@ -326,6 +329,7 @@ void from_json(const json &j, estado_bloqueo &estado)
     estado.estado_cantones_inicio = j["CantonesEntrada"];
     estado.maniobra_compatible = j["ManiobraCompatible"];
     estado.mando_estacion = j["MandoEstación"];
+    estado.estacion_cerrada = j["EstaciónCerrada"];
 }
 void to_json(json &j, const estado_bloqueo_lado &estado)
 {

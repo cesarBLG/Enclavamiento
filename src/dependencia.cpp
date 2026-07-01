@@ -1,17 +1,25 @@
 #include "dependencia.h"
 #include "items.h"
+void from_json(const json &j, config_señal_servicio_intermitente &cfg)
+{
+    cfg.abierta_desbloqueo = j.value("Desbloqueo", false);
+    cfg.abierta_bloqueo_receptor = j.value("BloqueoReceptor", false);
+}
+void from_json(const json &j, config_servicio_intermitente &cfg)
+{
+    if (j.contains("FAI")) {
+        cfg.fais = j["FAI"];
+    }
+    if (j.contains("SeñalesAbiertas")) {
+        cfg.señales_abiertas = j["SeñalesAbiertas"];
+    }
+}
 dependencia::dependencia(const std::string id, const json &j) : id(id), mando_actual({false, "PLO_"+id, std::nullopt, false})
 {
     if (j.contains("ServicioIntermitente")) {
         auto &si = j["ServicioIntermitente"];
         cerrada = si.value("Activo", false);
-        servicio_intermitente = config_servicio_intermitente();
-        if (si.contains("FAI")) {
-            servicio_intermitente->fais = si["FAI"];
-        }
-        if (si.contains("SeñalesAbiertas")) {
-            servicio_intermitente->señales_abiertas = si["SeñalesAbiertas"];
-        }
+        servicio_intermitente = si;
     }
 }
 void dependencia::calcular_vinculacion_bloqueos()
@@ -20,35 +28,36 @@ void dependencia::calcular_vinculacion_bloqueos()
     // o si las señales de la estación se deben comportar como un puesto de bloqueo, enlazando
     // los bloqueos de las estaciones colaterales
     for (auto &[id, bloq] : bloqueos) {
-        if (cerrada) {
-            std::optional<id_elemento> vinculo;
-            bool señal_ruta = false;
-            Lado dir = opp_lado(bloq->lado);
-            seccion_via *prev = bloq->get_cvs()[0];
-            seccion_via *sec = prev->siguiente_seccion(nullptr, dir, false);
-            while (sec != nullptr) {
-                if (sec->tipo == TipoSeccion::Aguja && !((aguja*)sec)->is_ruta_fija(prev, dir)) break;
-                auto *sig = sec->señal_inicio(dir, prev);
-                if (sig != nullptr && señal_impls.find(sig->id) != señal_impls.end() && señal_impls[sig->id]->ruta_necesaria)
-                    señal_ruta = true;
-                if (sec->bloqueo_asociado) {
-                    for (auto &[id2, bloq2] : bloqueos) {
-                        if (bloq2->get_cvs()[0] == sec) {
-                            vinculo = id2;
-                            break;
-                        }
+        std::optional<id_elemento> vinculo;
+        bool señal_ruta = false;
+        Lado dir = opp_lado(bloq->lado);
+        seccion_via *prev = bloq->get_cvs()[0];
+        seccion_via *sec = prev->siguiente_seccion(nullptr, dir, false);
+        while (sec != nullptr) {
+            auto *sig = sec->señal_inicio(dir, prev);
+            if (sig != nullptr && señal_impls.find(sig->id) != señal_impls.end() && señal_impls[sig->id]->ruta_necesaria)
+                señal_ruta = true;
+            if (sec->bloqueo_asociado) {
+                for (auto &[id2, bloq2] : bloqueos) {
+                    if (bloq2->get_cvs()[0] == sec) {
+                        vinculo = id2;
+                        break;
                     }
-                    break;
                 }
-                auto *next = sec->siguiente_seccion(prev, dir, false);
-                prev = sec;
-                sec = next;
+                break;
             }
-            if (vinculo) bloq->vincular(*vinculo, !señal_ruta);
-            else bloq->desvincular();
-        } else {
-            bloq->desvincular();
+            seccion_via *next;
+            if (sec->tipo == TipoSeccion::Aguja) {
+                aguja *ag = (aguja*)sec;
+                next = ag->ruta_fija(prev, dir);
+            } else {
+                next = sec->siguiente_seccion(prev, dir, false);
+            }
+            prev = sec;
+            sec = next;
         }
+        if (vinculo) bloq->vincular(*vinculo, !señal_ruta);
+        else bloq->desvincular();
     }
 }
 bool dependencia::set_servicio_intermitente(bool cerrar)
@@ -61,8 +70,6 @@ bool dependencia::set_servicio_intermitente(bool cerrar)
             seccion_via *prev = bloq->get_cvs()[0];
             seccion_via *sec = prev->siguiente_seccion(nullptr, dir, false);
             while (sec != nullptr) {
-                if (sec->tipo == TipoSeccion::Aguja && !((aguja*)sec)->is_ruta_fija(prev, dir)) break;
-                auto *sig = sec->señal_inicio(dir, prev);
                 if (sec->bloqueo_asociado) {
                     for (auto &[id2, bloq2] : bloqueos) {
                         if (bloq2->get_cvs()[0] == sec) {
@@ -75,9 +82,24 @@ bool dependencia::set_servicio_intermitente(bool cerrar)
                     }
                     break;
                 }
-                auto *next = sec->siguiente_seccion(prev, dir, false);
+                seccion_via *next;
+                if (sec->tipo == TipoSeccion::Aguja) {
+                    aguja *ag = (aguja*)sec;
+                    next = ag->ruta_fija(prev, dir);
+                } else {
+                    next = sec->siguiente_seccion(prev, dir, false);
+                }
                 prev = sec;
                 sec = next;
+            }
+        }
+        // Comprobar agujas
+        for (auto &[id, pins] : servicio_intermitente->posicion_aparatos) {
+            seccion_via *sec = ::secciones[id_elemento(id)];
+            if (sec->tipo == TipoSeccion::Aguja) {
+                aguja *a = (aguja*)sec;
+                auto pos = a->get_posicion(Lado::Impar, pins.first, pins.second);
+                if (!a->posible_mover(pos)) return false;
             }
         }
     }
@@ -94,9 +116,11 @@ bool dependencia::set_servicio_intermitente(bool cerrar)
     }
     for (auto &[ids, sig] : señal_impls) {
         if (ids.dependencia == id) {
-            if (servicio_intermitente->señales_abiertas.find(ids.id_corto) != servicio_intermitente->señales_abiertas.end()) {
+            auto it = servicio_intermitente->señales_abiertas.find(ids.id_corto);
+            if (it != servicio_intermitente->señales_abiertas.end()) {
                 sig->cierre_stick = !cerrar;
                 sig->ruta_necesaria = !cerrar;
+                sig->abierta_desbloqueo = cerrar && it->second.abierta_desbloqueo;
                 if (cerrar) sig->clear_request = true;
                 else if (sig->ruta_activa == nullptr) sig->clear_request = false;
             } else {
@@ -104,6 +128,17 @@ bool dependencia::set_servicio_intermitente(bool cerrar)
                 bool clear = sig->ruta_activa != nullptr || !sig->ruta_necesaria;
                 if (cerrar) sig->clear_request |= clear;
                 else sig->clear_request &= clear;
+            }
+        }
+    }
+    if (!bloqueo_agujas) {
+        // Mover agujas
+        for (auto &[id, pins] : servicio_intermitente->posicion_aparatos) {
+            seccion_via *sec = ::secciones[id_elemento(id)];
+            if (sec->tipo == TipoSeccion::Aguja) {
+                aguja *a = (aguja*)sec;
+                auto pos = a->get_posicion(Lado::Impar, pins.first, pins.second);
+                a->mover(pos);
             }
         }
     }

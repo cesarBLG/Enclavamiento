@@ -17,6 +17,7 @@ struct estado_bloqueo
     lados<int> prioridad_itinerario;
     lados<CompatibilidadManiobra> maniobra_compatible;
     lados<estado_mando> mando_estacion;
+    lados<bool> estacion_cerrada;
     bool operator<=>(const estado_bloqueo &o) const = default;
 };
 struct estado_bloqueo_lado

@@ -11,6 +11,62 @@ tipo(j.value("Tipo", TipoBloqueo::BAU)), bloqueo_emisor(lado == Lado::Impar ? Es
         cvs.push_back(secciones[id_elemento(cv)]);
     }
 }
+bool bloqueo::bloqueo_permitido(bool emisor)
+{
+    // Condiciones para establecer bloqueo en un sentido:
+    // - Sin bloqueo establecido
+    // - Trayecto libre de trenes
+    // - Sin escape de material
+    // - No está establecido el itinerario de salida en la colateral
+    // - No está establecida una maniobra de salida en la colateral incompatible con el bloqueo
+    // - No está prohibido el bloqueo
+    // - Si no existe posibilidad de cruce en la colateral (estación cerrada sin agujas talonables),
+    //   el bloqueo debe también poder establecerse de la colateral a la estación siguiente 
+    if (estado == EstadoBloqueo::Desbloqueo && colateral.estado == EstadoBloqueo::Desbloqueo && !ocupado[emisor ? opp_lado(lado) : lado] && !escape && !colateral.escape) {
+        if (emisor) {
+            if (colateral.ruta == TipoMovimiento::Maniobra) {
+                if (colateral.maniobra_compatible <= CompatibilidadManiobra::IncompatibleBloqueo)
+                    return false;
+                /*if (colateral.maniobra_compatible < CompatibilidadManiobra::Compatible && dependencias[estacion]->cerrada)
+                    return false;*/
+            }
+            return !colateral.prohibido && colateral.ruta != TipoMovimiento::Itinerario;
+        } else {
+            if (bloqueo_vinculado != nullptr && bloqueo_vinculado->estado != bloqueo_vinculado->bloqueo_emisor) {
+                if (bloqueo_vinculado->colateral.bloqueo_siguiente || propagacion_completa)
+                    return false;
+                else if (bloqueo_vinculado->estado != EstadoBloqueo::Desbloqueo)
+                    return false;
+            }
+            if (ruta == TipoMovimiento::Maniobra) {
+                if (maniobra_compatible <= CompatibilidadManiobra::IncompatibleBloqueo)
+                    return false;
+            }
+            return !prohibido && ruta != TipoMovimiento::Itinerario;
+        }
+    }
+    return false;
+}
+bool bloqueo::desbloqueo_permitido()
+{
+    // Condiciones para el desbloqueo de un sentido:
+    // - No está establecido el itinerario de salida
+    // - El trayecto está libre de trenes
+    // - No está establecido el cierre de señales por la colateral
+    // - Si no existe posibilidad de cruce en la estación emisora (estación cerrada sin agujas talonables),
+    //   esta estación no puede ser receptora de otro bloqueo
+    if (ruta == TipoMovimiento::Itinerario || colateral.ruta == TipoMovimiento::Itinerario || ocupado.par || ocupado.impar) return false;
+    if (tipo == TipoBloqueo::BAD || tipo == TipoBloqueo::BLAD) return false;
+    if (estado == bloqueo_emisor) {
+        if (bloqueo_vinculado != nullptr && (colateral.bloqueo_siguiente || bloqueo_vinculado->propagacion_completa) && (bloqueo_vinculado->estado == bloqueo_vinculado->bloqueo_receptor || bloqueo_vinculado->colateral.estado_objetivo == bloqueo_vinculado->bloqueo_receptor || bloqueo_vinculado->estado == EstadoBloqueo::SinDatos)) {
+            return false;
+        }
+        return !colateral.cierre_señales;
+    } else if (estado == bloqueo_receptor) {
+        return !cierre_señales;
+    }
+    return true;
+}
 void bloqueo::send_state()
 {
     bloqueo_siguiente = bloqueo_vinculado != nullptr;
@@ -29,6 +85,7 @@ void bloqueo::send_state()
         estado_completo.prohibido[l] = o.prohibido;
         estado_completo.ruta[l] = e.ruta;
         estado_completo.prioridad_itinerario[l] = e.prioridad_itinerario;
+        estado_completo.estacion_cerrada[l] = e.cerrada;
     }
     json j = *((estado_bloqueo_lado*)this);
     send_message(topic_colateral, j.dump());
@@ -124,10 +181,12 @@ void bloqueo::message_cv(const id_elemento &id, estado_cv ecv)
 void bloqueo::desvincular()
 {
     if (bloqueo_vinculado != nullptr) {
-        bloqueo_vinculado->bloqueo_vinculado = nullptr;
+        auto *blq = bloqueo_vinculado;
         bloqueo_vinculado = nullptr;
+        blq->desvincular();
         this->propagacion_completa = false;
         log(this->id, "desvinculado");
+        if (estado == bloqueo_emisor && desbloqueo_permitido() && dependencias[estacion]->cerrada) estado_objetivo = EstadoBloqueo::Desbloqueo;
         update();
     }
 }
@@ -139,6 +198,7 @@ void bloqueo::vincular(const id_elemento &id, bool propagacion_completa)
     bloqueo_vinculado->bloqueo_vinculado = this;
     log(this->id, "vinculado a "+id.id);
     update();
+    bloqueo_vinculado->update();
 }
 void bloqueo::update()
 {
@@ -195,7 +255,7 @@ void bloqueo::update()
         estado_objetivo = estado;
         log(id, "solicitud cancelada, bloqueo no posible", LOG_DEBUG);
     }
-    if (colateral.escape && (bloqueo_vinculado == nullptr || !propagacion_completa || !bloqueo_vinculado->escape) && dependencias[estacion]->cerrada) {
+    if (colateral.escape && (bloqueo_vinculado == nullptr || !bloqueo_vinculado->escape) && dependencias[estacion]->cerrada) {
         normalizar_escape = true;
     }
     if (normalizar_escape && (!colateral.escape || !desbloqueo_permitido())) {
@@ -240,9 +300,19 @@ void bloqueo::update()
             return;
         }
     }
-    // Si no es posible realizar cruces en esta estación, y la colateral en un sentido solicita el bloqueo, propagar a la otra colateral
+    // Solicitar bloqueo si:
+    // - Está establecido un itinerario de salida
+    // - Si el bloqueo vinculado está solicitado en sentido receptor, si hay propagación completa
+    //   Si no hay propagación, permite hacer maniobras en la colateral deteniendo el tren en esta estación,
+    //   aunque se impide el bloqueo receptor en esta estación
     if ((ruta == TipoMovimiento::Itinerario || (bloqueo_vinculado != nullptr && bloqueo_vinculado->colateral.estado_objetivo == bloqueo_vinculado->bloqueo_receptor && (colateral.bloqueo_siguiente || bloqueo_vinculado->propagacion_completa))) && bloqueo_permitido(true)) {
         estado_objetivo = bloqueo_emisor;
+    }
+    if (bloqueo_vinculado != nullptr) {
+        if (dependencias[estacion]->cerrada) {
+            if (estado == bloqueo_receptor && bloqueo_vinculado->estado == bloqueo_vinculado->bloqueo_emisor) cierre_señales = bloqueo_vinculado->colateral.cierre_señales;
+            prohibido = bloqueo_vinculado->colateral.prohibido;
+        }
     }
     send_state();
 }

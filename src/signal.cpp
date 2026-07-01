@@ -34,9 +34,13 @@ void señal_impl::determinar_aspecto()
     bool comprobar_ruta = ruta_activa != nullptr && !ruta_activa->get_secciones().empty() && ruta_activa->get_secciones().back().seccion != seccion_prev;
     // Nombre del bloqueo asociado
     std::optional<id_elemento> bloq_id = bloqueo_asociado;
-    if (!bloq_id && ruta_activa != nullptr && ruta_activa->bloqueo_salida) {
+    bool salida_trayecto = (tipo == TipoSeñal::Salida || tipo == TipoSeñal::Entrada) && bloq_id;
+    if (ruta_activa != nullptr && ruta_activa->bloqueo_salida) {
         auto &señales = ruta_activa->get_señales();
-        if (señales.empty() || señales.back().first == this || tipo == TipoSeñal::Salida) bloq_id = ruta_activa->bloqueo_salida;
+        if (señales.empty() || señales.back().first == this) {
+            if (!bloq_id) bloq_id = ruta_activa->bloqueo_salida;
+            salida_trayecto = true;
+        }
     }
     if (ruta_activa != nullptr) {
         auto &señales = ruta_activa->get_señales();
@@ -72,7 +76,10 @@ void señal_impl::determinar_aspecto()
                 cerrar = true;
         }
         if (sec_act->is_asegurada() && (ruta_activa == nullptr || !sec_act->is_asegurada(ruta_activa))) cerrar = true;
-        if (!bloq_id && sec_act->bloqueo_asociado) bloq_id = sec_act->bloqueo_asociado;
+        if (sec_act->bloqueo_asociado) {
+            if (!bloq_id) bloq_id = sec_act->bloqueo_asociado;
+            if (tipo == TipoSeñal::Salida || tipo == TipoSeñal::Entrada) salida_trayecto = true;
+        }
         sec_prv = sec_act;
         sec_act = next;
         if (sec_act != nullptr) sig_señal = sec_act->señal_inicio(dir, sec_prv);
@@ -96,19 +103,19 @@ void señal_impl::determinar_aspecto()
         // Impedir maniobra de salida en caso de escape de material propio, salvo que la maniobra sea compatible con bloqueo receptor
         cerrar |= bloqueo_act.escape[lado] && ruta_activa != nullptr && (ruta_activa->maniobra_compatible <= CompatibilidadManiobra::IncompatibleBloqueo || ruta_activa->tipo != TipoMovimiento::Maniobra);
         // Cerrar maniobra de salida si no se pueden hacer maniobras simultáneas en ambas estaciones
-        cerrar |= tipo_opp == TipoMovimiento::Maniobra && bloqueo_act.maniobra_compatible[opp_lado(dir)] == CompatibilidadManiobra::IncompatibleManiobra;
+        cerrar |= tipo_opp == TipoMovimiento::Maniobra && (bloqueo_act.maniobra_compatible[opp_lado(dir)] == CompatibilidadManiobra::Incompatible || bloqueo_act.maniobra_compatible[opp_lado(dir)] == CompatibilidadManiobra::IncompatibleMovimiento);
         // Cerrar señales intermedias y de salida si se establece el cierre de señales de bloqueo
         cerrar |= bloqueo_act.cierre_señales[dir];
         // Cerrar señales intermedias y de salida si no está establecido el bloqueo en ese sentido
         // Permitir apertura en desbloqueo de la señal de salida en estaciones cerradas
         // Las señales avanzadas abren según el aspecto de la señal de entrada
         // Las pantallas virtuales no abren sin bloqueo establecido, pero la condición de cierre se establece más adelante
-        cerrar_itinerario |= bloqueo_act.estado != (dir == Lado::Impar ? EstadoBloqueo::BloqueoImpar : EstadoBloqueo::BloqueoPar) && tipo != TipoSeñal::Avanzada && !señal_virtual && (tipo == TipoSeñal::Intermedia || ruta_necesaria || bloqueo_act.estado != EstadoBloqueo::Desbloqueo || tipo_opp == TipoMovimiento::Itinerario);
+        cerrar_itinerario |= bloqueo_act.estado != (dir == Lado::Impar ? EstadoBloqueo::BloqueoImpar : EstadoBloqueo::BloqueoPar) && tipo != TipoSeñal::Avanzada && !señal_virtual && (tipo == TipoSeñal::Intermedia || !abierta_desbloqueo || bloqueo_act.estado != EstadoBloqueo::Desbloqueo || tipo_opp == TipoMovimiento::Itinerario);
         // Cerrar el itinerario de salida si la estación colateral está realizando maniobras,
         // y no hay señales intermedias suficientes que puedan proteger la maniobra
-        cerrar_itinerario |= tipo_opp == TipoMovimiento::Maniobra && bloqueo_act.maniobra_compatible[opp_lado(dir)] == CompatibilidadManiobra::IncompatibleItinerario;
+        cerrar_itinerario |= tipo_opp == TipoMovimiento::Maniobra && bloqueo_act.maniobra_compatible[opp_lado(dir)] < CompatibilidadManiobra::Compatible;
         // No permitir la apertura en itinerario de la señal de salida con bloqueo prohibido o A/CTC denegada
-        prohibir_abrir_itinerario |= tipo == TipoSeñal::Salida && (bloqueo_act.prohibido[dir] || bloqueo_act.actc[dir] == ACTC::Denegada || (!ruta_necesaria && bloqueo_act.prioridad_itinerario[dir] < bloqueo_act.prioridad_itinerario[opp_lado(dir)]));
+        prohibir_abrir_itinerario |= salida_trayecto && (bloqueo_act.prohibido[dir] || bloqueo_act.actc[dir] == ACTC::Denegada || (!ruta_necesaria && bloqueo_act.prioridad_itinerario[dir] < bloqueo_act.prioridad_itinerario[opp_lado(dir)]));
     }
     // Cerrar señal con el cantón ocupado en sentido contrario
     cerrar_itinerario |= canton == EstadoCanton::Ocupado;
@@ -342,7 +349,8 @@ estado_inicio_ruta señal_impl::get_estado_inicio()
 }
 void señal_impl::message_cv(const id_elemento &id, estado_cv ev)
 {
-    if (id != get_id_cv_inicio()) return;
+    cv *cv_inicio = get_cv_inicio();
+    if (cv_inicio == nullptr || cv_inicio->id != id) return;
 
     // Con el paso de la circulación se cierra la señal, salvo en maniobras
     if (ruta_activa != nullptr && ruta_activa->tipo != TipoMovimiento::Maniobra && (!sucesion_automatica || ruta_activa->tipo != TipoMovimiento::Itinerario) && ev.evento && ev.evento->ocupacion && ev.evento->lado == lado && (aspecto != Aspecto::Parada || get_milliseconds() - ultimo_paso_abierta > 30000)) {
@@ -365,16 +373,16 @@ void señal_impl::message_cv(const id_elemento &id, estado_cv ev)
         }
     }
 }
-const id_elemento &señal_impl::get_id_cv_inicio()
+cv* señal_impl::get_cv_inicio()
 {
     auto *sec = seccion;
     auto *prv = seccion_prev;
     Lado dir = lado;
     while (sec != nullptr) {
-        if (sec->get_cv() != nullptr) return sec->id_cv;
+        if (sec->get_cv() != nullptr) return sec->get_cv();
         auto next = sec->siguiente_seccion(prv, dir, false);
         prv = sec;
         sec = next;
     }
-    return seccion->id_cv;
+    return nullptr;
 }

@@ -54,6 +54,7 @@ public:
 
     bool ruta_necesaria = true;
     bool cierre_stick;
+    bool abierta_desbloqueo = false;
 
     ruta *ruta_fin=nullptr;
     ruta *ruta_fai=nullptr;
@@ -71,7 +72,7 @@ public:
     void determinar_aspecto();
     void update();
     void message_cv(const id_elemento &id, estado_cv ev);
-    const id_elemento &get_id_cv_inicio();
+    cv* get_cv_inicio();
     void message_señal(estado_señal est) override {}
     RespuestaMando mando(const std::string &cmd, int me);
     std::pair<RemotaSIG, RemotaIMV> get_estado_remota();

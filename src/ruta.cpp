@@ -99,7 +99,7 @@ ruta::ruta(const std::string &estacion, const json &j) : estacion(estacion), tip
     }
     if (j.contains("PosiciónAparatos")) {
         for (auto &[sec_id, jpos] : j["PosiciónAparatos"].items()) {
-            posicion_aparatos[::secciones[sec_id]] = jpos;
+            posicion_aparatos[::secciones[id_elemento(sec_id)]] = jpos;
         }
     }
     if (j.contains("SecciónFin")) {
@@ -195,25 +195,30 @@ bool ruta::establecer()
         return false;
     }
     if (bloqueo_salida) {
-        // Existe una maniobra establecida en la colateral y no se permiten maniobras simultáneas
-        if (bloqueo_act.ruta[opp_lado(lado)] == TipoMovimiento::Maniobra) {
+        TipoMovimiento colat = bloqueo_act.ruta[opp_lado(lado)];
+        // Existe una maniobra establecida en la colateral y no se permiten movimientos simultáneos
+        if (colat == TipoMovimiento::Maniobra) {
             CompatibilidadManiobra compat = bloqueo_act.maniobra_compatible[opp_lado(lado)];
-            if (compat == CompatibilidadManiobra::IncompatibleManiobra) return false;
-            //else if (compat == CompatibilidadManiobra::IncompatibleItinerario && tipo == TipoMovimiento::Itinerario) return false;
+            if (compat == CompatibilidadManiobra::Incompatible || compat == CompatibilidadManiobra::IncompatibleMovimiento)
+                return false;
+            else if (compat < CompatibilidadManiobra::Compatible && tipo == TipoMovimiento::Itinerario)
+                return false;
         }
         bool bloqueo_emisor = bloqueo_act.estado == (lado_bloqueo == Lado::Impar ? EstadoBloqueo::BloqueoImpar : EstadoBloqueo::BloqueoPar);
         bool bloqueo_receptor = bloqueo_act.estado == (lado_bloqueo == Lado::Par ? EstadoBloqueo::BloqueoImpar : EstadoBloqueo::BloqueoPar);
         if (tipo == TipoMovimiento::Maniobra) {
-            TipoMovimiento colat = bloqueo_act.ruta[opp_lado(lado)];
-            // Maniobras simultáneas compatibles
-            if (maniobra_compatible == CompatibilidadManiobra::IncompatibleManiobra && colat != TipoMovimiento::Ninguno) return false;
-            // Maniobra incompatible con itinerario de salida de la colateral
-            if (maniobra_compatible == CompatibilidadManiobra::IncompatibleItinerario && colat == TipoMovimiento::Itinerario) return false;
+            // Maniobras simultáneas incompatibles
+            if (maniobra_compatible == CompatibilidadManiobra::Incompatible && colat != TipoMovimiento::Ninguno)
+                return false;
+            // Maniobra incompatible con movimientos en la colateral
+            if (maniobra_compatible == CompatibilidadManiobra::IncompatibleItinerario && (colat == TipoMovimiento::Itinerario/* || bloqueo_act.estacion_cerrada[opp_lado(lado)]*/))
+                return false;
+            if (maniobra_compatible == CompatibilidadManiobra::IncompatibleMovimiento && (colat != TipoMovimiento::Ninguno/* || bloqueo_act.estacion_cerrada[opp_lado(lado)]*/))
+                return false;
 
             // Maniobra incompatible con bloqueo receptor
-            if (bloqueo_receptor && maniobra_compatible <= CompatibilidadManiobra::IncompatibleBloqueo) {
+            if (bloqueo_receptor && maniobra_compatible <= CompatibilidadManiobra::IncompatibleBloqueo)
                 return false;
-            }
             
             if (!bloqueo_emisor) {
                 // Si no está establecido el bloqueo emisor, requerir libre la proximidad de la avanzada
@@ -393,20 +398,9 @@ void ruta::update()
     }
 
     // Desenclavar ruta al paso de la circulación
-    if (ocupada && !sucesion_automatica) {
-        // En maniobra, cerrar señal cuando se libera el CV anterior o el de señal
+    if ((ocupada || señal_inicio->get_cv_inicio() == nullptr) && !sucesion_automatica) {
+        // En maniobra, cerrar señal cuando se libera el CV de señal
         if (tipo == TipoMovimiento::Maniobra && señal_inicio->ruta_activa == this) {
-            bool proximidad_liberada = false;
-            if (proximidad0.size() > 0) {
-                proximidad_liberada = true;
-                for (auto &[sec,dir] : proximidad0) {
-                    if (sec->get_cv()->get_state() > EstadoCV::Prenormalizado && sec->get_cv()->get_state() != (dir == Lado::Impar ? EstadoCV::OcupadoPar : EstadoCV::OcupadoImpar)) {
-                        proximidad_liberada = false;
-                        break;
-                    }
-                }
-            }
-            if (proximidad_liberada) señal_inicio->ruta_activa = nullptr;
             for (int i=0; i<secciones.size(); i++) {
                 if (secciones[i].seccion->get_cv() == nullptr) continue;
                 if (secciones[i].seccion->get_cv()->get_state() <= EstadoCV::Prenormalizado) {
@@ -484,7 +478,8 @@ void ruta::message_cv(const id_elemento &id, estado_cv ecv)
     }*/
     if (!mandada) return;
     // Ocupación del primer CV de la ruta
-    if (id == señal_inicio->get_id_cv_inicio() && ecv.evento && ecv.evento->ocupacion && ecv.evento->lado == lado) {
+    cv *cv_inicio = señal_inicio->get_cv_inicio();
+    if (cv_inicio != nullptr && cv_inicio->id == id && ecv.evento && ecv.evento->ocupacion && ecv.evento->lado == lado) {
         if (!supervisada) {
             // La ruta pasa a estar supervisada aunque la señal no haya llegado a abrir
             supervisada = true;
@@ -510,7 +505,24 @@ void ruta::message_cv(const id_elemento &id, estado_cv ecv)
         // Impedir nueva activación de FAI hasta que transcurra cierto tiempo
         if (estado_fai == EstadoFAI::EnEspera) inicio_temporizacion_fai = get_milliseconds();
     }
+    // En maniobra, cerrar señal si se libera el circuito anterior a la señal
+    if (tipo == TipoMovimiento::Maniobra && !sucesion_automatica && (ocupada || cv_inicio == nullptr) && ecv.estado <= EstadoCV::Prenormalizado && ecv.estado_previo > EstadoCV::Prenormalizado) {
+        bool proximidad_liberada = false;
+        if (proximidad0.size() > 0) {
+            proximidad_liberada = true;
+            bool cambio_proximidad = false;
+            for (auto &[sec,_] : proximidad0) {
+                if (sec->get_cv()->get_state() > EstadoCV::Prenormalizado) {
+                    proximidad_liberada = false;
+                    break;
+                }
+                if (sec->get_cv()->id == id) cambio_proximidad = true;
+            }
+            if (!cambio_proximidad) proximidad_liberada = false;
+        }
+        if (proximidad_liberada) señal_inicio->ruta_activa = nullptr;
     }
+}
 bool ruta::dai(bool anular_bloqueo)
 {
     if (!mandada) return false;
@@ -664,8 +676,7 @@ void ruta::construir_proximidad0(seccion_via *next, seccion_via *sec, Lado dir)
 {
     if (sec == nullptr) return;
     if (sec->get_cv() != nullptr) {
-        proximidad0.push_back({sec, dir});
-        proximidad0_next.push_back(next);
+        proximidad0[sec] = {dir, next};
     } else {
         std::vector<std::pair<seccion_via *, Lado>> prev;
         sec->prev_secciones(next, dir, prev);
@@ -678,13 +689,11 @@ void ruta::construir_proximidad0(seccion_via *next, seccion_via *sec, Lado dir)
 void ruta::construir_proximidad()
 {
     proximidad0.clear();
-    proximidad0_next.clear();
     proximidad.clear();
     auto p = señal_inicio->seccion->get_seccion_in(lado, señal_inicio->pin);
     construir_proximidad0(señal_inicio->seccion, p.first, p.second);
-    for (int i=0; i<proximidad0.size(); i++) {
-        auto &[sec,dir] = proximidad0[i];
-        auto next = proximidad0_next[i];
+    for (auto &[sec, props] : proximidad0) {
+        auto &[dir, next] = props;
         p = {sec, dir};
         ruta *ruta_actual = nullptr;
         bool trayecto = false;
@@ -692,10 +701,15 @@ void ruta::construir_proximidad()
         while (p.first != nullptr) {
             if (p.first->get_cv() != nullptr) proximidad.push_back({p.first, p.second});
 
+            std::pair<seccion_via*, Lado> prev = {nullptr, Lado::Impar};
+            Lado dir = opp_lado(p.second);
+            prev.first = p.first->siguiente_seccion(next, dir, true);
+            if (prev.first == nullptr) prev.first = p.first->siguiente_seccion(next, dir);
+
             if (sig != nullptr) {
                 if (sig != señal_inicio && sig->aspecto == Aspecto::Parada) break;
                 auto sig_impl = señal_impls.find(sig->id);
-                if (sig->tipo == TipoSeñal::Entrada || sig->tipo == TipoSeñal::PostePuntoProtegido || sig_impl == señal_impls.end()) {
+                if (sig_impl == señal_impls.end() || (prev.first != nullptr && prev.first->is_trayecto())) {
                     ruta_actual = nullptr;
                     trayecto = true;
                 } else if (ruta_actual == nullptr || ruta_actual->señal_inicio == sig_impl->second) {
@@ -708,17 +722,13 @@ void ruta::construir_proximidad()
             if (p.first != sec && (!afecta_anteriores || ultimos_cvs_proximidad.empty() || ultimos_cvs_proximidad.find(p.first->id_cv) != ultimos_cvs_proximidad.end() || tipo != TipoMovimiento::Itinerario)) {
                 break;
             }
-            std::pair<seccion_via*, Lado> prev = {nullptr, Lado::Impar};
-            Lado dir = opp_lado(p.second);
-            prev.first = p.first->siguiente_seccion(next, dir, true);
-            if (prev.first == nullptr) prev.first = p.first->siguiente_seccion(next, dir);
+
             p.second = opp_lado(dir);
             sig = p.first->señal_inicio(p.second, prev.first);
             next = p.first;
             p = prev;
         }
     }
-    proximidad0_next.clear();
 }
 void ruta::activar_pns()
 {

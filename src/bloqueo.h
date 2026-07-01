@@ -33,52 +33,8 @@ protected:
 public:
     bloqueo(const std::string &estacion, const json &j);
     void send_state();
-    bool bloqueo_permitido(bool propio)
-    {
-        // Condiciones para establecer bloqueo en un sentido:
-        // - Sin bloqueo establecido
-        // - Trayecto libre de trenes
-        // - Sin escape de material
-        // - No está establecido el itinerario de salida en la colateral
-        // - No está establecida una maniobra de salida en la colateral incompatible con el bloqueo
-        // - No está prohibido el bloqueo
-        // - Si no existe posibilidad de cruce en la colateral (estación cerrada sin agujas talonables),
-        //   el bloqueo debe también poder establecerse de la colateral a la estación siguiente 
-        if (estado == EstadoBloqueo::Desbloqueo && colateral.estado == EstadoBloqueo::Desbloqueo && !ocupado[propio ? opp_lado(lado) : lado] && !escape && !colateral.escape) {
-            if (propio) {
-                return !colateral.prohibido && colateral.ruta != TipoMovimiento::Itinerario && (colateral.ruta != TipoMovimiento::Maniobra || colateral.maniobra_compatible > CompatibilidadManiobra::IncompatibleBloqueo);
-            } else {
-                if (bloqueo_vinculado != nullptr && bloqueo_vinculado->estado != bloqueo_vinculado->bloqueo_emisor) {
-                    if (bloqueo_vinculado->colateral.bloqueo_siguiente || propagacion_completa)
-                        return false;
-                    else if (bloqueo_vinculado->estado != EstadoBloqueo::Desbloqueo)
-                        return false;
-                }
-                return !prohibido && ruta != TipoMovimiento::Itinerario && (ruta != TipoMovimiento::Maniobra || maniobra_compatible > CompatibilidadManiobra::IncompatibleBloqueo);
-            }
-        }
-        return false;
-    }
-    bool desbloqueo_permitido()
-    {
-        // Condiciones para el desbloqueo de un sentido:
-        // - No está establecido el itinerario de salida
-        // - El trayecto está libre de trenes
-        // - No está establecido el cierre de señales por la colateral
-        // - Si no existe posibilidad de cruce en la estación emisora (estación cerrada sin agujas talonables),
-        //   esta estación no puede ser receptora de otro bloqueo
-        if (ruta == TipoMovimiento::Itinerario || colateral.ruta == TipoMovimiento::Itinerario || ocupado.par || ocupado.impar) return false;
-        if (tipo == TipoBloqueo::BAD || tipo == TipoBloqueo::BLAD) return false;
-        if (estado == bloqueo_emisor) {
-            if (bloqueo_vinculado != nullptr && (colateral.bloqueo_siguiente || bloqueo_vinculado->propagacion_completa) && (bloqueo_vinculado->estado == bloqueo_vinculado->bloqueo_receptor || bloqueo_vinculado->colateral.estado_objetivo == bloqueo_vinculado->bloqueo_receptor || bloqueo_vinculado->estado == EstadoBloqueo::SinDatos)) {
-                return false;
-            }
-            return !colateral.cierre_señales;
-        } else if (estado == bloqueo_receptor) {
-            return !cierre_señales;
-        }
-        return true;
-    }
+    bool bloqueo_permitido(bool emisor);
+    bool desbloqueo_permitido();
     void calcular_ocupacion()
     {
         // Distinción de ocupación por sentido

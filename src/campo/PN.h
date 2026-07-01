@@ -12,6 +12,8 @@ class SPPN : public mqtt_device
     int pinLuz2;
     int pinTx;
     int pinRx;
+    int pinVolumen;
+    int volumen;
 
     const char *id;
     std::string topic;
@@ -20,7 +22,7 @@ class SPPN : public mqtt_device
     HardwareSerial serial;
     std::vector<byte> serialBuffer;
 public:
-    SPPN(const char *id, mqtt_client *client, int pin1, int pin2, int pinRx, int pinTx) : mqtt_device(client), id(id), pinLuz1(pin1), pinLuz2(pin2), serial(2), pinRx(pinRx), pinTx(pinTx)
+    SPPN(const char *id, mqtt_client *client, int pin1, int pin2, int pinRx, int pinTx, int pinVolumen) : mqtt_device(client), id(id), pinLuz1(pin1), pinLuz2(pin2), serial(2), pinRx(pinRx), pinTx(pinTx), pinVolumen(pinVolumen)
     {
         topic = std::string("pn/")+id+"/cierre";
         topicComprobacion = std::string("pn/")+id+"/comprobacion";
@@ -34,12 +36,10 @@ public:
         pinMode(pinLuz2, OUTPUT);
         digitalWrite(pinLuz2, HIGH);
 
-        serial.write(0x7E);
-        serial.write(3);
-        serial.write(0x31);
-        serial.write(30);
-        serial.write(0xEF);
-        pendienteAck = millis();
+        if (pinVolumen >= 0) pinMode(pinVolumen, INPUT);
+        volumen = readVolumen();
+        setVolumen();
+    
         client->subscribe(topic.c_str());
     }
     void loop() override
@@ -106,6 +106,13 @@ public:
                 serialBuffer.clear();
             }
         }
+        if (!pendienteAck) {
+            int vol = readVolumen();
+            if (volumen != vol) {
+                volumen = vol;
+                setVolumen();
+            }
+        }
     }
     void msg_callback(const std::string_view topic, const std::string_view payload) override
     {
@@ -120,5 +127,19 @@ public:
     {
         cierre = newCierre;
         envioPendiente = true;
+    }
+    int readVolumen()
+    {
+        if (pinVolumen < 0) return 30;
+        return analogRead(pinVolumen) * 0.03;
+    }
+    void setVolumen()
+    {
+        serial.write(0x7E);
+        serial.write(3);
+        serial.write(0x31);
+        serial.write(volumen);
+        serial.write(0xEF);
+        pendienteAck = millis();
     }
 };

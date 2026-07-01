@@ -16,7 +16,7 @@ class aguja : public seccion_via, public estado_aguja
     aguja(const id_elemento &id, const json &j);
     void update()
     {
-        if (talonable_muelle) comprobacion = talonable_muelle;
+        if (talonable_muelle && (!mandada || mandada->first != talonable_muelle)) mandada = {*talonable_muelle, 0};
         if (talonable) {
             active_outs[opp_lado(lado)][0] = 0;
             active_outs[opp_lado(lado)][1] = 0;
@@ -70,13 +70,7 @@ class aguja : public seccion_via, public estado_aguja
         enclavada.erase(ruta);
         remota_cambio_elemento(ElementoRemota::AG, id);
     }
-    bool is_ruta_fija(seccion_via *prev, Lado dir)
-    {
-        if (!talonable_muelle) return false;
-        if (dir == lado) return true;
-        int in = get_in(prev, dir);
-        return in == (talonable_muelle == PosicionAguja::Invertida ? 1 : 0);
-    }
+    seccion_via *ruta_fija(seccion_via *prev, Lado &dir);
     bool posible_mover(PosicionAguja pos, bool anular_pedal=false)
     {
         if ((mandada && mandada->first == pos) || comprobacion == pos) return true;
@@ -114,61 +108,6 @@ class aguja : public seccion_via, public estado_aguja
     {
         return (dir == lado ? out : in) == 1 ? PosicionAguja::Invertida : PosicionAguja::Normal;
     }
-    RespuestaMando mando(const std::string &cmd, int me) override
-    {
-        if (me_pendiente && me == 0) return RespuestaMando::MandoEspecialEnCurso;
-        bool pend = me_pendiente;
-        me_pendiente = false;
-        if (me < 0) return pend ? RespuestaMando::Aceptado : RespuestaMando::OrdenRechazada;
-        if (cmd == "MAT") {
-            if (talonable_muelle) {
-                talonable_muelle = talonable_muelle == PosicionAguja::Invertida ? PosicionAguja::Normal : PosicionAguja::Invertida;
-                update();
-                return RespuestaMando::Aceptado;
-            }
-        } else if (cmd == "ATN") {
-            if (talonable_muelle != PosicionAguja::Normal) {
-                talonable_muelle = PosicionAguja::Normal;
-                update();
-                return RespuestaMando::Aceptado;
-            }
-        } else if (cmd == "ATI") {
-            if (talonable_muelle != PosicionAguja::Invertida) {
-                talonable_muelle = PosicionAguja::Invertida;
-                update();
-                return RespuestaMando::Aceptado;
-            }
-        } else if (cmd == "MA" || cmd == "AN" || cmd == "AI") {
-            PosicionAguja pos;
-            if (cmd == "AN" || (cmd == "MA" && !mandada && comprobacion && *comprobacion == PosicionAguja::Invertida) || (cmd == "MA" && mandada && mandada->first == PosicionAguja::Invertida))
-                pos = PosicionAguja::Normal;
-            else if (cmd == "AI" || (cmd == "MA" && !mandada && comprobacion && *comprobacion == PosicionAguja::Normal) || (cmd == "MA" && mandada && mandada->first == PosicionAguja::Normal))
-                pos = PosicionAguja::Invertida;
-            else
-                return RespuestaMando::OrdenRechazada;
-            if (mover(pos))
-                return RespuestaMando::Aceptado;
-        } else if (cmd == "BA" && !bloqueo) {
-            bloqueo = true;
-            log(id, "bloqueo aguja", LOG_DEBUG);
-            return RespuestaMando::Aceptado;
-        } else if (cmd == "ABA" && bloqueo) {
-            if (me) {
-                bloqueo = false;
-                log(id, "desbloqueo aguja", LOG_DEBUG);
-                remota_cambio_elemento(ElementoRemota::AG, id);
-                return RespuestaMando::Aceptado;
-            } else {
-                me_pendiente = true;
-                remota_cambio_elemento(ElementoRemota::AG, id);
-                return RespuestaMando::MandoEspecialNecesario;
-            }
-        } else if (cmd == "BIA") {
-            return seccion_via::mando("BIV", me);
-        } else if (cmd == "DIA") {
-            return seccion_via::mando("DIV", me);
-        }
-        return RespuestaMando::OrdenRechazada;
-    }
+    RespuestaMando mando(const std::string &cmd, int me) override;
     RemotaAG get_estado_remota();
 };

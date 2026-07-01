@@ -138,6 +138,7 @@ seccion_via* seccion_via::siguiente_seccion(seccion_via *prev, Lado &dir, bool u
     if (out < 0 || siguientes_secciones[dir].empty()) return nullptr;
     auto p = siguientes_secciones[dir][out];
     if (p.invertir_paridad) dir = opp_lado(dir);
+    if (p.id.id == "") return nullptr;
     return secciones[p.id];
 }
 
@@ -145,7 +146,7 @@ std::pair<seccion_via*,Lado> seccion_via::get_seccion_in(Lado dir, int pin)
 {
     Lado lado = opp_lado(dir);
     auto &sigs = siguientes_secciones[lado];
-    if (pin < 0 || pin >= sigs.size()) return {nullptr, dir};
+    if (pin < 0 || pin >= sigs.size() || sigs[pin].id.id == "") return {nullptr, dir};
     return {secciones[sigs[pin].id],sigs[pin].invertir_paridad ? lado : dir};
 }
 
@@ -167,6 +168,7 @@ void seccion_via::prev_secciones(seccion_via *next, Lado dir_fwd, std::vector<st
         auto &sig = siguientes_secciones[lado];
         if (sig.size() <= in) continue;
         auto p = sig[in];
+        if (p.id.id == "") continue;
         secciones.push_back({::secciones[p.id], p.invertir_paridad ? lado : dir_fwd});
     }
 }
@@ -196,6 +198,6 @@ int seccion_via::get_out(seccion_via* next, Lado dir)
 }
 void from_json(const json &j, seccion_via::conexion &conex)
 {
-    conex.id = id_elemento(j["Id"]);
+    if (j.contains("Id")) conex.id = id_elemento(j["Id"]);
     conex.invertir_paridad = j.value("Reverse", false);
 }

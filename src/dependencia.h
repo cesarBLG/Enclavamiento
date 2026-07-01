@@ -5,10 +5,16 @@
 #include <enclavamiento.h>
 #include "nlohmann/json.hpp"
 using json = nlohmann::json;
+struct config_señal_servicio_intermitente
+{
+    bool abierta_desbloqueo;
+    bool abierta_bloqueo_receptor;
+};
 struct config_servicio_intermitente
 {
     std::set<std::string> fais;
-    std::set<std::string> señales_abiertas;
+    std::map<std::string, config_señal_servicio_intermitente> señales_abiertas;
+    std::map<std::string, std::pair<int, int>> posicion_aparatos;
 };
 struct dependencia
 {

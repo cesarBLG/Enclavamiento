@@ -59,10 +59,11 @@ enum struct EstadoFAI
 };
 enum struct CompatibilidadManiobra
 {
-    IncompatibleManiobra,
-    IncompatibleBloqueo,
-    IncompatibleItinerario,
-    Compatible,
+    Incompatible, // Bloqueo y movimientos prohibidos
+    IncompatibleBloqueo, // Maniobras permitidas, bloqueo prohibido
+    IncompatibleMovimiento, // Bloqueo permitido, movimientos prohibidos
+    IncompatibleItinerario, // Maniobras y bloqueo permitido, itinerario prohibido
+    Compatible, // Movimientos y bloqueo permitido
 };
 enum struct TipoSeñal
 {

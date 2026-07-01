@@ -29,6 +29,7 @@ std::set<std::string> comandos_ctc = {"C", "L", "AS", "AAS"};
 std::set<std::string> comandos_local = {"TML", "TME", "CML", "RML"};
 std::set<std::string> comandos_pn = {"APN", "CPN"};
 std::set<std::string> comandos_dependencia = {"RAL","RA","LD","LN","BCA","DCA","SI","ASI","RST"};
+std::set<std::string> comandos_estacion_cerrada = {"ASI","MAT","ATN","ATI"};
 
 RespuestaMando mando(const std::vector<std::string> &ordenes, int me)
 {
@@ -213,7 +214,7 @@ RespuestaMando procesar_mando(const std::string &client, std::string payload, bo
             res = RespuestaMando::Aceptado;
         }
     } else {
-        if (it_dep->second->cerrada && ordenes[0] != "ASI") {
+        if (it_dep->second->cerrada && comandos_estacion_cerrada.find(ordenes[0]) == comandos_estacion_cerrada.end()) {
             log(payload, "estación cerrada", LOG_WARNING);
             return RespuestaMando::NoMando;
         }
