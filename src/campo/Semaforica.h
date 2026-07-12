@@ -33,7 +33,7 @@ public:
     }
     void setup() override
     {
-        servo.attach(pin);
+        servo.attach(pin, 1000, 2000);
         client->subscribe(topic.c_str());
         client->subscribe("luz");
         update_semaforo();

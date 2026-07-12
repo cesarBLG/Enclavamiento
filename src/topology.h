@@ -12,14 +12,14 @@
 #include "bloqueo.h"
 #include "estado_aguja.h"
 #include <optional>
-class ruta;
+class movimiento;
 class señal;
 class pn_enclavado;
 class nodo_deslizamiento;
 struct reserva_seccion
 {
-    ruta *ruta_asegurada;
-    Lado lado;
+    movimiento *ruta_asegurada;
+    std::optional<Lado> lado;
     lados<int> outs;
 };
 class seccion_via
@@ -46,7 +46,7 @@ protected:
     lados<std::map<int,int>> active_outs;
     std::optional<reserva_seccion> ruta_asegurada;
 
-    std::map<ruta*, nodo_deslizamiento*> deslizamiento;
+    std::map<movimiento*, nodo_deslizamiento*> deslizamiento;
 
     lados<int> ocupacion_outs;
 
@@ -55,7 +55,13 @@ protected:
 public:
     seccion_via(const id_elemento &id, const json &j, TipoSeccion tipo=TipoSeccion::Lineal);
     virtual ~seccion_via() = default;
-    seccion_via* siguiente_seccion(seccion_via *prev, Lado &dir, bool usar_ruta_asegurada=false);
+    seccion_via* siguiente_seccion(seccion_via *prev, Lado &dir, bool usar_ruta_asegurada=false)
+    {
+        int in = get_in(prev, dir);
+        if (in < 0) return nullptr;
+        return siguiente_seccion(in, dir);
+    }
+    seccion_via* siguiente_seccion(int pin, Lado &dir, bool usar_ruta_asegurada=false);
     std::pair<seccion_via*,Lado> get_seccion_in(Lado dir, int pin);
     void prev_secciones(seccion_via *next, Lado dir_fwd, std::vector<std::pair<seccion_via*, Lado>> &secciones);
     señal *señal_inicio(Lado lado, int pin);
@@ -69,10 +75,10 @@ public:
     {
         return cv_seccion;
     }
-    virtual void asegurar(ruta *ruta, int in, int out, Lado dir);
-    void asegurar_deslizamiento(ruta *ruta, nodo_deslizamiento* nodo);
-    virtual void liberar(ruta *ruta);
-    bool is_asegurada(ruta *ruta=nullptr)
+    virtual void asegurar(movimiento *ruta, int in, int out, std::optional<Lado> dir);
+    void asegurar_deslizamiento(movimiento *ruta, nodo_deslizamiento* nodo);
+    virtual void liberar(movimiento *ruta);
+    bool is_asegurada(movimiento *ruta=nullptr)
     {
         if (ruta_asegurada) {
             return ruta == nullptr || ruta == ruta_asegurada->ruta_asegurada;
@@ -80,7 +86,7 @@ public:
             return false;
         }
     }
-    bool asegurar_posible(ruta *ruta, int in, int out, Lado dir)
+    bool asegurar_posible(movimiento *ruta, int in, int out, std::optional<Lado> dir)
     {
         if (cv_seccion != nullptr) {
             for (auto &sec : cv_seccion->secciones) {
@@ -97,11 +103,25 @@ public:
         }
         return true;
     }
+    bool transitable(seccion_via *prev, Lado dir)
+    {
+        return transitable(get_in(prev, dir), dir);
+    }
+    virtual bool transitable(int in, Lado dir)
+    {
+        if (in < 0) return false;
+        int out = active_outs[dir][in];
+        if (out < 0) return false;
+        // TODO: Maniobra local
+        if (ruta_asegurada && (ruta_asegurada->outs[dir] != out || ruta_asegurada->outs[opp_lado(dir)] != in))
+            return false;
+        return true;
+    }
     std::optional<reserva_seccion> get_ruta_asegurada()
     {
         return ruta_asegurada;
     }
-    const std::map<ruta*, nodo_deslizamiento*> &get_deslizamiento()
+    const std::map<movimiento*, nodo_deslizamiento*> &get_deslizamiento()
     {
         return deslizamiento;
     }

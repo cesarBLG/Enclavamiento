@@ -30,46 +30,44 @@ void señal_impl::determinar_aspecto()
     bool cerrar = false;
     // Condiciones que impiden abrir la señal, pero no la cierran si estaba abierta
     bool prohibir_abrir = false;
-    // Requerir secciones asegurado por ruta (no necesario en trayecto)
-    bool comprobar_ruta = ruta_activa != nullptr && !ruta_activa->get_secciones().empty() && ruta_activa->get_secciones().back().seccion != seccion_prev;
     // Nombre del bloqueo asociado
     std::optional<id_elemento> bloq_id = bloqueo_asociado;
     bool salida_trayecto = (tipo == TipoSeñal::Salida || tipo == TipoSeñal::Entrada) && bloq_id;
-    if (ruta_activa != nullptr && ruta_activa->bloqueo_salida) {
+    if (ruta_activa != nullptr && ruta_activa->es_ruta && ((ruta*)ruta_activa)->bloqueo_salida) {
         auto &señales = ruta_activa->get_señales();
-        if (señales.empty() || señales.back().first == this) {
-            if (!bloq_id) bloq_id = ruta_activa->bloqueo_salida;
+        if (señales.empty() || señales.back() == this) {
+            if (!bloq_id) bloq_id = ((ruta*)ruta_activa)->bloqueo_salida;
             salida_trayecto = true;
         }
     }
     if (ruta_activa != nullptr) {
         auto &señales = ruta_activa->get_señales();
-        if ((señales.empty() || señales.back().first == this) && !ruta_activa->deslizamiento_asegurado()) cerrar = true;
+        if ((señales.empty() || señales.back() == this) && !ruta_activa->deslizamiento_asegurado()) cerrar = true;
     }
     // Comprobamos todos los CVs hasta la señal siguiente o fin de movimiento
     while (sec_act != nullptr && sig_señal == nullptr) {
-        if (!comprobar_ruta && ruta_activa != nullptr && ruta_activa->tipo == TipoMovimiento::Maniobra) {
+        bool seccion_asegurada = ruta_activa != nullptr && sec_act->is_asegurada(ruta_activa);
+        if (!seccion_asegurada && ruta_activa != nullptr && ruta_activa->tipo == TipoMovimiento::Maniobra) {
             break;
         }
         EstadoCanton sec_ocup = sec_act->get_ocupacion(sec_prv, dir);
         canton = std::max(sec_ocup, canton);
         if (sec_act->get_cv() != nullptr && sec_act->get_cv()->is_btv()) prohibir_abrir = true;
         Lado l = dir;
-        seccion_via *next = sec_act->siguiente_seccion(sec_prv, dir, false);
+        seccion_via *next = sec_act->siguiente_seccion(sec_prv, dir);
         for (auto *pn : sec_act->pns) {
             if (!pn->is_protegido()) {
                 if (pn->get_tipo(l) != TipoPN::Automatico)
                     cerrar = true;
             }
         }
-        if (comprobar_ruta) {
-            if (!sec_act->is_asegurada(ruta_activa) || sec_act->siguiente_seccion(sec_prv, l, true) != next)
-                cerrar = true;
-            if (ruta_activa->get_ocupacion_maxima_secciones().find(sec_act)->second < sec_ocup && (ruta_activa->tipo != TipoMovimiento::Maniobra || !ruta_activa->is_ocupada()))
+        if ((sec_prv != nullptr && !sec_act->transitable(sec_prv, l)) || (sec_prv == nullptr && !sec_act->transitable(pin, l)))
+            cerrar = true;
+        if (seccion_asegurada) {
+            if (ruta_activa->get_ocupacion_maxima_secciones().find(sec_act)->second < sec_ocup && (ruta_activa->tipo != TipoMovimiento::Maniobra || (ruta_activa->es_ruta && !((ruta*)ruta_activa)->is_ocupada())))
                 cerrar = true;
             if (sec_ocup == EstadoCanton::Ocupado && sec_act->get_cv()->ocupacion_intempestiva)
                 cerrar = true;
-            if (ruta_activa->get_secciones().back().seccion == sec_act) comprobar_ruta = false;
         }
         for (auto &[r, d] : sec_act->get_deslizamiento()) {
             if (!d->asegurado && !d->acceso_impedido)
@@ -85,8 +83,6 @@ void señal_impl::determinar_aspecto()
         if (sec_act != nullptr) sig_señal = sec_act->señal_inicio(dir, sec_prv);
         if (sec_act == seccion) break;
     }
-    // La ruta asegurada se interrumpe antes de llegar al fin de movimiento o señal siguiente
-    if (comprobar_ruta && sig_señal == nullptr) cerrar = true;
     // Condiciones que provocan el cierre de la señal en ruta de itinerario
     bool cerrar_itinerario = false;
     // Condiciones que impiden la apertura de señal en itinerario, pero no la cierran si estaba abierta
@@ -110,7 +106,7 @@ void señal_impl::determinar_aspecto()
         // Permitir apertura en desbloqueo de la señal de salida en estaciones cerradas
         // Las señales avanzadas abren según el aspecto de la señal de entrada
         // Las pantallas virtuales no abren sin bloqueo establecido, pero la condición de cierre se establece más adelante
-        cerrar_itinerario |= bloqueo_act.estado != (dir == Lado::Impar ? EstadoBloqueo::BloqueoImpar : EstadoBloqueo::BloqueoPar) && tipo != TipoSeñal::Avanzada && !señal_virtual && (tipo == TipoSeñal::Intermedia || !abierta_desbloqueo || bloqueo_act.estado != EstadoBloqueo::Desbloqueo || tipo_opp == TipoMovimiento::Itinerario);
+        cerrar_itinerario |= bloqueo_act.estado != (dir == Lado::Impar ? EstadoBloqueo::BloqueoImpar : EstadoBloqueo::BloqueoPar) && tipo != TipoSeñal::Avanzada && !señal_virtual && (tipo == TipoSeñal::Intermedia || !abierta_desbloqueo || (bloqueo_act.estado != EstadoBloqueo::Desbloqueo && !abierta_bloqueo_receptor) || tipo_opp == TipoMovimiento::Itinerario);
         // Cerrar el itinerario de salida si la estación colateral está realizando maniobras,
         // y no hay señales intermedias suficientes que puedan proteger la maniobra
         cerrar_itinerario |= tipo_opp == TipoMovimiento::Maniobra && bloqueo_act.maniobra_compatible[opp_lado(dir)] < CompatibilidadManiobra::Compatible;
@@ -252,7 +248,7 @@ RespuestaMando señal_impl::mando(const std::string &cmd, int me)
     } else if (cmd == "DAI" || cmd == "DAB") {
         bool aceptado = false;
         if (ruta_fai != nullptr && ruta_fai->cancelar_fai()) aceptado = true;
-        if (ruta_activa != nullptr && ruta_activa->get_señal_inicio() == this && ruta_activa->dai(cmd == "DAB")) aceptado = true;
+        if (ruta_activa != nullptr && ruta_activa->es_ruta && ((ruta*)ruta_activa)->get_señal_inicio() == this && ((ruta*)ruta_activa)->dai(cmd == "DAB")) aceptado = true;
         return aceptado ? RespuestaMando::Aceptado : RespuestaMando::OrdenRechazada;
     } else if (cmd == "AFA") {
         if (ruta_fai != nullptr) {
@@ -323,8 +319,8 @@ std::pair<RemotaSIG, RemotaIMV> señal_impl::get_estado_remota()
     }
     r.SIG_GRP_ARS = 0;
     RemotaIMV i;
-    if (ruta_activa != nullptr && ruta_activa->get_señal_inicio() == this) {
-        i = ruta_activa->get_estado_remota_inicio();
+    if (ruta_activa != nullptr && ruta_activa->es_ruta && ((ruta*)ruta_activa)->get_señal_inicio() == this) {
+        i = ((ruta*)ruta_activa)->get_estado_remota_inicio();
     } else {
         i.IMV_DAT = 1;
         i.IMV_DIF_VAL = 0;
@@ -335,8 +331,8 @@ std::pair<RemotaSIG, RemotaIMV> señal_impl::get_estado_remota()
 estado_inicio_ruta señal_impl::get_estado_inicio()
 {
     estado_inicio_ruta e;
-    if (ruta_activa != nullptr && ruta_activa->get_señal_inicio() == this) {
-        e = ruta_activa->get_estado_inicio();
+    if (ruta_activa != nullptr && ruta_activa->es_ruta && ((ruta*)ruta_activa)->get_señal_inicio() == this) {
+        e = ((ruta*)ruta_activa)->get_estado_inicio();
     }
     e.rebasada = rebasada;
     e.bloqueo_señal = bloqueo_señal;
@@ -354,7 +350,13 @@ void señal_impl::message_cv(const id_elemento &id, estado_cv ev)
 
     // Con el paso de la circulación se cierra la señal, salvo en maniobras
     if (ruta_activa != nullptr && ruta_activa->tipo != TipoMovimiento::Maniobra && (!sucesion_automatica || ruta_activa->tipo != TipoMovimiento::Itinerario) && ev.evento && ev.evento->ocupacion && ev.evento->lado == lado && (aspecto != Aspecto::Parada || get_milliseconds() - ultimo_paso_abierta > 30000)) {
-        ruta_activa = nullptr;
+        for (auto &sig : ruta_activa->get_señales()) {
+            if (sig == this) {
+                ruta_activa = nullptr;
+                break;
+            }
+            if (sig->ruta_activa == ruta_activa) break;
+        }
     }
 
     paso_circulacion = false;

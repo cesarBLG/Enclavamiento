@@ -61,7 +61,7 @@ class frontera
     void update_rutas()
     {
         ruta_entrada = señal_entrada->ruta_fin;
-        ruta_salida = señal_salida->ruta_activa;
+        ruta_salida = señal_salida->ruta_activa != nullptr && señal_salida->ruta_activa->es_ruta ? (ruta*)señal_salida->ruta_activa : nullptr;
     }
     bool salida_permitida(ruta* r)
     {

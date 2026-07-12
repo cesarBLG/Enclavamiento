@@ -365,6 +365,12 @@ void init_items_ordered(const json &j, std::string tipo)
                     secciones[is] = new seccion_via(is, jsec, tipo);
                 }
             }
+            for (auto &[id, jsec] : jdep["Secciones"].items()) {
+                id_elemento is(estacion,id);
+                if (agujas.find(is) != agujas.end() && jsec.contains("Escape")) {
+                    agujas[is]->escape = agujas[id_elemento::from_default_dep(jsec["Escape"], estacion)];
+                }
+            }
         }
         if (tipo == "PNs") {
             for (auto &[id, jpn] : jdep["PNs"].items()) {
@@ -430,7 +436,6 @@ void init_items(const json &j)
         for (auto *ruta : kvp.second->rutas) {
             rutas.insert(ruta);
         }
-        kvp.second->initialize();
     }
 
     //std::stringstream managed_topics;

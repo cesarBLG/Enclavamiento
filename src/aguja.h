@@ -7,11 +7,13 @@ class aguja : public seccion_via, public estado_aguja
     std::optional<std::pair<PosicionAguja, int64_t>> mandada;
     bool talonable;
     std::optional<PosicionAguja> talonable_muelle;
-    bool cedida_mantenimiento;
-    bool bloqueo;
-    std::set<ruta*> enclavada;
+    bool cedida_mantenimiento = false;
+    bool bloqueo = false;;
+    std::set<movimiento*> enclavada;
+    std::optional<PosicionAguja> posicion_enclavada;
     Lado lado;
     public:
+    aguja *escape = nullptr;
     const std::string topic_mando;
     aguja(const id_elemento &id, const json &j);
     void update()
@@ -59,28 +61,63 @@ class aguja : public seccion_via, public estado_aguja
         if (id != id_cv) return;
         seccion_via::message_cv(id, ev);
     }
-    virtual void asegurar(ruta *ruta, int in, int out, Lado dir) override
+    void asegurar(movimiento *ruta, int in, int out, std::optional<Lado> dir) override
     {
         seccion_via::asegurar(ruta, in, out, dir);
         remota_cambio_elemento(ElementoRemota::AG, id);
     }
-    void liberar(ruta *ruta)
+    void liberar(movimiento *ruta)
     {
         seccion_via::liberar(ruta);
-        enclavada.erase(ruta);
+        if (escape != nullptr) {
+            if (!escape->ruta_asegurada || escape->ruta_asegurada->ruta_asegurada != ruta) {
+                enclavada.erase(ruta);
+                if (enclavada.empty()) posicion_enclavada = std::nullopt;
+                escape->escape = nullptr;
+                escape->liberar(ruta);
+                escape->escape = this;
+            }
+        } else {
+            enclavada.erase(ruta);
+            if (enclavada.empty()) posicion_enclavada = std::nullopt;
+        }
         remota_cambio_elemento(ElementoRemota::AG, id);
+    }
+    bool transitable(int pin, Lado dir) override
+    {
+        if (!seccion_via::transitable(pin, dir))
+            return false;
+        if (posicion_enclavada && posicion_enclavada != comprobacion && (!talonable || dir == lado))
+            return false;
+        if (escape != nullptr && escape->posicion_enclavada && escape->posicion_enclavada != escape->comprobacion && escape->posicion_enclavada == PosicionAguja::Normal)
+            return false;
+        return true;
     }
     seccion_via *ruta_fija(seccion_via *prev, Lado &dir);
     bool posible_mover(PosicionAguja pos, bool anular_pedal=false)
     {
+        if (posicion_enclavada && posicion_enclavada != pos) return false;
         if ((mandada && mandada->first == pos) || comprobacion == pos) return true;
         if (bloqueo || !enclavada.empty() || talonable_muelle) return false;
         if (!anular_pedal && cv_seccion != nullptr && cv_seccion->get_state() > EstadoCV::Prenormalizado) return false;
+        if (escape != nullptr && (pos == PosicionAguja::Normal || !escape->talonable)) {
+            escape->escape = nullptr;
+            if (!escape->posible_mover(pos, anular_pedal)) {
+                escape->escape = this;
+                return false;
+            }
+            escape->escape = this;
+        }
         return true;
     }
     bool mover(PosicionAguja pos, bool anular_pedal=false)
     {
         if (!posible_mover(pos, anular_pedal)) return false;
+        if (escape != nullptr && (pos == PosicionAguja::Normal || !escape->talonable)) {
+            escape->escape = nullptr;
+            escape->mover(pos, anular_pedal);
+            escape->escape = this;
+        }
         if (comprobacion == pos) {
             if (mandada && mandada->first != pos) {
                 mandada = {pos, 0};
@@ -96,12 +133,23 @@ class aguja : public seccion_via, public estado_aguja
         log(id, pos == PosicionAguja::Invertida ? "mandada a invertida" : "mandada a normal");
         return true;
     }
-    bool enclavar(ruta *r, PosicionAguja pos)
+    bool enclavar(movimiento *r, PosicionAguja pos)
     {
         if (enclavada.find(r) != enclavada.end()) return true;
-        if (comprobacion != pos) return false;
+        if (comprobacion != pos || (posicion_enclavada && posicion_enclavada != pos)) return false;
+        if (mandada && mandada->first != pos) return false;
+        if (escape != nullptr && (pos == PosicionAguja::Normal || !escape->talonable)) {
+            escape->escape = nullptr;
+            if (!escape->enclavar(r, pos)) {
+                escape->escape = this;
+                return false;
+            }
+            escape->escape = this;
+        }
         enclavada.insert(r);
+        posicion_enclavada = pos;
         log(id, "enclavada", LOG_INFO);
+        update();
         return true;
     }
     PosicionAguja get_posicion(Lado dir, int in, int out)

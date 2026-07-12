@@ -7,14 +7,22 @@
 using json = nlohmann::json;
 struct config_señal_servicio_intermitente
 {
+    bool ruta_necesaria;
     bool abierta_desbloqueo;
     bool abierta_bloqueo_receptor;
 };
 struct config_servicio_intermitente
 {
     std::set<std::string> fais;
+    std::set<std::string> itinerarios_apertura;
     std::map<std::string, config_señal_servicio_intermitente> señales_abiertas;
     std::map<std::string, std::pair<int, int>> posicion_aparatos;
+    std::map<std::string, std::pair<int, int>> secciones;
+};
+class movimiento_servicio_intermitente : public movimiento
+{
+    public:
+    movimiento_servicio_intermitente(const std::string &estacion, config_servicio_intermitente &cfg);
 };
 struct dependencia
 {
@@ -26,45 +34,12 @@ struct dependencia
     std::set<ruta*> rutas;
     std::map<id_elemento, bloqueo*> bloqueos;
     bool bloqueo_agujas = false;
-    std::optional<config_servicio_intermitente> servicio_intermitente;
+    std::optional<config_servicio_intermitente> cfg_servicio_intermitente;
+    movimiento_servicio_intermitente *servicio_intermitente = nullptr;
     TipoSoneria soneria;
+    bool inicializada = false;
     dependencia(const std::string id, const json &j);
-    void update()
-    {
-        std::map<id_elemento, ruta*> movimiento_bloqueos;
-        std::set<id_elemento> anular_bloqueos;
-        std::set<id_elemento> solicitud_bloqueos;
-        // Para cada bloqueo de salida, indicar el itinerario o maniobra establecido
-        for (auto *ruta : rutas) {
-            ruta->update();
-            if (!ruta->bloqueo_salida) continue;
-            if (ruta->is_mandada()) {
-                movimiento_bloqueos[*ruta->bloqueo_salida] = ruta;
-                if (ruta->tipo == TipoMovimiento::Itinerario) solicitud_bloqueos.insert(*ruta->bloqueo_salida);
-            } else {
-                if (ruta->anulacion_bloqueo_pendiente) {
-                    ruta->anulacion_bloqueo_pendiente = false;
-                    anular_bloqueos.insert(*ruta->bloqueo_salida);
-                }
-                if (ruta->get_estado_fai() == EstadoFAI::Solicitud) solicitud_bloqueos.insert(*ruta->bloqueo_salida);
-            }
-        }
-        TipoSoneria son = TipoSoneria::Apagada;
-        for (auto &[id, bloq] : bloqueos) {
-            auto it = movimiento_bloqueos.find(id);
-            int pri = solicitud_bloqueos.find(id) != solicitud_bloqueos.end() ? (cerrada ? 1 : 2) : 0;
-            if (it == movimiento_bloqueos.end()) {
-                bloq->set_ruta(TipoMovimiento::Ninguno, CompatibilidadManiobra::IncompatibleBloqueo, anular_bloqueos.find(id) != anular_bloqueos.end(), pri);
-            } else {
-                bloq->set_ruta(it->second->tipo, it->second->maniobra_compatible, false, pri);
-            }
-            son = std::max(bloq->update_soneria(), son);
-        }
-        if (soneria != son) {
-            soneria = son;
-            send_message("soneria/"+id, json(soneria).dump());
-        }
-    }
+    void update();
     void send_state()
     {
         send_message("mando/"+id+"/state", json(mando_actual).dump());
@@ -78,10 +53,6 @@ struct dependencia
             bloqueo->cambio_mando(estado);
         }
         send_state();
-    }
-    void initialize()
-    {
-        if (cerrada) set_servicio_intermitente(true);
     }
     void calcular_vinculacion_bloqueos();
     bool set_servicio_intermitente(bool cerrar);
@@ -112,12 +83,14 @@ struct dependencia
         } else if (cmd == "BCA") {
             if (!bloqueo_agujas) {
                 bloqueo_agujas = true;
+                log(id, "bloqueo conjunto de agujas");
                 return RespuestaMando::Aceptado;
             }
         } else if (cmd == "DCA") {
             if (bloqueo_agujas) {
                 if (me) {
                     bloqueo_agujas = false;
+                    log(id, "desbloqueo conjunto de agujas");
                     return RespuestaMando::Aceptado;
                 } else {
                     me_pendiente = true;

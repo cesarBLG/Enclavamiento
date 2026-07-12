@@ -8,6 +8,7 @@
 #include "deslizamiento.h"
 #include "log.h"
 #include "remota.h"
+class movimiento;
 class ruta;
 class frontera;
 class destino_ruta
@@ -44,29 +45,74 @@ public:
 struct elemento_ruta
 {
     seccion_via *seccion;
-    Lado dir;
+    std::optional<Lado> dir;
     int in;
     int out;
 };
-class ruta
+class movimiento
 {
 public:
     const TipoMovimiento tipo;
     const bool ertms = false;
+    const bool es_ruta;
     const std::string estacion;
+    const std::string id;
+    bool valid = false;
+    CompatibilidadManiobra maniobra_compatible = CompatibilidadManiobra::IncompatibleBloqueo;
+
+    ruta_deslizamiento* deslizamiento = nullptr;
+protected:
+    std::map<seccion_via*, EstadoCanton> ocupacion_maxima_secciones;
+    std::map<seccion_via*, std::pair<int, int>> posicion_aparatos;
+    std::vector<señal_impl*> señales;
+    std::vector<elemento_ruta> secciones;
+    std::set<seccion_via*> secciones_aseguradas;
+    std::vector<std::pair<pn_enclavado*, Lado>> pn_afectados;
+    std::map<movimiento*,int> deslizamientos_afectados;
+
+    bool mandada = false;
+    bool formada = false;
+public:
+    movimiento(const std::string &estacion, TipoMovimiento tipo, const std::string &id, bool es_ruta=true) : estacion(estacion), tipo(tipo), id(id), es_ruta(es_ruta) {}
+    virtual bool establecer();
+    virtual bool posible_establecer();
+    virtual void disolver();
+    virtual void update();
+    bool is_mandada()
+    {
+        return mandada;
+    }
+    bool is_formada()
+    {
+        return formada;
+    }
+    void mover_agujas();
+    const std::vector<elemento_ruta> &get_secciones()
+    {
+        return secciones;
+    }
+    const std::vector<señal_impl*> &get_señales()
+    {
+        return señales;
+    }
+    const std::map<seccion_via*,EstadoCanton> &get_ocupacion_maxima_secciones()
+    {
+        return ocupacion_maxima_secciones;
+    }
+    bool deslizamiento_asegurado()
+    {
+        return deslizamiento == nullptr || deslizamiento->is_asegurado();
+    }
+};
+class ruta : public movimiento
+{
+public:
     const std::string id_inicio;
     const std::string id_destino;
-    const std::string id;
     const std::optional<id_elemento> bloqueo_salida;
-    CompatibilidadManiobra maniobra_compatible;
-    bool valid = false;
 
     bool anulacion_bloqueo_pendiente = false;
 protected:
-    std::vector<elemento_ruta> secciones;
-    std::map<seccion_via*, EstadoCanton> ocupacion_maxima_secciones;
-    std::map<seccion_via*, std::pair<int, int>> posicion_aparatos;
-    std::set<seccion_via*> secciones_aseguradas;
     std::shared_ptr<timer> diferimetro_dai;
     std::shared_ptr<timer> diferimetro_dei;
     std::shared_ptr<timer> diferimetro_deslizamiento;
@@ -74,17 +120,11 @@ protected:
     std::vector<std::pair<seccion_via*,Lado>> proximidad;
     std::set<id_elemento> ultimos_cvs_proximidad;
     señal_impl *señal_inicio;
-    std::vector<std::pair<señal_impl*, Lado>> señales;
     destino_ruta *destino;
-    std::vector<std::pair<pn_enclavado*, Lado>> pn_afectados;
-    ruta_deslizamiento* deslizamiento;
-    std::map<ruta*,int> deslizamientos_afectados;
     Lado lado;
     Lado lado_bloqueo;
     estado_bloqueo bloqueo_act;
 
-    bool mandada = false;
-    bool formada = false;
     bool supervisada = false;
     bool ocupada = false;
     bool diferimetro_cancelado = false;
@@ -99,18 +139,20 @@ protected:
 
     bool sucesion_automatica = false;
     EstadoFAI estado_fai = EstadoFAI::EnEspera;
+    TipoFAI tipo_fai = TipoFAI::Proximidad;
     bool fai = false;
     bool fai_disparo_unico = false;
     int64_t inicio_temporizacion_fai = 0;
     int64_t tiempo_espera_fai;
 
     // Disolución completa de la ruta
-    void disolver();
+    void disolver() override;
     // Disolución parcial de la ruta hasta el primer CV ocupado
     void disolucion_parcial(bool anular_bloqueo=false);
 public:
     ruta(const std::string &estacion, const json &j);
-    bool establecer();
+    bool establecer() override;
+    bool posible_establecer() override;
     estado_inicio_ruta get_estado_inicio()
     {
         estado_inicio_ruta e;
@@ -170,7 +212,7 @@ public:
         r.FMV_BD = destino->bloqueo_destino ? 1 : 0;
         return r;
     }
-    void update();
+    void update() override;
     // Disolución artificial de ruta
     bool dai(bool anular_bloqueo=false);
     bool cancelar_fai()
@@ -186,14 +228,6 @@ public:
     // Temporización larga, disuelve secciones aseguradas aunque no estén libres
     bool dei();
 
-    bool is_mandada()
-    {
-        return mandada;
-    }
-    bool is_formada()
-    {
-        return formada;
-    }
     bool is_ocupada()
     {
         return ocupada;
@@ -205,18 +239,6 @@ public:
     bool is_sucesion_automatica()
     {
         return sucesion_automatica;
-    }
-    const std::vector<elemento_ruta> &get_secciones()
-    {
-        return secciones;
-    }
-    const std::vector<std::pair<señal_impl*,Lado>> &get_señales()
-    {
-        return señales;
-    }
-    const std::map<seccion_via*,EstadoCanton> &get_ocupacion_maxima_secciones()
-    {
-        return ocupacion_maxima_secciones;
     }
     std::optional<EstadoFAI> get_estado_fai()
     {
@@ -233,10 +255,6 @@ public:
     señal_impl *get_señal_inicio()
     {
         return señal_inicio;
-    }
-    bool deslizamiento_asegurado()
-    {
-        return deslizamiento == nullptr || deslizamiento->is_asegurado();
     }
     bool set_fai(bool activar) {
         if (activar) {

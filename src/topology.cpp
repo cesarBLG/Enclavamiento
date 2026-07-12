@@ -25,29 +25,34 @@ seccion_via::seccion_via(const id_elemento &id, const json &j, TipoSeccion tipo)
     }
     trayecto = j.value("Trayecto", bloqueo_asociado.has_value());
 }
-void seccion_via::asegurar(ruta *ruta, int in, int out, Lado dir)
+void seccion_via::asegurar(movimiento *ruta, int in, int out, std::optional<Lado> dir)
 {
     auto r = reserva_seccion();
     r.ruta_asegurada = ruta;
-    r.outs[dir] = out;
-    r.outs[opp_lado(dir)] = in;
+    r.outs[dir ? *dir : Lado::Impar] = out;
+    r.outs[opp_lado(dir ? *dir : Lado::Impar)] = in;
     r.lado = dir;
     if (ruta_asegurada || ruta == nullptr) return;
     log(id, "reservada", LOG_DEBUG);
     ruta_asegurada = r;
     remota_cambio_elemento(ElementoRemota::CV, id_cv);
 }
-void seccion_via::asegurar_deslizamiento(ruta *ruta, nodo_deslizamiento* nodo)
+void seccion_via::asegurar_deslizamiento(movimiento *ruta, nodo_deslizamiento* nodo)
 {
     this->deslizamiento[ruta] = nodo;
     remota_cambio_elemento(ElementoRemota::CV, id_cv);
 }
-void seccion_via::liberar(ruta *ruta)
+void seccion_via::liberar(movimiento *ruta)
 {
     if (ruta_asegurada && ruta_asegurada->ruta_asegurada == ruta) {
         log(id, "desenclavada");
         for (auto *pn : pns) {
-            pn->desactivar_ruta(ruta_asegurada->lado);
+            if (!ruta_asegurada->lado) {
+                pn->desactivar_ruta(Lado::Impar);
+                pn->desactivar_ruta(Lado::Par);
+            } else {
+                pn->desactivar_ruta(*ruta_asegurada->lado);
+            }
         }
         ruta_asegurada = std::nullopt;
         remota_cambio_elemento(ElementoRemota::CV, id_cv);
@@ -128,11 +133,10 @@ señal *seccion_via::señal_inicio(Lado lado, int pin)
     if (it != señales[lado].end()) return it->second;
     return nullptr;
 }
-seccion_via* seccion_via::siguiente_seccion(seccion_via *prev, Lado &dir, bool usar_ruta_asegurada)
+seccion_via* seccion_via::siguiente_seccion(int in, Lado &dir, bool usar_ruta_asegurada)
 {
-    int in = get_in(prev, dir);
-    if (in < 0) return nullptr;
     int out;
+    // TODO: usar_ruta_asegurada en maniobra local
     if (usar_ruta_asegurada) out = ruta_asegurada ? ruta_asegurada->outs[dir] : -1;
     else out = active_outs[dir][in];
     if (out < 0 || siguientes_secciones[dir].empty()) return nullptr;
@@ -199,5 +203,5 @@ int seccion_via::get_out(seccion_via* next, Lado dir)
 void from_json(const json &j, seccion_via::conexion &conex)
 {
     if (j.contains("Id")) conex.id = id_elemento(j["Id"]);
-    conex.invertir_paridad = j.value("Reverse", false);
+    conex.invertir_paridad = j.value("InvertirParidad", false);
 }

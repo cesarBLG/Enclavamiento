@@ -33,6 +33,7 @@ public:
                 digitalWrite(pinRojo, HIGH);
                 digitalWrite(pinVerde, HIGH);
                 break;
+            case Aspecto::RebaseAutorizadoDestellos:
             case Aspecto::RebaseAutorizado:
                 digitalWrite(pinVerde, HIGH);
                 digitalWrite(pinRojo, (millis()/500)%2 ? HIGH : LOW);

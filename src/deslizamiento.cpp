@@ -4,7 +4,7 @@ ruta_deslizamiento::ruta_deslizamiento()
 {
     deslizamientos_orientados.push_back({});
 }
-bool nodo_deslizamiento::compatible(ruta *r, int id_deslizamiento)
+bool nodo_deslizamiento::compatible(movimiento *r, int id_deslizamiento)
 {
     auto &posicion_aparatos = deslizamiento->deslizamientos_orientados[id_deslizamiento];
     auto it = posicion_aparatos.find(seccion);
@@ -16,7 +16,7 @@ bool nodo_deslizamiento::compatible(ruta *r, int id_deslizamiento)
         int out = seccion->get_out(n->seccion, dir);
         if (it != posicion_aparatos.end()) {
             Lado l = dir;
-            seccion_via *sig = seccion->siguiente_seccion(prev, l, false);
+            seccion_via *sig = seccion->siguiente_seccion(prev, l);
             int out2 = seccion->get_out(sig, dir);
             if (out != it->second.second && it->second.first == in && it->second.second == out2)
                 continue;
@@ -73,7 +73,7 @@ void nodo_deslizamiento::cambio_activacion(bool accesible, bool acceso_impedido)
 {
     int in = seccion->get_in(prev, dir);
     Lado l = dir;
-    seccion_via *sig = seccion->siguiente_seccion(prev, l, false);
+    seccion_via *sig = seccion->siguiente_seccion(prev, l);
     int out = seccion->get_out(sig, dir);
     bool enclavada_correcta = false;
     if (deslizamiento->deslizamiento_activo >= 0) {
@@ -97,7 +97,7 @@ bool nodo_deslizamiento::is_asegurado(int id_deslizamiento)
     int in = seccion->get_in(prev, dir);
     auto r = seccion->get_ruta_asegurada();
     Lado l = dir;
-    seccion_via *sig = seccion->siguiente_seccion(prev, l, false);
+    seccion_via *sig = seccion->siguiente_seccion(prev, l);
     int out = seccion->get_out(sig, dir);
     if (r && (r->lado != dir || r->outs[opp_lado(dir)] != in || r->outs[dir] != out) && r->ruta_asegurada->is_formada())
         return false;

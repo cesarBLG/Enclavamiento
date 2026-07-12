@@ -50,11 +50,12 @@ protected:
     estado_inicio_ruta estado_inicio;
 public:
     bool clear_request=false;
-    ruta *ruta_activa=nullptr;
+    movimiento *ruta_activa=nullptr;
 
     bool ruta_necesaria = true;
     bool cierre_stick;
     bool abierta_desbloqueo = false;
+    bool abierta_bloqueo_receptor = false;
 
     ruta *ruta_fin=nullptr;
     ruta *ruta_fai=nullptr;

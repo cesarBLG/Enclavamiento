@@ -57,6 +57,11 @@ enum struct EstadoFAI
     Activo,
     Cancelado
 };
+enum struct TipoFAI
+{
+    Proximidad,
+    Reserva
+};
 enum struct CompatibilidadManiobra
 {
     Incompatible, // Bloqueo y movimientos prohibidos

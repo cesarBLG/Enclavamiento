@@ -99,7 +99,14 @@ seccion_via *aguja::ruta_fija(seccion_via *prev, Lado &dir)
 {
     if (!talonable_muelle && !bloqueo) {
         auto it = dependencias.find(id.dependencia);
-        if (it != dependencias.end() && !it->second->cerrada) return nullptr;
+        if (it != dependencias.end() && !it->second->cerrada) {
+            bool enclavada_movimiento = false;
+            // Ruta fija si está enclavada por movimiento especial (p. ej. autorizacion entrada/salida, servicio intermitente)
+            for (auto &enc : enclavada) {
+                if (!enc->es_ruta) enclavada_movimiento = true;
+            }
+            if (!enclavada_movimiento) return nullptr;
+        }
     }
     int pin_fijo = -1;
     if (talonable_muelle) pin_fijo = talonable_muelle == PosicionAguja::Invertida ? 1 : 0;
