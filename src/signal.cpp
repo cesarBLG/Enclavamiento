@@ -68,6 +68,8 @@ void señal_impl::determinar_aspecto()
                 cerrar = true;
             if (sec_ocup == EstadoCanton::Ocupado && sec_act->get_cv()->ocupacion_intempestiva)
                 cerrar = true;
+            if (sec_act->is_bloqueo_seccion())
+                prohibir_abrir = true;
         }
         for (auto &[r, d] : sec_act->get_deslizamiento()) {
             if (!d->asegurado && !d->acceso_impedido)

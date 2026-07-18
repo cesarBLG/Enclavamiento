@@ -23,6 +23,7 @@ protected:
     Lado sentido_preferente;
     EstadoBloqueo estado_inicial;
     std::vector<seccion_via*> cvs;
+    std::vector<cv*> cvs_entrada;
     lados<bool> ocupado;
     estado_bloqueo_lado colateral;
     estado_bloqueo estado_completo;

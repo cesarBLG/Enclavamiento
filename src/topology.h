@@ -134,7 +134,7 @@ public:
     {
         if (!bloqueo_asociado || id != *bloqueo_asociado) return;
         bloqueo_act = eb;
-        remota_cambio_elemento(ElementoRemota::CV, id_cv);
+        remota_cambio_elemento("sec", id);
     }
     virtual RespuestaMando mando(const std::string &cmd, int me)
     {
@@ -162,7 +162,7 @@ public:
             }
         }
         if (aceptado != RespuestaMando::OrdenRechazada)
-            remota_cambio_elemento(ElementoRemota::CV, id_cv);
+            remota_cambio_elemento("sec", id);
         return aceptado;
     }
     void vincular_señal(señal *sig, Lado lado, int pin)
@@ -176,5 +176,12 @@ public:
     {
         return siguientes_secciones[l].size();
     }
+    RemotaCV get_estado_remota();
+};
+class cruzamiento : public seccion_via
+{
+    public:
+    cruzamiento(const id_elemento &id, const json &j) : seccion_via(id, j, TipoSeccion::Cruzamiento) {}
+    RemotaCVX get_estado_remota();
 };
 void from_json(const json &j, seccion_via::conexion &conex);

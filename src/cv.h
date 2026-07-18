@@ -40,11 +40,12 @@ public:
     bool is_averia() { return averia; }
     bool is_btv() { return btv; }
     bool is_perdida_secuencia() { return perdida_secuencia; }
+    bool is_me_pendiente() { return me_pendiente; }
 
     virtual void message_cv(estado_cv ecv)
     {
         *((estado_cv*)this) = ecv;
-        remota_cambio_elemento(ElementoRemota::CV, id);
+        remota_cambio_elemento("cv", id);
         if (estado <= EstadoCV::Prenormalizado) ocupacion_intempestiva = false;
     }
 
@@ -62,7 +63,7 @@ public:
             } else {
                 me_pendiente = true;
                 aceptado = RespuestaMando::MandoEspecialNecesario;
-                remota_cambio_elemento(ElementoRemota::CV, id);
+                remota_cambio_elemento("cv", id);
             }
         }
         return aceptado;
@@ -70,7 +71,6 @@ public:
 
     RemotaCV get_estado_remota();
     RemotaCVA get_estado_remota_agujas();
-    RemotaCVX get_estado_remota_cruzamiento();
 };
 class cv_impl : public cv
 {
@@ -159,7 +159,7 @@ public:
 
     void send_state()
     {
-        remota_cambio_elemento(ElementoRemota::CV, id);
+        remota_cambio_elemento("cv", id);
         if (estado <= EstadoCV::Prenormalizado) ocupacion_intempestiva = false;
         json msg(*((estado_cv*)this));
         send_message(topic, msg.dump());

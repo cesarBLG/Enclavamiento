@@ -53,11 +53,11 @@ RespuestaMando aguja::mando(const std::string &cmd, int me)
         if (me) {
             bloqueo = false;
             log(id, "desbloqueo aguja", LOG_DEBUG);
-            remota_cambio_elemento(ElementoRemota::AG, id);
+            remota_cambio_elemento("sec", id);
             return RespuestaMando::Aceptado;
         } else {
             me_pendiente = true;
-            remota_cambio_elemento(ElementoRemota::AG, id);
+            remota_cambio_elemento("sec", id);
             return RespuestaMando::MandoEspecialNecesario;
         }
     } else if (cmd == "BIA") {

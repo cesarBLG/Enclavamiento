@@ -43,7 +43,7 @@ struct dependencia
     void send_state()
     {
         send_message("mando/"+id+"/state", json(mando_actual).dump());
-        remota_cambio_elemento(ElementoRemota::DEP, id+":DEP");
+        remota_cambio_elemento("dep", id+":DEP");
     }
     void set_mando(estado_mando estado)
     {

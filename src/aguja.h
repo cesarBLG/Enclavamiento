@@ -40,7 +40,7 @@ class aguja : public seccion_via, public estado_aguja
             }
         }
 
-        remota_cambio_elemento(ElementoRemota::AG, id);
+        remota_cambio_elemento("sec", id);
     }
     void message_aguja(const std::string &comp)
     {
@@ -64,7 +64,7 @@ class aguja : public seccion_via, public estado_aguja
     void asegurar(movimiento *ruta, int in, int out, std::optional<Lado> dir) override
     {
         seccion_via::asegurar(ruta, in, out, dir);
-        remota_cambio_elemento(ElementoRemota::AG, id);
+        remota_cambio_elemento("sec", id);
     }
     void liberar(movimiento *ruta)
     {
@@ -81,7 +81,7 @@ class aguja : public seccion_via, public estado_aguja
             enclavada.erase(ruta);
             if (enclavada.empty()) posicion_enclavada = std::nullopt;
         }
-        remota_cambio_elemento(ElementoRemota::AG, id);
+        remota_cambio_elemento("sec", id);
     }
     bool transitable(int pin, Lado dir) override
     {

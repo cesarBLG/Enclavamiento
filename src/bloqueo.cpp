@@ -10,6 +10,11 @@ tipo(j.value("Tipo", TipoBloqueo::BAU)), bloqueo_emisor(lado == Lado::Impar ? Es
     for (auto &cv : j["CVs"]) {
         cvs.push_back(secciones[id_elemento(cv)]);
     }
+    if (j.contains("CVsEntrada")) {
+        for (auto &cv : j["CVsEntrada"]) {
+            cvs_entrada.push_back(::cvs[id_elemento(cv)]);
+        }
+    }
 }
 bool bloqueo::bloqueo_permitido(bool emisor)
 {
@@ -56,6 +61,7 @@ bool bloqueo::desbloqueo_permitido()
     // - Si no existe posibilidad de cruce en la estación emisora (estación cerrada sin agujas talonables),
     //   esta estación no puede ser receptora de otro bloqueo
     if (ruta == TipoMovimiento::Itinerario || colateral.ruta == TipoMovimiento::Itinerario || ocupado.par || ocupado.impar) return false;
+    if (escape && !cvs_entrada.empty() && cvs_entrada[0]->get_state() > EstadoCV::Prenormalizado) return false;
     if (tipo == TipoBloqueo::BAD || tipo == TipoBloqueo::BLAD) return false;
     if (estado == bloqueo_emisor) {
         if (bloqueo_vinculado != nullptr && (colateral.bloqueo_siguiente || bloqueo_vinculado->propagacion_completa) && (bloqueo_vinculado->estado == bloqueo_vinculado->bloqueo_receptor || bloqueo_vinculado->colateral.estado_objetivo == bloqueo_vinculado->bloqueo_receptor || bloqueo_vinculado->estado == EstadoBloqueo::SinDatos)) {
@@ -91,7 +97,7 @@ void bloqueo::send_state()
     send_message(topic_colateral, j.dump());
     j = estado_completo;
     send_message(topic, j.dump());
-    remota_cambio_elemento(ElementoRemota::BLQ, id);
+    remota_cambio_elemento("blq", id);
 }
 void bloqueo::message_cv(const id_elemento &id, estado_cv ecv)
 {
@@ -102,7 +108,45 @@ void bloqueo::message_cv(const id_elemento &id, estado_cv ecv)
             break;
         }
     }
-    if (index < 0) return;
+    
+    // Detección de escape de material
+    if (!escape && estado != bloqueo_emisor && tipo != TipoBloqueo::BAD && tipo != TipoBloqueo::BLAD) {
+        bool esc=false;
+        // Liberación circuito de agujas estando ocupado el de entrada
+        if (cvs_entrada.size() > 1 && id == cvs_entrada[1]->id && ((ecv.evento->lado == lado && !ecv.evento->ocupacion) || (!ecv.evento && ecv.estado_previo > EstadoCV::Prenormalizado && ecv.estado <= EstadoCV::Prenormalizado)) && cvs_entrada[0]->get_state() > EstadoCV::Prenormalizado) {
+            esc = true;
+        }
+        if ((ecv.evento && ecv.evento->lado == lado && ecv.evento->ocupacion) || (!ecv.evento && ecv.estado_previo <= EstadoCV::Prenormalizado && ecv.estado > EstadoCV::Prenormalizado && !ecv.averia)) {
+            // Ocupación del circuito de entrada hacia el bloqueo
+            if (cvs_entrada.size() == 1 && id == cvs_entrada[0]->id && ecv.evento && ruta == TipoMovimiento::Ninguno) {
+                esc = true;
+            }
+            // Ocupación del primer circuito de trayecto
+            if (index == 0 && (ecv.evento || (!cvs_entrada.empty() && cvs_entrada[0]->get_state() > EstadoCV::Prenormalizado))) {
+                // No se produce escape si está establecida maniobra que incluye el CV de trayecto
+                if (ruta != TipoMovimiento::Maniobra || !cvs[index]->is_asegurada()) {
+                    esc = true;
+                }
+            }
+            // Ocupación del siguiente circuito de trayecto por la maniobra
+            if (index == 1 && (ecv.evento || estado_cvs[cvs[0]->id_cv.id] > EstadoCV::Prenormalizado)) {
+                if (ruta == TipoMovimiento::Maniobra) {
+                    esc = true;
+                }
+            }
+        }
+        if (esc && estado == EstadoBloqueo::Desbloqueo && dependencias[estacion]->cerrada && !colateral.prohibido && colateral.actc != ACTC::Denegada) esc = false;
+        if (esc) {
+            escape = true;
+            sonerias[TipoSoneria::EscapeMaterial] = get_milliseconds();
+            log(this->id, "escape emisor", LOG_WARNING);
+            if (index < 0) update();
+        }
+    }
+
+    if (index < 0)
+        return;
+
     EstadoCV est_cv = ecv.estado;
     EstadoCV prev_est = ecv.estado_previo;
 
@@ -113,30 +157,6 @@ void bloqueo::message_cv(const id_elemento &id, estado_cv ecv)
          && prev_est == (lado == Lado::Impar ? EstadoCV::OcupadoPar : EstadoCV::OcupadoImpar)
          && (!ecv.evento || ecv.evento->lado == lado))
             liberar = true;
-    
-    // Detección de escape de material
-    if (!escape && ((ecv.evento && ecv.evento->lado == lado && ecv.evento->ocupacion) || (!ecv.evento && ecv.estado_previo <= EstadoCV::Prenormalizado && ecv.estado > EstadoCV::Prenormalizado && !ecv.averia)) && estado != bloqueo_emisor && tipo != TipoBloqueo::BAD && tipo != TipoBloqueo::BLAD) {
-        bool esc=false;
-        // Ocupación del primer circuito de trayecto
-        if (index == 0) {
-            // No se produce escape si está establecida maniobra que incluye el CV de trayecto
-            if (ruta != TipoMovimiento::Maniobra || !cvs[index]->is_asegurada()) {
-                esc = true;
-            }
-        }
-        // Ocupación del siguiente circuito de trayecto por la maniobra
-        if (index == 1) {
-            if (ruta == TipoMovimiento::Maniobra) {
-                esc = true;
-            }
-        }
-        if (esc && estado == EstadoBloqueo::Desbloqueo && dependencias[estacion]->cerrada && !colateral.prohibido && colateral.actc != ACTC::Denegada) esc = false;
-        if (esc) {
-            escape = true;
-            sonerias[TipoSoneria::EscapeMaterial] = get_milliseconds();
-            log(this->id, "escape emisor", LOG_WARNING);
-        }
-    }
 
     for (auto *sec : cvs) {
         estado_cvs[sec->id.id] = sec->get_cv()->get_state();

@@ -35,12 +35,12 @@ void seccion_via::asegurar(movimiento *ruta, int in, int out, std::optional<Lado
     if (ruta_asegurada || ruta == nullptr) return;
     log(id, "reservada", LOG_DEBUG);
     ruta_asegurada = r;
-    remota_cambio_elemento(ElementoRemota::CV, id_cv);
+    remota_cambio_elemento("sec", id);
 }
 void seccion_via::asegurar_deslizamiento(movimiento *ruta, nodo_deslizamiento* nodo)
 {
     this->deslizamiento[ruta] = nodo;
-    remota_cambio_elemento(ElementoRemota::CV, id_cv);
+    remota_cambio_elemento("sec", id);
 }
 void seccion_via::liberar(movimiento *ruta)
 {
@@ -55,10 +55,10 @@ void seccion_via::liberar(movimiento *ruta)
             }
         }
         ruta_asegurada = std::nullopt;
-        remota_cambio_elemento(ElementoRemota::CV, id_cv);
+        remota_cambio_elemento("sec", id);
     } else if (deslizamiento.find(ruta) != deslizamiento.end()) {
         deslizamiento.erase(ruta);
-        remota_cambio_elemento(ElementoRemota::CV, id_cv);
+        remota_cambio_elemento("sec", id);
     }
 }
 TipoMovimiento seccion_via::get_tipo_movimiento()
@@ -115,7 +115,7 @@ void seccion_via::message_cv(const id_elemento &id, estado_cv ev)
         pn->message_cv(ev);
     }
 
-    remota_cambio_elemento(ElementoRemota::CV, id_cv);
+    remota_cambio_elemento("cv", id);
 }
 EstadoCanton seccion_via::get_ocupacion(seccion_via* prev, Lado dir)
 {
@@ -199,6 +199,50 @@ int seccion_via::get_out(seccion_via* next, Lado dir)
         }
     }
     return -1;
+}
+RemotaCV seccion_via::get_estado_remota()
+{
+    auto cv_it = cvs.find(id_cv);
+    if (cv_it != cvs.end()) return cv_it->second->get_estado_remota();
+
+    RemotaCV r;
+    TipoMovimiento tipo = get_tipo_movimiento();
+    r.CV_DAT = 1;
+    r.CV_ME = me_pendiente ? 1 : 0;
+    r.CV_BV = bloqueo_seccion? 1 : 0;
+    r.CV_OCUP_TIPO = 0;
+    if (tipo == TipoMovimiento::Maniobra) r.CV_EST = 2;
+    else if (tipo == TipoMovimiento::Itinerario || tipo == TipoMovimiento::Rebase) r.CV_EST = 1;
+    else r.CV_EST = 0;
+    r.CV_DES = 0;
+    r.CV_CEJES_AV = 0;
+    r.CV_CEJES_PREN = 0;
+    r.CV_UC = 0;
+    r.CV_NSEC = 0;
+    return r;
+}
+RemotaCVX cruzamiento::get_estado_remota()
+{
+    RemotaCVX r;
+    TipoMovimiento tipo = get_tipo_movimiento();
+    auto cv_it = cvs.find(id_cv);
+    cv *cv = cv_it != cvs.end() ? cv_it->second : nullptr;
+    r.CVX_DAT = 1;
+    r.CVX_ME = me_pendiente || (cv != nullptr && cv->is_me_pendiente()) ? 1 : 0;
+    r.CVX_BV = bloqueo_seccion || (cv != nullptr && cv->is_btv()) ? 1 : 0;
+    r.CVX_OCUP_TIPO = (cv != nullptr && cv->ocupacion_intempestiva) ? 1 : 0;
+    if (cv != nullptr && cv->get_state() > EstadoCV::Prenormalizado) r.CVX_EST = 3;
+    else if (tipo == TipoMovimiento::Maniobra) r.CVX_EST = 2;
+    else if (tipo == TipoMovimiento::Itinerario || tipo == TipoMovimiento::Rebase) r.CVX_EST = 1;
+    else if (cv != nullptr && cv->get_state() == EstadoCV::Prenormalizado) r.CVX_EST = 3;
+    else r.CVX_EST = 0;
+    r.CVX_DIR = ruta_asegurada ? (ruta_asegurada->outs.impar == 0 ? 1 : 2) : 0;
+    r.CVX_DES_N = 0;
+    r.CVX_DES_I = 0;
+    r.CVX_GAL = 0;
+    r.CVX_CEJES_AV = (cv != nullptr && cv->is_averia()) ? 1 : 0;
+    r.CVX_CEJES_PREN = cv != nullptr && cv->get_state() == EstadoCV::Prenormalizado ? 1 : 0;
+    return r;
 }
 void from_json(const json &j, seccion_via::conexion &conex)
 {

@@ -25,50 +25,17 @@ RemotaCV cv::get_estado_remota()
 RemotaCVA cv::get_estado_remota_agujas()
 {
     RemotaCVA r;
-    TipoMovimiento tipo = TipoMovimiento::Ninguno;
-    for (auto *sec : secciones) {
-        if (sec->get_tipo_movimiento() != TipoMovimiento::Ninguno) tipo = sec->get_tipo_movimiento();
-    }
     r.CVA_DAT = 1;
     r.CVA_ME = me_pendiente ? 1 : 0;
     r.CVA_R1 = 0;
     r.CVA_OCUP_TIPO = ocupacion_intempestiva ? 1 : 0;
-    if (estado > EstadoCV::Prenormalizado) r.CVA_EST = 3;
-    else if (tipo == TipoMovimiento::Maniobra) r.CVA_EST = 2;
-    else if (tipo == TipoMovimiento::Itinerario || tipo == TipoMovimiento::Rebase) r.CVA_EST = 1;
-    else if (estado == EstadoCV::Prenormalizado) r.CVA_EST = 3;
+    if (estado > EstadoCV::Prenormalizado) r.CVA_EST = 1;
     else r.CVA_EST = 0;
     r.CVA_R2 = 0;
     r.CVA_CEJES_AV = averia ? 1 : 0;
     r.CVA_CEJES_PREN = estado == EstadoCV::Prenormalizado ? 1 : 0;
     r.CVA_UC = 0;
     r.CVA_NSEC = perdida_secuencia ? 1 : 0;
-    return r;
-}
-RemotaCVX cv::get_estado_remota_cruzamiento()
-{
-    RemotaCVX r;
-    seccion_via *seccion = secciones.size() == 1 ? *secciones.begin() : nullptr;
-    TipoMovimiento tipo = seccion != nullptr ? seccion->get_tipo_movimiento() : TipoMovimiento::Ninguno;
-    r.CVX_DAT = 1;
-    r.CVX_ME = me_pendiente || (seccion != nullptr && seccion->is_me_pendiente()) ? 1 : 0;
-    r.CVX_BV = ((seccion != nullptr && seccion->is_bloqueo_seccion()) || btv) ? 1 : 0;
-    r.CVX_OCUP_TIPO = ocupacion_intempestiva ? 1 : 0;
-    if (estado > EstadoCV::Prenormalizado) r.CVX_EST = 3;
-    else if (tipo == TipoMovimiento::Maniobra) r.CVX_EST = 2;
-    else if (tipo == TipoMovimiento::Itinerario || tipo == TipoMovimiento::Rebase) r.CVX_EST = 1;
-    else if (estado == EstadoCV::Prenormalizado) r.CVX_EST = 3;
-    else r.CVX_EST = 0;
-    if (seccion != nullptr && seccion->get_ruta_asegurada()) {
-        r.CVX_DIR = seccion->get_ruta_asegurada()->outs.impar == 0 ? 1 : 2;
-    } else {
-        r.CVX_DIR = 0;
-    }
-    r.CVX_DES_N = 0;
-    r.CVX_DES_I = 0;
-    r.CVX_GAL = 0;
-    r.CVX_CEJES_AV = averia ? 1 : 0;
-    r.CVX_CEJES_PREN = estado == EstadoCV::Prenormalizado ? 1 : 0;
     return r;
 }
 cv_impl::cv_impl(const id_elemento &id, const json &j) : cv(id, j.value("Tipo", TipoSeccion::Lineal)), topic("cv/"+id_to_mqtt(id.id)+"/state"), cejes(j["ContadoresEjes"])

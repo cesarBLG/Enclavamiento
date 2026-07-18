@@ -3,14 +3,14 @@
 #include "items.h"
 #include <set>
 using nlohmann::json;
-std::set<std::pair<ElementoRemota, id_elemento>> update_components;
+std::set<std::pair<std::string, id_elemento>> update_components;
 std::map<id_elemento, json> sigs;
 std::map<id_elemento, json> imvs;
 std::map<id_elemento, json> fmvs;
 bool sendall = false;
-void remota_cambio_elemento(ElementoRemota el, const id_elemento &id)
+void remota_cambio_elemento(std::string tipo, const id_elemento &id)
 {
-    update_components.insert({el, id});
+    update_components.insert({tipo, id});
 }
 void push(json &j, std::pair<ElementoRemota,id_elemento> comp, json j2)
 {
@@ -92,41 +92,48 @@ void update_remota()
         if (sendall || r != imvs[id]) push(j, {ElementoRemota::IMV, id}, r);
         imvs[id] = r;
     }
-    for (auto &[id, cv] : cv_impls) {
-        std::pair<ElementoRemota,id_elemento> comp(ElementoRemota::CV, id);
-        if (sendall || update_components.find(comp) != update_components.end()) {
-            json r;
-            if (cv->tipo == TipoSeccion::Aguja) push(j, {ElementoRemota::CVA, id}, json(cv->get_estado_remota_agujas()));
-            else if (cv->tipo == TipoSeccion::Cruzamiento) push(j, {ElementoRemota::CVX, id}, json(cv->get_estado_remota_cruzamiento()));
-            else push(j, {ElementoRemota::CV, id}, json(cv->get_estado_remota()));
+    for (auto &[id, sec] : secciones) {
+        std::pair<std::string,id_elemento> comp1("sec", id);
+        std::pair<std::string,id_elemento> comp2("cv", sec->id_cv);
+        std::pair<std::string,id_elemento> comp3("blq", sec->bloqueo_asociado ? *sec->bloqueo_asociado : id_elemento(""));
+        if (sendall || update_components.find(comp1) != update_components.end() || update_components.find(comp2) != update_components.end() || update_components.find(comp3) != update_components.end()) {
+            if (sec->tipo == TipoSeccion::Aguja) {
+                push(j, {ElementoRemota::AG, id}, json(((aguja*)sec)->get_estado_remota()));
+                update_components.insert(comp2);
+            } else if (sec->tipo == TipoSeccion::Cruzamiento) {
+                push(j, {ElementoRemota::CVX, id}, json(((cruzamiento*)sec)->get_estado_remota()));
+            } else {
+                if (cvs.find(sec->id_cv) != cvs.end() && cv_impls.find(sec->id_cv) == cv_impls.end()) continue;
+                push(j, {ElementoRemota::CV, id}, json(sec->get_estado_remota()));
+            }
         }
     }
-    for (auto &[id, ag] : agujas) {
-        std::pair<ElementoRemota,id_elemento> comp(ElementoRemota::AG, id);
+    for (auto &[id, cv] : cv_impls) {
+        std::pair<std::string,id_elemento> comp("cv", id);
         if (sendall || update_components.find(comp) != update_components.end()) {
-            auto r = json(ag->get_estado_remota());
-            push(j, comp, r);
+            if (cv->tipo == TipoSeccion::Aguja)
+                push(j, {ElementoRemota::CVA, id}, json(cv->get_estado_remota_agujas()));
         }
     }
     for (auto &[id, bloq] : bloqueos) {
-        std::pair<ElementoRemota,id_elemento> comp(ElementoRemota::BLQ, bloq->id);
+        std::pair<std::string,id_elemento> comp("blq", bloq->id);
         if (sendall || update_components.find(comp) != update_components.end()) {
             auto eb = json(bloq->get_estado_remota());
             push(j, {ElementoRemota::BLQ, id}, eb);
         }
     }
     for (auto &[id, dep] : dependencias) {
-        std::pair<ElementoRemota,id_elemento> comp(ElementoRemota::DEP, id+":DEP");
+        std::pair<std::string,id_elemento> comp("dep", id+":DEP");
         if (sendall || update_components.find(comp) != update_components.end()) {
             auto r = json(dep->get_estado_remota());
-            push(j, comp, r);
+            push(j, {ElementoRemota::DEP, comp.second}, r);
         }
     }
     for (auto &[id, pn] : pns) {
-        std::pair<ElementoRemota,id_elemento> comp(ElementoRemota::PN, id);
+        std::pair<std::string,id_elemento> comp("pn", id);
         if (sendall || update_components.find(comp) != update_components.end()) {
             auto r = json(pn->get_estado_remota());
-            push(j, comp, r);
+            push(j, {ElementoRemota::PN, comp.second}, r);
         }
     }
     update_components.clear();

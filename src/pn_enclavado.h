@@ -27,7 +27,7 @@ public:
         if (mando_cierre != prev_state) log(id, mando_cierre ? "cierre" : "apertura");
         send_message(topic, json(mando_cierre).dump());
         prev_state = mando_cierre;
-        remota_cambio_elemento(ElementoRemota::PN, id);
+        remota_cambio_elemento("pn", id);
     }
     bool permiso_apertura()
     {

@@ -361,6 +361,8 @@ void init_items_ordered(const json &j, std::string tipo)
                     auto *ag = new aguja(is, jsec);
                     secciones[is] = ag;
                     agujas[is] = ag;
+                } else if (tipo == TipoSeccion::Cruzamiento) {
+                    secciones[is] = new cruzamiento(is, jsec);
                 } else {
                     secciones[is] = new seccion_via(is, jsec, tipo);
                 }
