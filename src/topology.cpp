@@ -61,6 +61,72 @@ void seccion_via::liberar(movimiento *ruta)
         remota_cambio_elemento("sec", id);
     }
 }
+bool seccion_via::asegurar_posible(movimiento *ruta, int in, int out, std::optional<Lado> dir)
+{
+    if (cv_seccion != nullptr) {
+        for (auto &sec : cv_seccion->secciones) {
+            if (sec->is_asegurada() && !sec->is_asegurada(ruta)) return false;
+        }
+    }
+    if (ruta_asegurada && ruta_asegurada->ruta_asegurada != ruta) return false;
+
+    for (auto &pt : puntos_negros) {
+        Lado dir2 = dir ? *dir : Lado::Impar;
+        if (!pt.pin_propio || (dir2 == pt.pin_propio->first && out == pt.pin_propio->second) || (dir2 != pt.pin_propio->first && in == pt.pin_propio->second)) {
+            auto *sec = secciones[pt.seccion];
+            if (sec->ruta_asegurada && sec->ruta_asegurada->ruta_asegurada != ruta) {
+                if (!pt.pin_ajeno || sec->ruta_asegurada->outs[pt.pin_ajeno->first] == pt.pin_ajeno->second)
+                    return false;
+            }
+        }
+    }
+
+    return true;
+}
+bool seccion_via::deslizamiento_posible(int in, int out, Lado dir)
+{
+    if (ruta_asegurada && (ruta_asegurada->lado != dir || ruta_asegurada->outs[dir] != in || ruta_asegurada->outs[opp_lado(dir)] != out)) {
+        return false;
+    }
+
+    for (auto &pt : puntos_negros) {
+        if (!pt.pin_propio || (dir == pt.pin_propio->first && out == pt.pin_propio->second) || (dir != pt.pin_propio->first && in == pt.pin_propio->second)) {
+            auto *sec = secciones[pt.seccion];
+            if (sec->ruta_asegurada) {
+                if (!pt.pin_ajeno || sec->ruta_asegurada->outs[pt.pin_ajeno->first] == pt.pin_ajeno->second)
+                    return false;
+            }
+        }
+    }
+
+    return true;
+}
+bool seccion_via::transitable(int in, Lado dir)
+{
+    if (in < 0) return false;
+    int out = active_outs[dir][in];
+    if (out < 0) return false;
+    for (auto &pt : puntos_negros) {
+        if (!pt.pin_propio || (dir == pt.pin_propio->first && out == pt.pin_propio->second) || (dir != pt.pin_propio->first && in == pt.pin_propio->second)) {
+            auto *sec = secciones[pt.seccion];
+            if (sec->ruta_asegurada && (!ruta_asegurada || sec->ruta_asegurada->ruta_asegurada != ruta_asegurada->ruta_asegurada)) {
+                if (!pt.pin_ajeno || sec->ruta_asegurada->outs[pt.pin_ajeno->first] == pt.pin_ajeno->second)
+                    return false;
+            }
+            auto *cv = sec->get_cv();
+            if (cv != nullptr) {
+                if (cv->ocupacion_intempestiva)
+                    return false;
+                if (cv->get_state() > EstadoCV::Prenormalizado && (pt.pin_ajeno->second < 0 || sec->ocupacion_outs[pt.pin_ajeno->first] == pt.pin_ajeno->second))
+                    return false;
+            }
+        }
+    }
+    // TODO: Maniobra local
+    if (ruta_asegurada && (ruta_asegurada->outs[dir] != out || ruta_asegurada->outs[opp_lado(dir)] != in))
+        return false;
+    return true;
+}
 TipoMovimiento seccion_via::get_tipo_movimiento()
 {
     if (ruta_asegurada)

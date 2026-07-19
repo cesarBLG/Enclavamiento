@@ -22,6 +22,12 @@ struct reserva_seccion
     std::optional<Lado> lado;
     lados<int> outs;
 };
+struct punto_negro
+{
+    id_elemento seccion;
+    std::optional<std::pair<Lado, int>> pin_propio;
+    std::optional<std::pair<Lado, int>> pin_ajeno;
+};
 class seccion_via
 {
 public:
@@ -47,6 +53,8 @@ protected:
     std::optional<reserva_seccion> ruta_asegurada;
 
     std::map<movimiento*, nodo_deslizamiento*> deslizamiento;
+
+    std::vector<punto_negro> puntos_negros;
 
     lados<int> ocupacion_outs;
 
@@ -86,37 +94,13 @@ public:
             return false;
         }
     }
-    bool asegurar_posible(movimiento *ruta, int in, int out, std::optional<Lado> dir)
-    {
-        if (cv_seccion != nullptr) {
-            for (auto &sec : cv_seccion->secciones) {
-                if (sec->is_asegurada() && !sec->is_asegurada(ruta)) return false;
-            }
-        }
-        if (ruta_asegurada && ruta_asegurada->ruta_asegurada != ruta) return false;
-        return true;
-    }
-    bool deslizamiento_posible(int in, int out, Lado dir)
-    {
-        if (ruta_asegurada && (ruta_asegurada->lado != dir || ruta_asegurada->outs[dir] != in || ruta_asegurada->outs[opp_lado(dir)] != out)) {
-            return false;
-        }
-        return true;
-    }
+    bool asegurar_posible(movimiento *ruta, int in, int out, std::optional<Lado> dir);
+    bool deslizamiento_posible(int in, int out, Lado dir);
     bool transitable(seccion_via *prev, Lado dir)
     {
         return transitable(get_in(prev, dir), dir);
     }
-    virtual bool transitable(int in, Lado dir)
-    {
-        if (in < 0) return false;
-        int out = active_outs[dir][in];
-        if (out < 0) return false;
-        // TODO: Maniobra local
-        if (ruta_asegurada && (ruta_asegurada->outs[dir] != out || ruta_asegurada->outs[opp_lado(dir)] != in))
-            return false;
-        return true;
-    }
+    virtual bool transitable(int in, Lado dir);
     std::optional<reserva_seccion> get_ruta_asegurada()
     {
         return ruta_asegurada;
