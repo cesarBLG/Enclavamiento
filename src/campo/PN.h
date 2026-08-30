@@ -6,6 +6,7 @@ class SPPN : public mqtt_device
     bool envioPendiente = false;
     unsigned long pendienteAck = 0;
     bool comprobacionSoneria = false;
+    int comprobacion = -1;
     bool averiaSoneria = false;
     unsigned long ultimaComprobacionSoneria = 0;
     int pinLuz1;
@@ -67,7 +68,6 @@ public:
             serial.write(0x0E);
             serial.write(0xEF);
             comprobacionSoneria = false;
-            sendState();
             pendienteAck = millis();
             envioPendiente = false;
         }
@@ -90,17 +90,11 @@ public:
                 if (serialBuffer.back() == 0xEF) {
                     if (serialBuffer[1] == 2 && serialBuffer[2] == 0) {
                         pendienteAck = 0;
-                        if (!averiaSoneria && cierre) {
-                            comprobacionSoneria = true;
-                            sendState();
-                        }
+                        if (!averiaSoneria && cierre) comprobacionSoneria = true;
                     }
                     if (serialBuffer[1] == 3 && serialBuffer[2] == 0x10) {
                         averiaSoneria = serialBuffer[3] != 0 && serialBuffer[3] != 1;
-                        if (comprobacionSoneria && averiaSoneria) {
-                            comprobacionSoneria = false;
-                            sendState();
-                        }
+                        if (comprobacionSoneria && averiaSoneria) comprobacionSoneria = false;
                     }
                 }
                 serialBuffer.clear();
@@ -113,15 +107,24 @@ public:
                 setVolumen();
             }
         }
+        int nuevaComprobacion = -1;
+        if (cierre)
+        {
+            if (comprobacionSoneria) nuevaComprobacion = 1;
+        }
+        else
+        {
+            if (!comprobacionSoneria) nuevaComprobacion = 0;
+        }
+        if (nuevaComprobacion != comprobacion) {
+            comprobacion = nuevaComprobacion;
+            client->publish(topicComprobacion.c_str(), comprobacion == 1 ? "true" : comprobacion == 0 ? "false" : "");
+        }
     }
     void msg_callback(const std::string_view topic, const std::string_view payload) override
     {
         if (topic != this->topic) return;
         setCierre(payload == "true");
-    }
-    void sendState()
-    {
-        client->publish(topicComprobacion.c_str(), comprobacionSoneria ? "true" : "false");
     }
     void setCierre(bool newCierre)
     {

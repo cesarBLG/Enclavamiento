@@ -48,6 +48,13 @@ protected:
     bool paso_circulacion = false;
 
     estado_inicio_ruta estado_inicio;
+
+    bool itinerarios_desviada = false;
+    bool aprec_anterior_reconocido = false;
+    bool aprec_anterior_sin_reconocimiento = false;
+    bool aprec_reconocido = false;
+    int64_t inicio_aprec = 0;
+
 public:
     bool clear_request=false;
     movimiento *ruta_activa=nullptr;
@@ -79,4 +86,5 @@ public:
     std::pair<RemotaSIG, RemotaIMV> get_estado_remota();
     estado_inicio_ruta get_estado_inicio();
     bool is_rebasada() { return rebasada; }
+    void set_reconocimiento_aprec(bool rec) { aprec_anterior_reconocido = rec; }
 };

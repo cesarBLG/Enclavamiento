@@ -160,6 +160,7 @@ public:
     {
         return siguientes_secciones[l].size();
     }
+    virtual bool is_desviada(seccion_via *prev, Lado dir);
     RemotaCV get_estado_remota();
 };
 class cruzamiento : public seccion_via

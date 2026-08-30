@@ -12,7 +12,7 @@ protected:
     lados<bool> aviso_cierre={false, false};
     bool cierre_manual=false;
     bool mando_cierre=false;
-    bool protegido=false;
+    int protegido = -1;
     bool perdida_comprobacion=false;
 
     bool ocupado;
@@ -80,13 +80,14 @@ public:
         }
         return RespuestaMando::OrdenRechazada;
     }
-    void message_pn(bool protegido)
+    void message_pn(const std::string &payload)
     {
+        int protegido = payload == "true" ? 1 : (payload == "false" ? 0 : -1);
         if (this->protegido == protegido) return;
+        if (this->protegido == 1 && protegido != 1 && mando_cierre) perdida_comprobacion = true;
+        if (perdida_comprobacion && protegido == 1) perdida_comprobacion = false;
         this->protegido = protegido;
-        if (!protegido && mando_cierre) perdida_comprobacion = true;
-        if (perdida_comprobacion && protegido) perdida_comprobacion = false;
-        log(id, protegido ? "protegido" : "sin proteccion");
+        log(id, protegido == 1 ? "protegido" : "sin proteccion");
         update();
     }
     void message_cv(estado_cv ecv)
@@ -119,8 +120,11 @@ public:
         RemotaPN r;
         r.PN_DAT = 1;
         r.PN_FUN = cierre_manual ? 1 : 0;
-        r.PN_EST = perdida_comprobacion ? 3 : (mando_cierre != protegido ? 2 : (protegido ? 1 : 0));
-        r.PN_ENC1 = ((protegido || perdida_comprobacion) && ((aviso_cierre.impar && tipo.impar == TipoPN::Enclavado) || (aviso_cierre.par && tipo.par == TipoPN::Enclavado))) ? 2 : (mando_cierre ? 1 : 0);
+        if (perdida_comprobacion) r.PN_EST = 3;
+        else if (protegido == -1 || protegido != mando_cierre) r.PN_EST = 2;
+        else if (protegido == 1) r.PN_EST = 1;
+        else r.PN_EST = 0;
+        r.PN_ENC1 = ((protegido == 1 || perdida_comprobacion) && ((aviso_cierre.impar && tipo.impar == TipoPN::Enclavado) || (aviso_cierre.par && tipo.par == TipoPN::Enclavado))) ? 2 : (mando_cierre ? 1 : 0);
         r.PN_ENC2 = 0;
         r.PN_ENC3 = 0;
         r.PN_ENC4 = 0;
@@ -133,7 +137,7 @@ public:
     }
     bool is_protegido()
     {
-        return protegido;
+        return protegido == 1;
     }
     TipoPN get_tipo(Lado lado)
     {

@@ -266,6 +266,14 @@ int seccion_via::get_out(seccion_via* next, Lado dir)
     }
     return -1;
 }
+bool seccion_via::is_desviada(seccion_via *prev, Lado dir)
+{
+    int in = get_in(prev, dir);
+    if (in < 0) return true;
+    int out = active_outs[dir][0];
+    if (out < 0) return true;
+    return in != out;
+}
 RemotaCV seccion_via::get_estado_remota()
 {
     auto cv_it = cvs.find(id_cv);

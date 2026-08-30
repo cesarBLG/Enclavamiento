@@ -293,6 +293,13 @@ void handle_message(const std::string &topic, const std::string &payload)
         if (it != señales.end()) it->second->message_señal(json::parse(payload));
         return;
     }
+    std::regex signalRecPattern(R"(^signal/([a-zA-Z0-9_-]+/[a-zA-Z0-9_'-]+)/rec_aprec$)");
+    if (std::regex_match(topic, match, signalRecPattern)) {
+        id_elemento id = id_elemento(id_from_mqtt(match[1]));
+        auto it = señal_impls.find(id);
+        if (it != señal_impls.end()) it->second->set_reconocimiento_aprec(json::parse(payload));
+        return;
+    }
     std::regex bloqueoStatePattern(R"(^bloqueo/([a-zA-Z0-9_-]+/[a-zA-Z0-9_'-]+)/state$)");
     if (std::regex_match(topic, match, bloqueoStatePattern)) {
         estado_bloqueo eb(json::parse(payload));
@@ -316,7 +323,7 @@ void handle_message(const std::string &topic, const std::string &payload)
     if (std::regex_match(topic, match, comprobacionPNPattern)) {
         id_elemento id = id_elemento(id_from_mqtt(match[1]));
         auto it = pns.find(id);
-        if (it != pns.end()) it->second->message_pn(payload == "true");
+        if (it != pns.end()) it->second->message_pn(payload);
         return;
     }
     std::regex comprobacionAgujaPattern(R"(^aguja/([a-zA-Z0-9_-]+/[a-zA-Z0-9_'-]+)/comprobacion$)");

@@ -7,13 +7,22 @@ señal::señal(const id_elemento &id, const json &j) : id(id), lado(j["Lado"]), 
 }
 señal_impl::señal_impl(const id_elemento &id, const json &j) : señal(id, j), topic("signal/"+id_to_mqtt(id.id)+"/state"), topic_inicio("signal/"+id_to_mqtt(id.id)+"/inicio")
 {
-    for (auto &[est, asp] : j["AspectoCanton"].items()) {
-        aspecto_maximo_ocupacion[json(est)] = asp;
+    if (j.contains("AspectoCanton")) {
+        for (auto &[est, asp] : j["AspectoCanton"].items()) {
+            aspecto_maximo_ocupacion[json(est)] = asp;
+        }
     }
-    for (auto &[asp1, asp2] : j["AspectoAnteriorSeñal"].items()) {
-        aspectos_maximos_anterior_señal[json(asp1)] = asp2;
+    if (aspecto_maximo_ocupacion.empty())
+        aspecto_maximo_ocupacion[EstadoCanton::Libre] = Aspecto::ViaLibre;
+    if (j.contains("AspectoAnteriorSeñal")) {
+        for (auto &[asp1, asp2] : j["AspectoAnteriorSeñal"].items()) {
+            aspectos_maximos_anterior_señal[json(asp1)] = asp2;
+        }
     }
+    if (aspectos_maximos_anterior_señal.empty())
+        aspectos_maximos_anterior_señal[Aspecto::ParadaDiferida] = Aspecto::ViaLibre;
     ruta_necesaria = j.value("RutaNecesaria", tipo != TipoSeñal::Intermedia && tipo != TipoSeñal::Avanzada);
+    itinerarios_desviada = j.value("ItinerariosDesviada", false);
     cierre_stick = ruta_necesaria;
     clear_request = !cierre_stick;
 }
@@ -30,6 +39,8 @@ void señal_impl::determinar_aspecto()
     bool cerrar = false;
     // Condiciones que impiden abrir la señal, pero no la cierran si estaba abierta
     bool prohibir_abrir = false;
+    // Ruta a desviada
+    bool desviada = false;
     // Nombre del bloqueo asociado
     std::optional<id_elemento> bloq_id = bloqueo_asociado;
     bool salida_trayecto = (tipo == TipoSeñal::Salida || tipo == TipoSeñal::Entrada) && bloq_id;
@@ -80,6 +91,7 @@ void señal_impl::determinar_aspecto()
             if (!bloq_id) bloq_id = sec_act->bloqueo_asociado;
             if (tipo == TipoSeñal::Salida || tipo == TipoSeñal::Entrada) salida_trayecto = true;
         }
+        desviada |= sec_act->is_desviada(sec_prv, dir);
         sec_prv = sec_act;
         sec_act = next;
         if (sec_act != nullptr) sig_señal = sec_act->señal_inicio(dir, sec_prv);
@@ -137,23 +149,90 @@ void señal_impl::determinar_aspecto()
         aspecto = Aspecto::Parada;
     } else {
         // Permitir o no la apertura con cantón ocupado en el mismo sentido, o en prenormalización
-        aspecto = aspecto_maximo_ocupacion[canton];
+        auto it = aspecto_maximo_ocupacion.lower_bound(canton);
+        aspecto = it == aspecto_maximo_ocupacion.end() ? Aspecto::Parada : it->second;
         // Itinerarios ERTMS pueden abrir como máximo en parada selectiva
         if (ruta_activa != nullptr && ruta_activa->ertms && aspecto > Aspecto::ParadaSelectivaDestellos) aspecto = Aspecto::ParadaSelectivaDestellos;
         // Aspecto máximo permitido para cumplir las órdenes de la señal siguiente
         if (sig_señal != nullptr) aspecto = std::min(aspecto, sig_señal->aspecto_maximo_anterior_señal);
+        // Itinerarios por vía desviada
+        if (desviada && aspecto > Aspecto::Precaucion) {
+            bool fin_itinerario;
+            if (ruta_fin != nullptr && ruta_fin->tipo == TipoMovimiento::Maniobra)
+                fin_itinerario = false;
+            else if (ruta_fin == nullptr && (seccion_prev == nullptr || !seccion_prev->is_trayecto()))
+                fin_itinerario = false;
+            else
+                fin_itinerario = true;
+            if (fin_itinerario)
+                aprec_anterior_sin_reconocimiento = !aprec_anterior_reconocido;
+            if (itinerarios_desviada) {
+                // Señal en vía de apartado desde la que todos los itinerarios existentes son a vía desviada
+                if ((fin_itinerario && !aprec_anterior_reconocido) || aprec_anterior_sin_reconocimiento)
+                    aspecto = Aspecto::Precaucion;
+            } else {
+                // Resto de casos
+                if (aspecto == Aspecto::AnuncioPrecaucion) {
+                    if ((fin_itinerario && !aprec_anterior_reconocido) || aprec_anterior_sin_reconocimiento)
+                        aspecto = Aspecto::Precaucion;
+                } else {
+                    aspecto = Aspecto::Precaucion;
+                }
+            }
+        }
     }
+    // Requerir pantallas virtuales en parada sin bloqueo establecido
+    // Se define variable aspecto_virtual para determinar el aspecto de la señal anterior
+    // Esto permite que la señal avanzada abra en función de la señal de entrada aunque
+    // las pantallas estén cerradas por no haber bloqueo
+    // Si la pantalla está cerrada por otro motivo, la avanzada mostrará parada selectiva
+    Aspecto aspecto_virtual = aspecto;
+    if (señal_virtual && bloq_id && bloqueo_act.estado != (dir == Lado::Impar ? EstadoBloqueo::BloqueoImpar : EstadoBloqueo::BloqueoPar))
+        aspecto = Aspecto::Parada;
+
+    if (aspecto == Aspecto::Parada)
+        aprec_anterior_sin_reconocimiento = false;
+    else if (aspecto < prev_aspecto)
+        aprec_anterior_sin_reconocimiento = true;
+    bool prev_rec = aprec_reconocido;
+    bool send_rec = false;
+    if (aspecto == Aspecto::AnuncioPrecaucion) {
+        if (prev_aspecto != aspecto) {
+            inicio_aprec = get_milliseconds();
+            if (prev_aspecto == Aspecto::Parada) {
+                send_rec = aprec_reconocido = true;
+            }
+        }
+        if (get_milliseconds() - inicio_aprec > 10000) {
+            send_rec = aprec_reconocido = true;
+            inicio_aprec = get_milliseconds();
+        }
+    } else if (aprec_reconocido) {
+        aprec_reconocido = false;
+        if (aspecto != Aspecto::Parada || !paso_circulacion) {
+            send_rec = true;
+        }
+    }
+    if (send_rec && sig_señal != nullptr) {
+        if (aprec_reconocido != prev_rec) log(id, "anuncio de precaución " + std::string(aprec_reconocido ? "reconocido" : "no reconocido"), LOG_INFO);
+        send_message("signal/"+id_to_mqtt(sig_señal->id.id)+"/rec_aprec", json(aprec_reconocido).dump());
+    }
+
     // Indicar a la señal anterior el aspecto máximo que puede mostrar
-    auto it = aspectos_maximos_anterior_señal.upper_bound(aspecto);
+    auto it = aspectos_maximos_anterior_señal.upper_bound(aspecto_virtual);
     if (it == aspectos_maximos_anterior_señal.begin()) {
-        // Sin restricciones para la señal anterior
-        aspecto_maximo_anterior_señal = Aspecto::ViaLibre;
+        // Por defecto, requerir anuncio de parada
+        aspecto_maximo_anterior_señal = Aspecto::AnuncioParada;
     } else {
         // Aspecto de la señal anterior restringido por el aspecto de esta señal
         aspecto_maximo_anterior_señal = (--it)->second;
     }
     if (frontera_salida != nullptr) {
         aspecto_maximo_anterior_señal = std::min(aspecto_maximo_anterior_señal, aspecto);
+    }
+    // En caso de ruta a desviada, mostrar anuncio de precaución en señal anterior
+    if (desviada) {
+        aspecto_maximo_anterior_señal = std::min(aspecto_maximo_anterior_señal, Aspecto::AnuncioPrecaucion);
     }
     // En caso de pantallas cerradas, las señal anterior puede ordenar como máximo parada selectiva
     // Además, las pantallas virtuales propagan el aspecto máximo de apertura requerido por la siguiente señal luminosa
@@ -164,13 +243,6 @@ void señal_impl::determinar_aspecto()
             aspecto_maximo_anterior_señal = std::min(aspecto_maximo_anterior_señal, sig_señal->aspecto_maximo_anterior_señal);
     }
     if (tipo == TipoSeñal::Maniobra && sig_señal != nullptr) aspecto_maximo_anterior_señal = std::min(aspecto_maximo_anterior_señal, sig_señal->aspecto_maximo_anterior_señal);
-    // Requerir pantallas virtuales en parada sin bloqueo establecido
-    // Asignar el aspecto de parada después de calcular el aspecto de la señal anterior
-    // Esto permite que la señal avanzada abra en función de la señal de entrada aunque
-    // las pantallas estén cerradas por no haber bloqueo
-    // Si la pantalla está cerrada por otro motivo, la avanzada mostrará parada selectiva
-    if (señal_virtual && bloq_id && bloqueo_act.estado != (dir == Lado::Impar ? EstadoBloqueo::BloqueoImpar : EstadoBloqueo::BloqueoPar))
-        aspecto = Aspecto::Parada;
 }
 void señal_impl::update()
 {
@@ -197,6 +269,8 @@ void señal_impl::update()
         ultimo_paso_abierta = get_milliseconds();
     }
     estado_inicio = get_estado_inicio();
+
+    paso_circulacion = false;
 
     send_state(aspecto != prev_aspecto, estado_inicio != prev_estado_inicio);
 }
