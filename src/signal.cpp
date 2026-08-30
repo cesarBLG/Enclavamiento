@@ -156,7 +156,7 @@ void señal_impl::determinar_aspecto()
         // Aspecto máximo permitido para cumplir las órdenes de la señal siguiente
         if (sig_señal != nullptr) aspecto = std::min(aspecto, sig_señal->aspecto_maximo_anterior_señal);
         // Itinerarios por vía desviada
-        if (desviada && aspecto > Aspecto::Precaucion) {
+        if (desviada) {
             bool fin_itinerario;
             if (ruta_fin != nullptr && ruta_fin->tipo == TipoMovimiento::Maniobra)
                 fin_itinerario = false;
@@ -166,17 +166,19 @@ void señal_impl::determinar_aspecto()
                 fin_itinerario = true;
             if (fin_itinerario)
                 aprec_anterior_sin_reconocimiento = !aprec_anterior_reconocido;
-            if (itinerarios_desviada) {
-                // Señal en vía de apartado desde la que todos los itinerarios existentes son a vía desviada
-                if ((fin_itinerario && !aprec_anterior_reconocido) || aprec_anterior_sin_reconocimiento)
-                    aspecto = Aspecto::Precaucion;
-            } else {
-                // Resto de casos
-                if (aspecto == Aspecto::AnuncioPrecaucion) {
+            if (aspecto > aspecto_desviada) {
+                if (itinerarios_desviada) {
+                    // Señal en vía de apartado desde la que todos los itinerarios existentes son a vía desviada
                     if ((fin_itinerario && !aprec_anterior_reconocido) || aprec_anterior_sin_reconocimiento)
-                        aspecto = Aspecto::Precaucion;
+                        aspecto = aspecto_desviada;
                 } else {
-                    aspecto = Aspecto::Precaucion;
+                    // Resto de casos
+                    if (aspecto == Aspecto::AnuncioPrecaucion) {
+                        if ((fin_itinerario && !aprec_anterior_reconocido) || aprec_anterior_sin_reconocimiento)
+                            aspecto = aspecto_desviada;
+                    } else {
+                        aspecto = aspecto_desviada;
+                    }
                 }
             }
         }
@@ -231,9 +233,9 @@ void señal_impl::determinar_aspecto()
         aspecto_maximo_anterior_señal = std::min(aspecto_maximo_anterior_señal, aspecto);
     }
     // En caso de ruta a desviada, mostrar anuncio de precaución en señal anterior
-    if (desviada) {
+    if (desviada)
         aspecto_maximo_anterior_señal = std::min(aspecto_maximo_anterior_señal, Aspecto::AnuncioPrecaucion);
-    }
+
     // En caso de pantallas cerradas, las señal anterior puede ordenar como máximo parada selectiva
     // Además, las pantallas virtuales propagan el aspecto máximo de apertura requerido por la siguiente señal luminosa
     if (señal_virtual && aspecto_maximo_anterior_señal > Aspecto::ParadaSelectiva) {

@@ -54,6 +54,7 @@ protected:
     bool aprec_anterior_sin_reconocimiento = false;
     bool aprec_reconocido = false;
     int64_t inicio_aprec = 0;
+    Aspecto aspecto_desviada = Aspecto::Precaucion;
 
 public:
     bool clear_request=false;

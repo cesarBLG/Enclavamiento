@@ -46,9 +46,9 @@ cv_impl::cv_impl(const id_elemento &id, const json &j) : cv(id, j.value("Tipo", 
     tiempo_auto_prenormalizacion = parametros.diferimetro_prenormalizacion_cv;
     tiempo_auto_prenormalizacion_tren = parametros.diferimetro_prenormalizacion_cv_tren;
     fraccion_ejes_prenormalizacion = parametros.fraccion_ejes_prenormalizacion;
-    normalizado = false;
+    normalizado = cejes.empty();
     perdida_secuencia = false;
-    estado_raw = estado = estado_previo = EstadoCV::Ocupado;
+    estado_raw = estado = estado_previo = cejes.empty() ? EstadoCV::Libre : EstadoCV::Ocupado;
 
     lados<bool> lados_cejes;
     for (auto &[id, pos] : cejes) {
