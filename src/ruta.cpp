@@ -109,7 +109,7 @@ ruta::ruta(const std::string &estacion, const json &j) : movimiento(estacion, j[
         auto *fin = ::secciones[id_elemento(j["SecciónFin"])];
         do
         {
-            ocupacion_maxima_secciones[sec] = EstadoCanton::Prenormalizado;
+            ocupacion_maxima_secciones[sec] = sec == fin && tipo == TipoMovimiento::Rebase ? EstadoCanton::Ocupado : EstadoCanton::Prenormalizado;
 
             if (sec != señal_inicio->seccion) {
                 auto *sig = sec->señal_inicio(dir, prv);

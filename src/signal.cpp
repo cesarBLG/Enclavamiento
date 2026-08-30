@@ -25,6 +25,8 @@ señal_impl::señal_impl(const id_elemento &id, const json &j) : señal(id, j), 
     itinerarios_desviada = j.value("ItinerariosDesviada", false);
     cierre_stick = ruta_necesaria;
     clear_request = !cierre_stick;
+    aprec_anterior = parametros.aprec_anterior;
+    aspecto_desviada = parametros.aspecto_desviada;
 }
 void señal_impl::determinar_aspecto()
 {
@@ -167,7 +169,10 @@ void señal_impl::determinar_aspecto()
             if (fin_itinerario)
                 aprec_anterior_sin_reconocimiento = !aprec_anterior_reconocido;
             if (aspecto > aspecto_desviada) {
-                if (itinerarios_desviada) {
+                if (!aprec_anterior) {
+                    if (!itinerarios_desviada)
+                        aspecto = aspecto_desviada;
+                } else if (itinerarios_desviada) {
                     // Señal en vía de apartado desde la que todos los itinerarios existentes son a vía desviada
                     if ((fin_itinerario && !aprec_anterior_reconocido) || aprec_anterior_sin_reconocimiento)
                         aspecto = aspecto_desviada;
@@ -233,7 +238,7 @@ void señal_impl::determinar_aspecto()
         aspecto_maximo_anterior_señal = std::min(aspecto_maximo_anterior_señal, aspecto);
     }
     // En caso de ruta a desviada, mostrar anuncio de precaución en señal anterior
-    if (desviada)
+    if (desviada && aprec_anterior)
         aspecto_maximo_anterior_señal = std::min(aspecto_maximo_anterior_señal, Aspecto::AnuncioPrecaucion);
 
     // En caso de pantallas cerradas, las señal anterior puede ordenar como máximo parada selectiva

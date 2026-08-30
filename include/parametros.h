@@ -10,6 +10,8 @@ struct parametros_predeterminados
     int64_t tiempo_espera_fai;
     double fraccion_ejes_prenormalizacion;
     bool deslizamiento_bloqueo;
+    bool aprec_anterior;
+    Aspecto aspecto_desviada;
 };
 #ifndef WITHOUT_JSON
 #include "json.h"

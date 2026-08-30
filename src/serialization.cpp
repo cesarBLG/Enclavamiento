@@ -449,6 +449,8 @@ void from_json(const json &j, parametros_predeterminados &params)
     params.tiempo_espera_fai = j.value("EspaciadoFAI", 20) * 1000;
     params.fraccion_ejes_prenormalizacion = j.value("FracciónEjesPrenormalización", 0.5);
     params.deslizamiento_bloqueo = j.value("DeslizamientoBloqueo", false);
+    params.aspecto_desviada = j.value("AspectoDesviada", Aspecto::AnuncioParada);
+    params.aprec_anterior = j.value("AnuncioPrecaución", true);
 }
 void to_json(json &j, const TipoBloqueo &tipo)
 {
