@@ -4,6 +4,13 @@
 señal::señal(const id_elemento &id, const json &j) : id(id), lado(j["Lado"]), tipo(j["Tipo"]), pin(j.value("Pin", 0)), bloqueo_asociado(j.contains("Bloqueo") ? std::optional<id_elemento>(id_elemento(j["Bloqueo"])) : std::nullopt), seccion(secciones[id_elemento(j["Sección"])]), seccion_prev(seccion->get_seccion_in(lado, pin).first), lado_prev(seccion->get_seccion_in(lado, pin).second)
 {
     seccion->vincular_señal(this, lado, pin);
+    if (j.contains("AspectoAnteriorSeñal")) {
+        for (auto &[asp1, asp2] : j["AspectoAnteriorSeñal"].items()) {
+            aspectos_maximos_anterior_señal[json(asp1)] = asp2;
+        }
+    }
+    if (aspectos_maximos_anterior_señal.empty())
+        aspectos_maximos_anterior_señal[Aspecto::ParadaDiferida] = Aspecto::ViaLibre;
 }
 señal_impl::señal_impl(const id_elemento &id, const json &j) : señal(id, j), topic("signal/"+id_to_mqtt(id.id)+"/state"), topic_inicio("signal/"+id_to_mqtt(id.id)+"/inicio")
 {
@@ -14,13 +21,6 @@ señal_impl::señal_impl(const id_elemento &id, const json &j) : señal(id, j), 
     }
     if (aspecto_maximo_ocupacion.empty())
         aspecto_maximo_ocupacion[EstadoCanton::Libre] = Aspecto::ViaLibre;
-    if (j.contains("AspectoAnteriorSeñal")) {
-        for (auto &[asp1, asp2] : j["AspectoAnteriorSeñal"].items()) {
-            aspectos_maximos_anterior_señal[json(asp1)] = asp2;
-        }
-    }
-    if (aspectos_maximos_anterior_señal.empty())
-        aspectos_maximos_anterior_señal[Aspecto::ParadaDiferida] = Aspecto::ViaLibre;
     ruta_necesaria = j.value("RutaNecesaria", tipo != TipoSeñal::Intermedia && tipo != TipoSeñal::Avanzada);
     itinerarios_desviada = j.value("ItinerariosDesviada", false);
     cierre_stick = ruta_necesaria;
@@ -226,14 +226,7 @@ void señal_impl::determinar_aspecto()
     }
 
     // Indicar a la señal anterior el aspecto máximo que puede mostrar
-    auto it = aspectos_maximos_anterior_señal.upper_bound(aspecto_virtual);
-    if (it == aspectos_maximos_anterior_señal.begin()) {
-        // Por defecto, requerir anuncio de parada
-        aspecto_maximo_anterior_señal = Aspecto::AnuncioParada;
-    } else {
-        // Aspecto de la señal anterior restringido por el aspecto de esta señal
-        aspecto_maximo_anterior_señal = (--it)->second;
-    }
+    aspecto_maximo_anterior_señal = get_aspecto_anterior(aspecto_virtual);
     if (frontera_salida != nullptr) {
         aspecto_maximo_anterior_señal = std::min(aspecto_maximo_anterior_señal, aspecto);
     }

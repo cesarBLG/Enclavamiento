@@ -256,22 +256,39 @@ bool ruta::posible_establecer()
                 return false;
             
             if (!bloqueo_emisor) {
-                // Si no está establecido el bloqueo emisor, requerir libre la proximidad de la avanzada
-                // TODO: considerar proximidad completa
+                // Si no está establecido el bloqueo emisor y la avanzada protege la maniobra, su proximidad debe estar libre
+                // También se requieren libres los circuitos de trayecto hasta la avanzada no incluidos en la maniobra
                 seccion_via *sec;
                 seccion_via *sig;
                 Lado l;
                 if (secciones.empty()) {
-                    sec = señal_inicio->seccion;
-                    sig = señal_inicio->seccion->siguiente_seccion(señal_inicio->seccion_prev, lado);
+                    sec = señal_inicio->seccion_prev;
+                    sig = señal_inicio->seccion;
+                    l = señal_inicio->lado;
                 } else {
                     sec = secciones.back().seccion;
                     auto p = secciones.back().seccion->get_seccion_in(opp_lado(*secciones.back().dir), secciones.back().out);
                     sig = p.first;
                     l = opp_lado(p.second);
                 }
-                if (parametros.deslizamiento_bloqueo || sec->is_trayecto()) {
-                    if (sig != nullptr && sig->is_trayecto() && sig->get_ocupacion(sec, l) == EstadoCanton::Ocupado) return false;
+                if (sec->is_trayecto() || parametros.deslizamiento_bloqueo) {
+                    // Cálculo de la proximidad de la avanzada
+                    // Con bloqueo receptor, finaliza en el CV anterior a la última señal que cambia de aspecto al cerrarse la avanzada
+                    // Sin bloqueo establecido, finaliza en el CV anterior a la avanzada (las señales intermedias están cerradas)
+                    Aspecto asp1 = Aspecto::Parada;
+                    Aspecto asp2 = Aspecto::AnuncioParada;
+                    while (sig != nullptr && sig->is_trayecto()) {
+                        if (sig->get_ocupacion(sec, l) == EstadoCanton::Ocupado) return false;
+                        auto señal = sec->señal_inicio(opp_lado(l), 0);
+                        if (señal != nullptr && sec->is_trayecto()) {
+                            if (asp1 == asp2 || !bloqueo_receptor) break;
+                            asp1 = señal->get_aspecto_anterior(asp1);
+                            asp2 = señal->get_aspecto_anterior(asp2);
+                        }
+                        auto *prv = sec;
+                        sig = sig->siguiente_seccion(sec, l);
+                        sec = prv;
+                    }
                 }
             }
         // No permitir rutas de salida con bloqueo receptor

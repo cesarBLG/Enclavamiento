@@ -6,6 +6,8 @@ class ruta;
 class frontera;
 class señal : public estado_señal
 {
+protected:
+    std::map<Aspecto, Aspecto> aspectos_maximos_anterior_señal;
 public:
     const id_elemento id;
     const std::optional<id_elemento> bloqueo_asociado;
@@ -27,6 +29,17 @@ public:
     {
         *((estado_señal*)this) = est;
     }
+    Aspecto get_aspecto_anterior(Aspecto asp)
+    {
+        auto it = aspectos_maximos_anterior_señal.upper_bound(asp);
+        if (it == aspectos_maximos_anterior_señal.begin()) {
+            // Por defecto, requerir anuncio de parada
+            return Aspecto::AnuncioParada;
+        } else {
+            // Aspecto de la señal anterior restringido por el aspecto de esta señal
+            return (--it)->second;
+        }
+    }
 };
 class señal_impl : public señal
 {
@@ -34,7 +47,6 @@ public:
     const std::string topic;
     const std::string topic_inicio;
 protected:
-    std::map<Aspecto, Aspecto> aspectos_maximos_anterior_señal;
     std::map<EstadoCanton, Aspecto> aspecto_maximo_ocupacion;
 
     estado_bloqueo bloqueo_act;
