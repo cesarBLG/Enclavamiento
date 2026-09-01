@@ -140,7 +140,7 @@ TipoMovimiento seccion_via::get_tipo_movimiento()
 void seccion_via::message_cv(const id_elemento &id, estado_cv ev)
 {
     if (id != id_cv) return;
-    if (ev.evento && ev.evento->ocupacion && ev.estado > EstadoCV::Prenormalizado && ocupacion_outs[Lado::Impar] < 0 && ocupacion_outs[Lado::Par] < 0) {
+    if (ev.estado_previo <= EstadoCV::Prenormalizado && ev.estado > EstadoCV::Prenormalizado && ocupacion_outs[Lado::Impar] < 0 && ocupacion_outs[Lado::Par] < 0) {
         if (trayecto) {
             ocupacion_outs = {0, 0};
         } else if (ruta_asegurada) {
@@ -152,16 +152,16 @@ void seccion_via::message_cv(const id_elemento &id, estado_cv ev)
     if (ev.estado <= EstadoCV::Prenormalizado)
         ocupacion_outs = {-1, -1};
 
-    if (ev.evento && ev.evento->ocupacion && ev.estado > EstadoCV::Prenormalizado) {
+    if ((ev.evento && ev.evento->ocupacion || (!ev.evento && ev.estado_previo <= EstadoCV::Prenormalizado)) && ev.estado > EstadoCV::Prenormalizado) {
         bool intempestiva = false;
         if (trayecto) {
-            if (bloqueo_asociado && bloqueo_act.estado != (ev.evento->lado == Lado::Impar ? EstadoBloqueo::BloqueoImpar : EstadoBloqueo::BloqueoPar) && bloqueo_act.ruta[ev.evento->lado] != TipoMovimiento::Maniobra) {
+            if (ev.evento && bloqueo_asociado && bloqueo_act.estado != (ev.evento->lado == Lado::Impar ? EstadoBloqueo::BloqueoImpar : EstadoBloqueo::BloqueoPar) && bloqueo_act.ruta[ev.evento->lado] != TipoMovimiento::Maniobra) {
                 //intempestiva = true;
             }
         } else {
             if (!ruta_asegurada) {
                 intempestiva = true;
-            } else if (ev.evento->cv_colateral != "") {
+            } else if (ev.evento && ev.evento->cv_colateral != "") {
                 Lado l = opp_lado(ev.evento->lado);
                 auto &sigs = siguientes_secciones[l];
                 for (int i=0; i<sigs.size(); i++) {
@@ -169,6 +169,14 @@ void seccion_via::message_cv(const id_elemento &id, estado_cv ev)
                         intempestiva = true;
                         break;
                     }
+                }
+            } else if (ruta_asegurada->lado) {
+                Lado opp = opp_lado(*ruta_asegurada->lado);
+                int in = ruta_asegurada->outs[opp];
+                if (in >= 0 && siguientes_secciones[opp][in].id.id != "") {
+                    auto *sec = secciones[siguientes_secciones[opp][in].id];
+                    if (sec->ruta_asegurada && sec->ruta_asegurada->ruta_asegurada == ruta_asegurada->ruta_asegurada && sec->get_cv() != nullptr && sec->get_cv()->get_state() <= EstadoCV::Prenormalizado)
+                        intempestiva = true;
                 }
             }
         }

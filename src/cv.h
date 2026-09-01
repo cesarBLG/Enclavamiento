@@ -75,6 +75,72 @@ public:
 class cv_impl : public cv
 {
 public:
+    const std::string topic;
+    const bool contador_ejes = false;
+    cv_impl(const id_elemento &id, const json &j);
+
+    void message_cv(estado_cv ecv) override {}
+    void send_state()
+    {
+        remota_cambio_elemento("cv", id);
+        if (estado <= EstadoCV::Prenormalizado) ocupacion_intempestiva = false;
+        json msg(*((estado_cv*)this));
+        send_message(topic, msg.dump());
+
+        evento = {};
+        estado_previo = estado;
+    }
+    virtual void message_cv(const std::string &msg)
+    {
+        if (msg == "NormalizarSecuencia") perdida_secuencia = false;
+        else if (msg == "PérdidaSecuencia") perdida_secuencia = true;
+    }
+    RespuestaMando mando(const std::string &cmd, int me) override
+    {
+        RespuestaMando aceptado = RespuestaMando::OrdenRechazada;
+        if (me_pendiente && me == 0) return RespuestaMando::MandoEspecialEnCurso;
+        bool pend = me_pendiente;
+        me_pendiente = false;
+        if (me < 0) return pend ? RespuestaMando::Aceptado : RespuestaMando::OrdenRechazada;
+        if (cmd == "BTV") {
+            if (!btv) {
+                log(id, "btv", LOG_DEBUG);
+                btv = true;
+                aceptado = RespuestaMando::Aceptado;
+                send_state();
+            }
+        } else if (cmd == "ABTV" || cmd == "DTV") {
+            if (btv) {
+                if (me) {
+                    log(id, "anulación btv", LOG_DEBUG);
+                    btv = false;
+                    aceptado = RespuestaMando::Aceptado;
+                    send_state();
+                } else {
+                    me_pendiente = true;
+                    aceptado = RespuestaMando::MandoEspecialNecesario;
+                    send_state();
+                }
+            }
+        }
+        return aceptado;
+    }
+};
+class cv_impl_cv : public cv_impl
+{
+    public:
+    cv_impl_cv(const id_elemento &id, const json &j) : cv_impl(id, j) {}
+    void message_cv_campo(estado_cv ecv)
+    {
+        estado_previo = estado;
+        estado = ecv.estado;
+        averia = ecv.averia;
+        send_state();
+    }
+};
+class cv_impl_cejes : public cv_impl
+{
+public:
     struct cejes_position
     {
         Lado lado;
@@ -108,7 +174,7 @@ protected:
 
 public:
     const std::string topic;
-    cv_impl(const id_elemento &id, const json &j);
+    cv_impl_cejes(const id_elemento &id, const json &j);
 
     void update()
     {
@@ -155,17 +221,6 @@ public:
                 send_state();
             }, 1000);
         }
-    }
-
-    void send_state()
-    {
-        remota_cambio_elemento("cv", id);
-        if (estado <= EstadoCV::Prenormalizado) ocupacion_intempestiva = false;
-        json msg(*((estado_cv*)this));
-        send_message(topic, msg.dump());
-
-        evento = {};
-        estado_previo = estado;
     }
 
     void message_cejes(const id_elemento &id, std::string payload)
@@ -286,12 +341,11 @@ public:
         }
     }
 
-    void message_cv(const std::string &msg)
+    void message_cv(const std::string &msg) override
     {
         if (msg == "Normalizar") normalizar();
         else if (msg == "Prenormalizar") prenormalizar();
-        else if (msg == "NormalizarSecuencia") perdida_secuencia = false;
-        else if (msg == "PérdidaSecuencia") perdida_secuencia = true;
+        else cv_impl::message_cv(msg);
     }
 
     void prenormalizar()
@@ -311,15 +365,9 @@ public:
         update();
     }
 
-    void message_cv(estado_cv ecv) override {}
-
     RespuestaMando mando(const std::string &cmd, int me) override
     {
-        RespuestaMando aceptado = RespuestaMando::OrdenRechazada;
-        if (me_pendiente && me == 0) return RespuestaMando::MandoEspecialEnCurso;
-        bool pend = me_pendiente;
-        me_pendiente = false;
-        if (me < 0) return pend ? RespuestaMando::Aceptado : RespuestaMando::OrdenRechazada;
+        RespuestaMando aceptado = cv_impl::mando(cmd, me);
         if (cmd == "LC" && estado > EstadoCV::Prenormalizado) {
             if (me) {
                 log(id, "prenormalizar", LOG_DEBUG);
@@ -330,26 +378,6 @@ public:
                 me_pendiente = true;
                 aceptado = RespuestaMando::MandoEspecialNecesario;
                 send_state();
-            }
-        } else if (cmd == "BTV") {
-            if (!btv) {
-                log(id, "btv", LOG_DEBUG);
-                btv = true;
-                aceptado = RespuestaMando::Aceptado;
-                send_state();
-            }
-        } else if (cmd == "ABTV" || cmd == "DTV") {
-            if (btv) {
-                if (me) {
-                    log(id, "anulación btv", LOG_DEBUG);
-                    btv = false;
-                    aceptado = RespuestaMando::Aceptado;
-                    send_state();
-                } else {
-                    me_pendiente = true;
-                    aceptado = RespuestaMando::MandoEspecialNecesario;
-                    send_state();
-                }
             }
         }
         return aceptado;
@@ -398,4 +426,4 @@ public:
         }
     }
 };
-void from_json(const json &j, cv_impl::cejes_position &position);
+void from_json(const json &j, cv_impl_cejes::cejes_position &position);

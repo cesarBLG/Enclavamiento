@@ -253,7 +253,8 @@ void handle_message(const std::string &topic, const std::string &payload)
     if (std::regex_match(topic, match, cejesEventPattern)) {
         id_elemento id = id_elemento(id_from_mqtt(match[1]));
         for (auto &kvp : cv_impls) {
-            kvp.second->message_cejes(id, payload);
+            if (kvp.second->contador_ejes)
+                ((cv_impl_cejes*)kvp.second)->message_cejes(id, payload);
         }
         return;
     }
@@ -269,15 +270,21 @@ void handle_message(const std::string &topic, const std::string &payload)
         for (auto &kvp : bloqueos) {
             kvp.second->message_cv(id, ecv);
         }
-        if (ecv.evento) {
-            for (auto &kvp : señal_impls) {
-                kvp.second->message_cv(id, ecv);
-            }
-            for (auto *ruta : rutas) {
-                ruta->message_cv(id, ecv);
-            }
+        for (auto &kvp : señal_impls) {
+            kvp.second->message_cv(id, ecv);
+        }
+        for (auto *ruta : rutas) {
+            ruta->message_cv(id, ecv);
         }
         return;
+    }
+    std::regex cvFieldStatePattern(R"(^cv/([a-zA-Z0-9_-]+/[a-zA-Z0-9_'-]+)/field_state$)");
+    if (std::regex_match(topic, match, cvFieldStatePattern)) {
+        id_elemento id = id_elemento(id_from_mqtt(match[1]));
+        estado_cv ecv(json::parse(payload));
+        auto it = cv_impls.find(id);
+        if (it != cv_impls.end() && !it->second->contador_ejes)
+            ((cv_impl_cv*)it->second)->message_cv_campo(ecv);
     }
     std::regex cvActionPattern(R"(^cv/([a-zA-Z0-9_-]+/[a-zA-Z0-9_'-]+)/action$)");
     if (std::regex_match(topic, match, cvActionPattern)) {
@@ -349,14 +356,17 @@ void init_items_ordered(const json &j, std::string tipo)
         if (tipo == "CVs") {
             for (auto &[id, jcv] : jdep["CVs"].items()) {
                 id_elemento ic(estacion,id);
-                if (jcv.contains("ContadoresEjes")) {
-                    cv_impls[ic] = new cv_impl(ic, jcv);
+                if (dependencias.find(estacion) == dependencias.end()) {
+                    cvs[ic] = new cv(ic, TipoSeccion::Lineal);
+                } else if (jcv.contains("ContadoresEjes")) {
+                    cv_impls[ic] = new cv_impl_cejes(ic, jcv);
                     for (auto &[key,val] : jcv["ContadoresEjes"].items()) {
                         cejes_to_cvs[key].push_back(ic);
                     }
                     cvs[ic] = cv_impls[ic];
                 } else {
-                    cvs[ic] = new cv(ic, TipoSeccion::Lineal);
+                    cv_impls[ic] = new cv_impl_cv(ic, jcv);
+                    cvs[ic] = cv_impls[ic];
                 }
             }
         }
@@ -439,7 +449,8 @@ void init_items(const json &j)
         init_items_ordered(jdeps, "Rutas");
     }
     for (auto &[id, cv] : cv_impls) {
-        cv->asignar_cejes(cejes_to_cvs);
+        if (cv->contador_ejes)
+            ((cv_impl_cejes*)cv)->asignar_cejes(cejes_to_cvs);
     }
     for (auto &kvp : dependencias) {
         for (auto *ruta : kvp.second->rutas) {

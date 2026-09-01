@@ -424,30 +424,31 @@ void señal_impl::message_cv(const id_elemento &id, estado_cv ev)
     cv *cv_inicio = get_cv_inicio();
     if (cv_inicio == nullptr || cv_inicio->id != id) return;
 
-    // Con el paso de la circulación se cierra la señal, salvo en maniobras
-    if (ruta_activa != nullptr && ruta_activa->tipo != TipoMovimiento::Maniobra && (!sucesion_automatica || ruta_activa->tipo != TipoMovimiento::Itinerario) && ev.evento && ev.evento->ocupacion && ev.evento->lado == lado && (aspecto != Aspecto::Parada || get_milliseconds() - ultimo_paso_abierta > 30000)) {
-        for (auto &sig : ruta_activa->get_señales()) {
-            if (sig == this) {
-                ruta_activa = nullptr;
-                break;
-            }
-            if (sig->ruta_activa == ruta_activa) break;
-        }
-    }
-
-    paso_circulacion = false;
     // Detección de paso de tren por la señal
-    if (ev.evento && ev.evento->ocupacion && ev.evento->lado == lado && (ev.evento->cv_colateral == "" || seccion_prev == nullptr || ev.evento->cv_colateral == seccion_prev->id_cv.id)) {
-        // Si la señal estaba cerrada, es un rebase de señal
-        if (aspecto == Aspecto::Parada) {
-            if (ruta_necesaria && get_milliseconds() - ultimo_paso_abierta > 30000) {
-                rebasada = true;
-                log(this->id, "rebasada", LOG_WARNING);
+    paso_circulacion = false;
+    if (ev.is_ocupacion(lado)) {
+        // Con el paso de la circulación se cierra la señal, salvo en maniobras
+        if (ruta_activa != nullptr && ruta_activa->tipo != TipoMovimiento::Maniobra && (!sucesion_automatica || ruta_activa->tipo != TipoMovimiento::Itinerario) && (aspecto != Aspecto::Parada || get_milliseconds() - ultimo_paso_abierta > 30000)) {
+            for (auto &sig : ruta_activa->get_señales()) {
+                if (sig == this) {
+                    ruta_activa = nullptr;
+                    break;
+                }
+                if (sig->ruta_activa == ruta_activa) break;
             }
-        // Si estaba abierta, es un paso normal de circulación
-        } else {
-            ultimo_paso_abierta = get_milliseconds();
-            paso_circulacion = true;
+        }
+        if (ev.evento && (ev.evento->cv_colateral == "" || seccion_prev == nullptr || ev.evento->cv_colateral == seccion_prev->id_cv.id)) {
+            // Si la señal estaba cerrada, es un rebase de señal
+            if (aspecto == Aspecto::Parada) {
+                if (ruta_necesaria && get_milliseconds() - ultimo_paso_abierta > 30000) {
+                    rebasada = true;
+                    log(this->id, "rebasada", LOG_WARNING);
+                }
+            // Si estaba abierta, es un paso normal de circulación
+            } else {
+                ultimo_paso_abierta = get_milliseconds();
+                paso_circulacion = true;
+            }
         }
     }
 }

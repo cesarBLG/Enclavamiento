@@ -17,6 +17,14 @@ struct estado_cv
     bool perdida_secuencia=false;
     bool sin_datos=false;
     bool operator<=>(const estado_cv &o) const = default;
+    bool is_ocupacion(Lado l)
+    {
+        return (evento && evento->ocupacion && evento->lado == l) || (!evento && estado > EstadoCV::Prenormalizado && estado_previo <= EstadoCV::Prenormalizado);
+    }
+    bool is_liberacion()
+    {
+        return estado <= EstadoCV::Prenormalizado && estado_previo > EstadoCV::Prenormalizado;
+    }
 };
 #ifndef WITHOUT_JSON
 #include "json.h"

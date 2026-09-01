@@ -38,7 +38,12 @@ RemotaCVA cv::get_estado_remota_agujas()
     r.CVA_NSEC = perdida_secuencia ? 1 : 0;
     return r;
 }
-cv_impl::cv_impl(const id_elemento &id, const json &j) : cv(id, j.value("Tipo", TipoSeccion::Lineal)), topic("cv/"+id_to_mqtt(id.id)+"/state"), cejes(j["ContadoresEjes"])
+cv_impl::cv_impl(const id_elemento &id, const json &j) : cv(id, j.value("Tipo", TipoSeccion::Lineal)), topic("cv/"+id_to_mqtt(id.id)+"/state"), contador_ejes(j.contains("ContadoresEjes"))
+{
+    estado = estado_previo = EstadoCV::Ocupado;
+    averia = true;
+}
+cv_impl_cejes::cv_impl_cejes(const id_elemento &id, const json &j) : cv_impl(id, j), cejes(j["ContadoresEjes"])
 {
     num_ejes = {0, 0};
     ultimo_eje = {0, 0};
@@ -61,7 +66,7 @@ cv_impl::cv_impl(const id_elemento &id, const json &j) : cv(id, j.value("Tipo", 
     }
     averia = !desconexion_cejes.empty();
 }
-void from_json(const json &j, cv_impl::cejes_position &position)
+void from_json(const json &j, cv_impl_cejes::cejes_position &position)
 {
     position.lado = j["Lado"];
     position.reverse = j.value("Reverse", false);

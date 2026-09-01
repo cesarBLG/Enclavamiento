@@ -538,7 +538,7 @@ void ruta::message_cv(const id_elemento &id, estado_cv ecv)
     if (!mandada) return;
     // Ocupación del primer CV de la ruta
     cv *cv_inicio = señal_inicio->get_cv_inicio();
-    if (cv_inicio != nullptr && cv_inicio->id == id && ecv.evento && ecv.evento->ocupacion && ecv.evento->lado == lado) {
+    if (cv_inicio != nullptr && cv_inicio->id == id && ecv.is_ocupacion(lado)) {
         if (!supervisada) {
             // La ruta pasa a estar supervisada aunque la señal no haya llegado a abrir
             supervisada = true;

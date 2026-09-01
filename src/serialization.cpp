@@ -274,10 +274,10 @@ void from_json(const json &j, estado_cv &estado)
         return;
     }
     estado.estado = j["Estado"];
-    estado.estado_previo = j["EstadoPrevio"];
-    estado.averia = j["Avería"];
-    estado.perdida_secuencia = j["PérdidaSecuencia"];
-    estado.btv = j["BTV"];
+    if (j.contains("EstadoPrevio")) estado.estado_previo = j["EstadoPrevio"];
+    estado.averia = j.value("Avería", false);
+    if (j.contains("PérdidaSecuencia")) estado.perdida_secuencia = j["PérdidaSecuencia"];
+    if (j.contains("BTV")) estado.btv = j["BTV"];
     if (j.contains("Evento")) {
         estado.evento = j["Evento"];
     }
