@@ -109,7 +109,7 @@ ruta::ruta(const std::string &estacion, const json &j) : movimiento(estacion, j[
         auto *fin = ::secciones[id_elemento(j["SecciónFin"])];
         do
         {
-            ocupacion_maxima_secciones[sec] = sec == fin && tipo == TipoMovimiento::Rebase ? EstadoCanton::Ocupado : EstadoCanton::Prenormalizado;
+            ocupacion_maxima_secciones[sec] = sec == fin && (tipo == TipoMovimiento::Rebase || tipo == TipoMovimiento::Maniobra) && j.contains("Deslizamiento") ? EstadoCanton::Ocupado : EstadoCanton::Prenormalizado;
 
             if (sec != señal_inicio->seccion) {
                 auto *sig = sec->señal_inicio(dir, prv);
@@ -461,9 +461,11 @@ void ruta::update()
         // En maniobra, cerrar señal cuando se libera el CV de señal
         if (tipo == TipoMovimiento::Maniobra && señal_inicio->ruta_activa == this) {
             for (int i=0; i<secciones.size(); i++) {
-                if (secciones[i].seccion->get_cv() == nullptr) continue;
-                if (secciones[i].seccion->get_cv()->get_state() <= EstadoCV::Prenormalizado) {
-                    señal_inicio->ruta_activa = nullptr;
+                if (secciones[i].seccion->get_cv() != nullptr) {
+                    if (secciones[i].seccion->get_cv()->get_state() <= EstadoCV::Prenormalizado) {
+                        señal_inicio->ruta_activa = nullptr;
+                    }
+                    break;
                 }
             }
         }

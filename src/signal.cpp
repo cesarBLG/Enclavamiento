@@ -77,9 +77,7 @@ void señal_impl::determinar_aspecto()
         if ((sec_prv != nullptr && !sec_act->transitable(sec_prv, l)) || (sec_prv == nullptr && !sec_act->transitable(pin, l)))
             cerrar = true;
         if (seccion_asegurada) {
-            if (ruta_activa->get_ocupacion_maxima_secciones().find(sec_act)->second < sec_ocup && (ruta_activa->tipo != TipoMovimiento::Maniobra || (ruta_activa->es_ruta && !((ruta*)ruta_activa)->is_ocupada())))
-                cerrar = true;
-            if (sec_ocup == EstadoCanton::Ocupado && sec_act->get_cv()->ocupacion_intempestiva)
+            if (ruta_activa->get_ocupacion_maxima_secciones().find(sec_act)->second < sec_ocup && (ruta_activa->tipo != TipoMovimiento::Maniobra || sec_act != seccion || (sec_ocup == EstadoCanton::Ocupado && sec_act->get_cv()->ocupacion_intempestiva)))
                 cerrar = true;
             if (sec_act->is_bloqueo_seccion())
                 prohibir_abrir = true;
