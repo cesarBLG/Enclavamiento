@@ -159,28 +159,36 @@ void seccion_via::message_cv(const id_elemento &id, estado_cv ev)
                 //intempestiva = true;
             }
         } else {
-            if (!ruta_asegurada) {
+            std::optional<reserva_seccion> ruta_asegurada_cv;
+            for (auto *sec : cv_seccion->secciones) {
+                if (sec->ruta_asegurada) {
+                    ruta_asegurada_cv = sec->ruta_asegurada;
+                    break;
+                }
+            }
+            if (!ruta_asegurada_cv) {
                 intempestiva = true;
             } else if (ev.evento && ev.evento->cv_colateral != "") {
                 Lado l = opp_lado(ev.evento->lado);
                 auto &sigs = siguientes_secciones[l];
                 for (int i=0; i<sigs.size(); i++) {
-                    if (secciones[sigs[i].id]->id_cv == ev.evento->cv_colateral && ruta_asegurada->outs[l] != i) {
+                    if (secciones[sigs[i].id]->id_cv == ev.evento->cv_colateral && (!ruta_asegurada || ruta_asegurada->outs[l] != i)) {
                         intempestiva = true;
                         break;
                     }
                 }
-            } else if (ruta_asegurada->lado) {
+            } else if (ruta_asegurada && ruta_asegurada->lado) {
                 Lado opp = opp_lado(*ruta_asegurada->lado);
                 int in = ruta_asegurada->outs[opp];
                 if (in >= 0 && siguientes_secciones[opp][in].id.id != "") {
                     auto *sec = secciones[siguientes_secciones[opp][in].id];
-                    if (sec->ruta_asegurada && sec->ruta_asegurada->ruta_asegurada == ruta_asegurada->ruta_asegurada && sec->get_cv() != nullptr && sec->get_cv()->get_state() <= EstadoCV::Prenormalizado)
+                    if (sec->ruta_asegurada && sec->ruta_asegurada->ruta_asegurada == ruta_asegurada->ruta_asegurada && sec->get_cv() != nullptr && sec->get_cv() != cv_seccion && sec->get_cv()->get_state() <= EstadoCV::Prenormalizado)
                         intempestiva = true;
                 }
             }
         }
         if (intempestiva) {
+            log(cv_seccion->id, "ocupacion intempestiva", LOG_WARNING);
             cv_seccion->ocupacion_intempestiva = true;
         }
     }
