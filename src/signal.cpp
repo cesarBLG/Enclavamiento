@@ -20,7 +20,7 @@ señal_impl::señal_impl(const id_elemento &id, const json &j) : señal(id, j), 
         }
     }
     if (aspecto_maximo_ocupacion.empty())
-        aspecto_maximo_ocupacion[EstadoCanton::Libre] = Aspecto::ViaLibre;
+        aspecto_maximo_ocupacion[EstadoCanton::Libre] = tipo == TipoSeñal::Maniobra ? Aspecto::MovimientoAutorizado : Aspecto::ViaLibre;
     ruta_necesaria = j.value("RutaNecesaria", tipo != TipoSeñal::Intermedia && tipo != TipoSeñal::Avanzada);
     itinerarios_desviada = j.value("ItinerariosDesviada", false);
     cierre_stick = ruta_necesaria;
@@ -131,6 +131,7 @@ void señal_impl::determinar_aspecto()
     cerrar_itinerario |= canton == EstadoCanton::Ocupado;
     cerrar |= sig_señal != nullptr && sig_señal->aspecto_maximo_anterior_señal == Aspecto::Parada;
     cerrar_itinerario |= sig_señal != nullptr && sig_señal->aspecto_maximo_anterior_señal <= Aspecto::RebaseAutorizadoDestellos;
+    desviada |= sig_señal != nullptr && sig_señal->desviada;
     // Señal en parada si
     // - No se permite la apertura y no había abierto previamente
     // - Las condiciones no permiten mantener abierta la señal
@@ -229,7 +230,7 @@ void señal_impl::determinar_aspecto()
         aspecto_maximo_anterior_señal = std::min(aspecto_maximo_anterior_señal, aspecto);
     }
     // En caso de ruta a desviada, mostrar anuncio de precaución en señal anterior
-    if (desviada && aprec_anterior)
+    if (desviada && aprec_anterior && tipo != TipoSeñal::Maniobra)
         aspecto_maximo_anterior_señal = std::min(aspecto_maximo_anterior_señal, Aspecto::AnuncioPrecaucion);
 
     // En caso de pantallas cerradas, las señal anterior puede ordenar como máximo parada selectiva
@@ -241,6 +242,7 @@ void señal_impl::determinar_aspecto()
             aspecto_maximo_anterior_señal = std::min(aspecto_maximo_anterior_señal, sig_señal->aspecto_maximo_anterior_señal);
     }
     if (tipo == TipoSeñal::Maniobra && sig_señal != nullptr) aspecto_maximo_anterior_señal = std::min(aspecto_maximo_anterior_señal, sig_señal->aspecto_maximo_anterior_señal);
+    if (tipo == TipoSeñal::Maniobra || señal_virtual) this->desviada = desviada;
 }
 void señal_impl::update()
 {

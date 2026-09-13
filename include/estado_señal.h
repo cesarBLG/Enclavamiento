@@ -4,6 +4,7 @@ struct estado_señal
 {
     Aspecto aspecto;
     Aspecto aspecto_maximo_anterior_señal;
+    bool desviada;
     bool sin_datos = false;
     bool operator<=>(const estado_señal &o) const = default;
 };

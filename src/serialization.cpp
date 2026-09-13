@@ -387,6 +387,7 @@ void to_json(json &j, const estado_señal &estado)
 {
     j["Aspecto"] = estado.aspecto;
     j["AspectoAnterior"] = estado.aspecto_maximo_anterior_señal;
+    if (estado.desviada) j["Desviada"] = estado.desviada;
 }
 void from_json(const json &j, estado_señal &estado)
 {
@@ -394,10 +395,12 @@ void from_json(const json &j, estado_señal &estado)
         estado.sin_datos = true;
         estado.aspecto = Aspecto::Parada;
         estado.aspecto_maximo_anterior_señal = Aspecto::Parada;
+        estado.desviada = false;
         return;
     }
     estado.aspecto = j["Aspecto"];
     estado.aspecto_maximo_anterior_señal = j["AspectoAnterior"];
+    estado.desviada = j.value("Desviada", false);
 }
 void to_json(json &j, const estado_inicio_ruta &estado)
 {
