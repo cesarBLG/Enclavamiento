@@ -38,7 +38,7 @@ RemotaCVA cv::get_estado_remota_agujas()
     r.CVA_NSEC = perdida_secuencia ? 1 : 0;
     return r;
 }
-cv_impl::cv_impl(const id_elemento &id, const json &j) : cv(id, j.value("Tipo", TipoSeccion::Lineal)), topic("cv/"+id_to_mqtt(id.id)+"/state"), contador_ejes(j.contains("ContadoresEjes"))
+cv_impl::cv_impl(const id_elemento &id, const json &j) : cv(id, j.value("Tipo", id.id_corto.length() > 2 && id.id_corto.substr(0, 3) == "CVA" ? TipoSeccion::Aguja : TipoSeccion::Lineal)), topic("cv/"+id_to_mqtt(id.id)+"/state"), contador_ejes(j.contains("ContadoresEjes"))
 {
     estado = estado_previo = EstadoCV::Ocupado;
     averia = true;
