@@ -16,6 +16,12 @@ RemotaCV cv::get_estado_remota()
     else if (estado == EstadoCV::Prenormalizado) r.CV_EST = 3;
     else r.CV_EST = 0;
     r.CV_DES = 0;
+    if (seccion != nullptr) {
+        for (auto &[mov, _] : seccion->get_deslizamiento()) {
+            if (mov->tipo != TipoMovimiento::Maniobra) r.CV_DES = 1;
+            else if (r.CV_DES == 0) r.CV_DES = 2;
+        }
+    }
     r.CV_CEJES_AV = averia ? 1 : 0;
     r.CV_CEJES_PREN = estado == EstadoCV::Prenormalizado ? 1 : 0;
     r.CV_UC = 0;

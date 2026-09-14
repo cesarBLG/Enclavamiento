@@ -152,6 +152,11 @@ class aguja : public seccion_via, public estado_aguja
         update();
         return true;
     }
+    void desenclavar(movimiento *r)
+    {
+        enclavada.erase(r);
+        if (enclavada.empty()) posicion_enclavada = std::nullopt;
+    }
     PosicionAguja get_posicion(Lado dir, int in, int out)
     {
         return (dir == lado ? out : in) == 1 ? PosicionAguja::Invertida : PosicionAguja::Normal;

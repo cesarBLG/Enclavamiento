@@ -83,6 +83,28 @@ RemotaAG aguja::get_estado_remota()
     else r.AG_DIR = ruta_asegurada->outs[lado] == 1 ? 2 : 1;
     r.AG_DES_N = 0;
     r.AG_DES_I = 0;
+    for (auto &[mov, n] : deslizamiento) {
+        auto pos = posicion_enclavada;
+        if (enclavada.find(mov) == enclavada.end()) pos = std::nullopt;
+        int in = get_in(n->prev, n->dir);
+        bool norm = false;
+        bool inv = false;
+        if (lado == n->dir) {
+            if (pos != PosicionAguja::Normal) inv = true;
+            if (pos != PosicionAguja::Invertida) norm = true;
+        } else {
+            if (in == 0) norm = true;
+            else if (in == 1) inv = true;
+        }
+        if (norm) {
+            if (mov->tipo != TipoMovimiento::Maniobra) r.AG_DES_N = 1;
+            else if (r.AG_DES_N == 0) r.AG_DES_N = 2;
+        }
+        if (inv) {
+            if (mov->tipo != TipoMovimiento::Maniobra) r.AG_DES_I = 1;
+            else if (r.AG_DES_I == 0) r.AG_DES_I = 2;
+        }
+    }
     if (comprobacion == PosicionAguja::Normal && (!mandada || mandada->first == comprobacion)) r.AG_COMP = 3;
     else if (comprobacion == PosicionAguja::Invertida && (!mandada || mandada->first == comprobacion)) r.AG_COMP = 4;
     else if (mandada && mandada->first == PosicionAguja::Normal) r.AG_COMP = 1;

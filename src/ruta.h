@@ -61,6 +61,7 @@ public:
     CompatibilidadManiobra maniobra_compatible = CompatibilidadManiobra::IncompatibleBloqueo;
 
     ruta_deslizamiento* deslizamiento = nullptr;
+    std::map<movimiento*,int> deslizamientos_afectados;
 protected:
     std::map<seccion_via*, EstadoCanton> ocupacion_maxima_secciones;
     std::map<seccion_via*, std::pair<int, int>> posicion_aparatos;
@@ -68,14 +69,13 @@ protected:
     std::vector<elemento_ruta> secciones;
     std::set<seccion_via*> secciones_aseguradas;
     std::vector<std::pair<pn_enclavado*, Lado>> pn_afectados;
-    std::map<movimiento*,int> deslizamientos_afectados;
 
     bool mandada = false;
     bool formada = false;
 public:
     movimiento(const std::string &estacion, TipoMovimiento tipo, const std::string &id, bool es_ruta=true) : estacion(estacion), tipo(tipo), id(id), es_ruta(es_ruta) {}
-    virtual bool establecer();
-    virtual bool posible_establecer();
+    virtual bool establecer(bool msg=false);
+    virtual bool posible_establecer(bool msg=false);
     virtual void disolver();
     virtual void update();
     bool is_mandada()
@@ -151,8 +151,8 @@ protected:
     void disolucion_parcial(bool anular_bloqueo=false);
 public:
     ruta(const std::string &estacion, const json &j);
-    bool establecer() override;
-    bool posible_establecer() override;
+    bool establecer(bool msg=false) override;
+    bool posible_establecer(bool msg=false) override;
     estado_inicio_ruta get_estado_inicio()
     {
         estado_inicio_ruta e;
