@@ -80,7 +80,7 @@ void señal_impl::determinar_aspecto()
             if (sec_act->is_bloqueo_seccion())
                 prohibir_abrir = true;
         }
-        for (auto &[r, d] : sec_act->get_deslizamiento()) {
+        for (auto &[d, r] : sec_act->get_deslizamiento()) {
             if (!d->asegurado && !d->acceso_impedido)
                 cerrar = true;
         }

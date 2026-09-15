@@ -17,7 +17,7 @@ RemotaCV cv::get_estado_remota()
     else r.CV_EST = 0;
     r.CV_DES = 0;
     if (seccion != nullptr) {
-        for (auto &[mov, _] : seccion->get_deslizamiento()) {
+        for (auto &[_, mov] : seccion->get_deslizamiento()) {
             if (mov->tipo != TipoMovimiento::Maniobra) r.CV_DES = 1;
             else if (r.CV_DES == 0) r.CV_DES = 2;
         }

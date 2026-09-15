@@ -52,7 +52,7 @@ protected:
     lados<std::map<int,int>> active_outs;
     std::optional<reserva_seccion> ruta_asegurada;
 
-    std::map<movimiento*, nodo_deslizamiento*> deslizamiento;
+    std::map<nodo_deslizamiento*, movimiento*> deslizamiento;
 
     std::vector<punto_negro> puntos_negros;
 
@@ -106,7 +106,7 @@ public:
     {
         return ruta_asegurada;
     }
-    const std::map<movimiento*, nodo_deslizamiento*> &get_deslizamiento()
+    const std::map<nodo_deslizamiento*, movimiento*> &get_deslizamiento()
     {
         return deslizamiento;
     }

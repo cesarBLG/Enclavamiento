@@ -356,7 +356,7 @@ bool ruta::posible_establecer(bool msg)
             if (msg) log(id, "bloqueo seccion", LOG_DEBUG);
             return false;
         }
-        for (auto &[_,nodo] : sec->get_deslizamiento()) {
+        for (auto &[nodo,_] : sec->get_deslizamiento()) {
             deslizamientos_afectados[nodo->deslizamiento] = -1;
         }
     }

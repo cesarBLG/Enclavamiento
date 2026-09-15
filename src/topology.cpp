@@ -39,14 +39,20 @@ void seccion_via::asegurar(movimiento *ruta, int in, int out, std::optional<Lado
 }
 void seccion_via::asegurar_deslizamiento(movimiento *ruta, nodo_deslizamiento* nodo)
 {
-    if (deslizamiento.find(ruta) != deslizamiento.end() && deslizamiento[ruta] == nodo) return;
-    deslizamiento[ruta] = nodo;
+    if (deslizamiento.find(nodo) != deslizamiento.end()) return;
+    deslizamiento[nodo] = ruta;
     log(id, "deslizamiento asegurado", LOG_DEBUG);
     remota_cambio_elemento("sec", id);
 }
 void seccion_via::liberar_deslizamiento(movimiento *ruta, nodo_deslizamiento* nodo)
 {
-    if (deslizamiento.find(ruta) == deslizamiento.end() || deslizamiento[ruta] != nodo) return;
+    if (deslizamiento.find(nodo) == deslizamiento.end()) return;
+    deslizamiento.erase(nodo);
+    remota_cambio_elemento("sec", id);
+    for (auto &[n, r] : deslizamiento) {
+        if (r == ruta) return;
+    }
+    log(id, "fin deslizamiento", LOG_DEBUG);
     liberar(ruta);
 }
 void seccion_via::liberar(movimiento *ruta)
@@ -62,10 +68,6 @@ void seccion_via::liberar(movimiento *ruta)
             }
         }
         ruta_asegurada = std::nullopt;
-        remota_cambio_elemento("sec", id);
-    } else if (deslizamiento.find(ruta) != deslizamiento.end()) {
-        deslizamiento.erase(ruta);
-        log(id, "fin deslizamiento", LOG_DEBUG);
         remota_cambio_elemento("sec", id);
     }
 }

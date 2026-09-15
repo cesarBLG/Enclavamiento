@@ -83,9 +83,12 @@ RemotaAG aguja::get_estado_remota()
     else r.AG_DIR = ruta_asegurada->outs[lado] == 1 ? 2 : 1;
     r.AG_DES_N = 0;
     r.AG_DES_I = 0;
-    for (auto &[mov, n] : deslizamiento) {
-        auto pos = posicion_enclavada;
-        if (enclavada.find(mov) == enclavada.end()) pos = std::nullopt;
+    for (auto &[n, mov] : deslizamiento) {
+        std::optional<PosicionAguja> pos;
+        auto &posicion_aparatos = n->deslizamiento->deslizamientos_orientados[n->deslizamiento->deslizamiento_activo];
+        auto it = posicion_aparatos.find(this);
+        if (it != posicion_aparatos.end()) pos = get_posicion(Lado::Impar, it->second.first, it->second.second);
+
         int in = get_in(n->prev, n->dir);
         bool norm = false;
         bool inv = false;
