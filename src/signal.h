@@ -4,6 +4,22 @@
 #include "remota.h"
 class ruta;
 class frontera;
+class señal_impl;
+struct proximidad
+{
+    señal_impl *señal_inicio;
+    std::map<seccion_via*,std::pair<Lado,seccion_via*>> proximidad0;
+    std::map<seccion_via*,std::pair<Lado,seccion_via*>> proximidad1;
+    std::set<id_elemento> ultimos_cvs_proximidad;
+    proximidad(señal_impl *señal_inicio) : señal_inicio(señal_inicio) {}
+    void construir();
+    void construir0(seccion_via *next, seccion_via *sec, Lado dir);
+    const std::map<seccion_via*,std::pair<Lado,seccion_via*>> &get(TipoMovimiento tipo)
+    {
+        if (tipo == TipoMovimiento::Maniobra || tipo == TipoMovimiento::Rebase) return proximidad0;
+        return proximidad1;
+    }
+};
 class señal : public estado_señal
 {
 protected:
@@ -46,6 +62,7 @@ class señal_impl : public señal
 public:
     const std::string topic;
     const std::string topic_inicio;
+    proximidad proximidad_señal;
 protected:
     std::map<EstadoCanton, Aspecto> aspecto_maximo_ocupacion;
 

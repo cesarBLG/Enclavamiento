@@ -112,9 +112,6 @@ protected:
     std::shared_ptr<timer> diferimetro_dai;
     std::shared_ptr<timer> diferimetro_dei;
     std::shared_ptr<timer> diferimetro_deslizamiento;
-    std::map<seccion_via*,std::pair<Lado,seccion_via*>> proximidad0;
-    std::vector<std::pair<seccion_via*,Lado>> proximidad;
-    std::set<id_elemento> ultimos_cvs_proximidad;
     señal_impl *señal_inicio;
     destino_ruta *destino;
     ruta_deslizamiento *deslizamiento = nullptr;
@@ -290,8 +287,6 @@ public:
     {
     }
 protected:
-    void construir_proximidad();
-    void construir_proximidad0(seccion_via *next, seccion_via *sec, Lado dir);
     void activar_pns();
     void desactivar_pns();
 };

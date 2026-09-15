@@ -12,7 +12,7 @@ señal::señal(const id_elemento &id, const json &j) : id(id), lado(j["Lado"]), 
     if (aspectos_maximos_anterior_señal.empty())
         aspectos_maximos_anterior_señal[Aspecto::ParadaDiferida] = Aspecto::ViaLibre;
 }
-señal_impl::señal_impl(const id_elemento &id, const json &j) : señal(id, j), topic("signal/"+id_to_mqtt(id.id)+"/state"), topic_inicio("signal/"+id_to_mqtt(id.id)+"/inicio")
+señal_impl::señal_impl(const id_elemento &id, const json &j) : señal(id, j), topic("signal/"+id_to_mqtt(id.id)+"/state"), topic_inicio("signal/"+id_to_mqtt(id.id)+"/inicio"), proximidad_señal(this)
 {
     if (j.contains("AspectoCanton")) {
         for (auto &[est, asp] : j["AspectoCanton"].items()) {
@@ -21,6 +21,11 @@ señal_impl::señal_impl(const id_elemento &id, const json &j) : señal(id, j), 
     }
     if (aspecto_maximo_ocupacion.empty())
         aspecto_maximo_ocupacion[EstadoCanton::Libre] = tipo == TipoSeñal::Maniobra ? Aspecto::MovimientoAutorizado : Aspecto::ViaLibre;
+    if (j.contains("LímiteProximidad")) {
+        for (auto &jprox : j["LímiteProximidad"]) {
+            proximidad_señal.ultimos_cvs_proximidad.insert(id_elemento::from_default_dep(jprox.get<std::string>(), id.dependencia));
+        }
+    }
     ruta_necesaria = j.value("RutaNecesaria", tipo != TipoSeñal::Intermedia && tipo != TipoSeñal::Avanzada);
     itinerarios_desviada = j.value("ItinerariosDesviada", false);
     cierre_stick = ruta_necesaria;
@@ -247,6 +252,8 @@ void señal_impl::update()
     Aspecto prev_aspecto = aspecto;
     estado_inicio_ruta prev_estado_inicio = estado_inicio;
 
+    proximidad_señal.construir();
+
     determinar_aspecto();
 
     // Si la señal cierra en stick, es necesario volver a mandar la ruta para que vuelva a abrir
@@ -462,4 +469,62 @@ cv* señal_impl::get_cv_inicio()
         sec = next;
     }
     return nullptr;
+}
+void proximidad::construir0(seccion_via *next, seccion_via *sec, Lado dir)
+{
+    if (sec == nullptr) return;
+    if (sec->get_cv() != nullptr) {
+        proximidad0[sec] = {dir, next};
+    } else {
+        std::vector<std::pair<seccion_via *, Lado>> prev;
+        sec->prev_secciones(next, dir, prev);
+        for (auto &[sec2, dir2] : prev) {
+            if (sec->señal_inicio(dir, sec2) != nullptr) continue;
+            construir0(sec, sec2, dir2);
+        }
+    }
+}
+void proximidad::construir()
+{
+    proximidad0.clear();
+    proximidad1.clear();
+    construir0(señal_inicio->seccion, señal_inicio->seccion_prev, señal_inicio->lado_prev);
+    for (auto &[sec, props] : proximidad0) {
+        auto &[dir, next] = props;
+        seccion_via *act = sec;
+        ruta *ruta_actual = nullptr;
+        bool trayecto = false;
+        señal *sig = señal_inicio;
+        while (act != nullptr) {
+
+            Lado dir_opp = opp_lado(dir);
+            auto prev = act->siguiente_seccion(next, dir_opp, true);
+            if (prev == nullptr) prev = act->siguiente_seccion(next, dir_opp);
+
+            if (sig != nullptr) {
+                if (sig != señal_inicio && sig->aspecto == Aspecto::Parada) break;
+                auto sig_impl = señal_impls.find(sig->id);
+                if (sig_impl == señal_impls.end() || (prev != nullptr && prev->is_trayecto())) {
+                    ruta_actual = nullptr;
+                    trayecto = true;
+                } else if (ruta_actual == nullptr || ruta_actual->get_señal_inicio() == sig_impl->second) {
+                    ruta_actual = sig_impl->second->ruta_fin;
+                    trayecto = false;
+                    if (ruta_actual != nullptr && ruta_actual->tipo != TipoMovimiento::Itinerario) ruta_actual = nullptr;
+                }
+            }
+
+            if (act->get_cv() != nullptr) proximidad1[act] = {dir, next};
+
+            bool afecta_anteriores = trayecto || (ruta_actual != nullptr && act->is_asegurada(ruta_actual));
+            if (!afecta_anteriores || ultimos_cvs_proximidad.empty() || ultimos_cvs_proximidad.find(act->id_cv) != ultimos_cvs_proximidad.end()) {
+                break;
+            }
+
+            dir = opp_lado(dir_opp);
+            sig = act->señal_inicio(dir, prev);
+            next = act;
+            act = prev;
+        }
+    }
 }

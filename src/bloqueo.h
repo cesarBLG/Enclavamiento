@@ -6,6 +6,7 @@
 #include "topology.h"
 #include "mqtt.h"
 #include "log.h"
+class señal_impl;
 class bloqueo : estado_bloqueo_lado
 {
 public:
@@ -19,6 +20,7 @@ public:
     const EstadoBloqueo bloqueo_receptor;
     const std::string topic;
     const std::string topic_colateral;
+    señal_impl *señal_entrada = nullptr;
 protected:
     Lado sentido_preferente;
     EstadoBloqueo estado_inicial;

@@ -73,7 +73,7 @@ frontera *destino_ruta::get_frontera()
     }
     return nullptr;
 }
-ruta::ruta(const std::string &estacion, const json &j) : movimiento(estacion, j["Tipo"], (j["Tipo"] == TipoMovimiento::Itinerario ? (ertms ? "ER " : "I ") : (tipo == TipoMovimiento::Rebase ? "R " : "M "))+estacion+" "+j["Inicio"].get<std::string>()+" "+j["Destino"].get<std::string>()), id_inicio(j["Inicio"]), id_destino(j["Destino"]), bloqueo_salida(j.contains("Bloqueo") ? std::optional<id_elemento>(id_elemento(j["Bloqueo"])) : std::nullopt)
+ruta::ruta(const std::string &estacion, const json &j) : movimiento(estacion, j["Tipo"], (j["Tipo"] == TipoMovimiento::Itinerario ? (ertms ? "ER " : "I ") : (j["Tipo"] == TipoMovimiento::Rebase ? "R " : "M "))+estacion+" "+j["Inicio"].get<std::string>()+" "+j["Destino"].get<std::string>()), id_inicio(j["Inicio"]), id_destino(j["Destino"]), bloqueo_salida(j.contains("Bloqueo") ? std::optional<id_elemento>(id_elemento(j["Bloqueo"])) : std::nullopt)
 {
     id_elemento id_señal(estacion, id_inicio);
     if (señal_impls.find(id_señal) == señal_impls.end()) {
@@ -99,11 +99,6 @@ ruta::ruta(const std::string &estacion, const json &j) : movimiento(estacion, j[
     destino = destinos_ruta[full_id_destino];
 
     maniobra_compatible = j.value("Compatible", CompatibilidadManiobra::IncompatibleBloqueo);
-    if (j.contains("LímiteProximidad")) {
-        for (auto &jprox : j["LímiteProximidad"]) {
-            ultimos_cvs_proximidad.insert(id_elemento::from_default_dep(jprox.get<std::string>(), estacion));
-        }
-    }
     if (j.contains("PosiciónAparatos")) {
         for (auto &[sec_id, jpos] : j["PosiciónAparatos"].items()) {
             posicion_aparatos[::secciones[id_elemento::from_default_dep(sec_id, estacion)]] = jpos;
@@ -150,8 +145,12 @@ ruta::ruta(const std::string &estacion, const json &j) : movimiento(estacion, j[
     else lado_bloqueo = *secciones.back().dir;
     if (!ertms && destino->deslizamientos.find(tipo) != destino->deslizamientos.end()) {
         deslizamiento = destino->deslizamientos[tipo];
-        seccion_inicio_temporizador_deslizamiento = secciones.back().seccion;
-        temporizador_deslizamiento = 15000;
+    }
+    if (j.contains("DiferímetroDeslizamiento")) {
+        auto &jdesliz = j["DiferímetroDeslizamiento"];
+        if (jdesliz.contains("Inicio")) seccion_inicio_temporizador_deslizamiento = ::secciones[id_elemento::from_default_dep(jdesliz["InicioTemporizador"], estacion)];
+        else seccion_inicio_temporizador_deslizamiento = secciones.back().seccion;
+        temporizador_deslizamiento = jdesliz.value("Valor", 30000);
     }
     if (j.contains("SeñalLiberación")) {
         señales.push_back(señal_impls[id_elemento::from_default_dep(j["SeñalLiberación"], estacion)]);
@@ -309,23 +308,27 @@ bool ruta::posible_establecer(bool msg)
                     l = opp_lado(p.second);
                 }
                 if (sec->is_trayecto() || parametros.deslizamiento_bloqueo) {
-                    // Cálculo de la proximidad de la avanzada
-                    // Con bloqueo receptor, finaliza en el CV anterior a la última señal que cambia de aspecto al cerrarse la avanzada
-                    // Sin bloqueo establecido, finaliza en el CV anterior a la avanzada (las señales intermedias están cerradas)
-                    Aspecto asp1 = Aspecto::Parada;
-                    Aspecto asp2 = Aspecto::AnuncioParada;
+                    // Requerir CV de avanzada libre
+                    // También debe estar libre la proximidad de la avanzada (completa si hay bloqueo receptor)
                     while (sig != nullptr && sig->is_trayecto()) {
+                        auto *señal = sec->señal_inicio(opp_lado(l), 0);
+                        if (señal != nullptr && sec->is_trayecto()) {
+                            if (señal->tipo == TipoSeñal::Avanzada) {
+                                for (auto &[sec, val] : ((señal_impl*)señal)->proximidad_señal.get(bloqueo_receptor ? TipoMovimiento::Itinerario : TipoMovimiento::Maniobra)) {
+                                    auto [dir, next] = val;
+                                    if (sec->get_cv()->get_ocupacion(opp_lado(dir)) == EstadoCanton::Ocupado) {
+                                        if (msg) log(id, "proximidad ocupada", LOG_DEBUG);
+                                        return false;
+                                    }
+                                }
+                            }
+                            break;
+                        }
                         if (sig->get_ocupacion(sec, l) == EstadoCanton::Ocupado) {
                             if (msg) log(id, "proximidad ocupada", LOG_DEBUG);
                             return false;
                         }
-                        auto señal = sec->señal_inicio(opp_lado(l), 0);
-                        if (señal != nullptr && sec->is_trayecto()) {
-                            if (asp1 == asp2 || !bloqueo_receptor) break;
-                            asp1 = señal->get_aspecto_anterior(asp1);
-                            asp2 = señal->get_aspecto_anterior(asp2);
-                        }
-                        auto *prv = sec;
+                        auto *prv = sig;
                         sig = sig->siguiente_seccion(sec, l);
                         sec = prv;
                     }
@@ -412,11 +415,11 @@ void movimiento::update()
 }
 void ruta::update()
 {
-    construir_proximidad();
     bool activar_fai = false;
     bool proximidad_ocupada = false;
     bool proximidad_ocupada_fai = false;
-    for (auto &[sec, dir] : proximidad) {
+    for (auto &[sec, val] : señal_inicio->proximidad_señal.get(tipo)) {
+        auto dir = val.first;
         auto e = sec->get_cv()->get_state();
         if (e > EstadoCV::Prenormalizado && (e != (dir == Lado::Impar ? EstadoCV::OcupadoPar : EstadoCV::OcupadoImpar))) {
             proximidad_ocupada = true;
@@ -435,7 +438,7 @@ void ruta::update()
         bool solicitud_fai = false;
         if (tipo_fai == TipoFAI::Proximidad) {
             bool cv_anterior_ocupado = false;
-            for (auto &[sec, dir] : proximidad0) {
+            for (auto &[sec, _] : señal_inicio->proximidad_señal.get(tipo)) {
                 if (sec->get_cv()->get_state() > EstadoCV::Prenormalizado) {
                     cv_anterior_ocupado = true;
                     break;
@@ -512,7 +515,7 @@ void ruta::update()
     }
 
     // Mandar cierre de PN si la proximidad está ocupada
-    if ((proximidad_ocupada || proximidad.empty()) && señal_inicio->ruta_activa != nullptr) {
+    if ((proximidad_ocupada || señal_inicio->proximidad_señal.get(tipo).empty()) && señal_inicio->ruta_activa != nullptr) {
         activar_pns();
     }
 
@@ -629,10 +632,10 @@ void ruta::message_cv(const id_elemento &id, estado_cv ecv)
     // En maniobra, cerrar señal si se libera el circuito anterior a la señal
     if (tipo == TipoMovimiento::Maniobra && !sucesion_automatica && (ocupada || cv_inicio == nullptr) && ecv.estado <= EstadoCV::Prenormalizado && ecv.estado_previo > EstadoCV::Prenormalizado) {
         bool proximidad_liberada = false;
-        if (proximidad0.size() > 0) {
+        if (señal_inicio->proximidad_señal.proximidad0.size() > 0) {
             proximidad_liberada = true;
             bool cambio_proximidad = false;
-            for (auto &[sec,_] : proximidad0) {
+            for (auto &[sec,_] : señal_inicio->proximidad_señal.proximidad0) {
                 if (sec->get_cv()->get_state() > EstadoCV::Prenormalizado) {
                     proximidad_liberada = false;
                     break;
@@ -654,6 +657,8 @@ bool ruta::dai(bool anular_bloqueo)
         disolucion_parcial(anular_bloqueo);
         return true;
     }
+    auto &proximidad = señal_inicio->proximidad_señal.get(tipo);
+    auto &proximidad0 = señal_inicio->proximidad_señal.proximidad0;
     bool proximidad_libre = true;
     for (auto [sec, dir] : proximidad) {
         auto e = sec->get_cv()->get_state();
@@ -792,64 +797,6 @@ void ruta::disolucion_parcial(bool anular_bloqueo)
         if (i + 1 == secciones.size() && !señales.empty()) {
             auto *sig = señales.back();
             if (sig->seccion_prev == sec && sig->ruta_activa == this) sig->ruta_activa = nullptr;
-        }
-    }
-}
-void ruta::construir_proximidad0(seccion_via *next, seccion_via *sec, Lado dir)
-{
-    if (sec == nullptr) return;
-    if (sec->get_cv() != nullptr) {
-        proximidad0[sec] = {dir, next};
-    } else {
-        std::vector<std::pair<seccion_via *, Lado>> prev;
-        sec->prev_secciones(next, dir, prev);
-        for (auto &[sec2, dir2] : prev) {
-            if (sec->señal_inicio(dir, sec2) != nullptr) continue;
-            construir_proximidad0(sec, sec2, dir2);
-        }
-    }
-}
-void ruta::construir_proximidad()
-{
-    proximidad0.clear();
-    proximidad.clear();
-    auto p = señal_inicio->seccion->get_seccion_in(lado, señal_inicio->pin);
-    construir_proximidad0(señal_inicio->seccion, p.first, p.second);
-    for (auto &[sec, props] : proximidad0) {
-        auto &[dir, next] = props;
-        p = {sec, dir};
-        ruta *ruta_actual = nullptr;
-        bool trayecto = false;
-        señal *sig = señal_inicio;
-        while (p.first != nullptr) {
-            if (p.first->get_cv() != nullptr) proximidad.push_back({p.first, p.second});
-
-            std::pair<seccion_via*, Lado> prev = {nullptr, Lado::Impar};
-            Lado dir = opp_lado(p.second);
-            prev.first = p.first->siguiente_seccion(next, dir, true);
-            if (prev.first == nullptr) prev.first = p.first->siguiente_seccion(next, dir);
-
-            if (sig != nullptr) {
-                if (sig != señal_inicio && sig->aspecto == Aspecto::Parada) break;
-                auto sig_impl = señal_impls.find(sig->id);
-                if (sig_impl == señal_impls.end() || (prev.first != nullptr && prev.first->is_trayecto())) {
-                    ruta_actual = nullptr;
-                    trayecto = true;
-                } else if (ruta_actual == nullptr || ruta_actual->señal_inicio == sig_impl->second) {
-                    ruta_actual = sig_impl->second->ruta_fin;
-                    trayecto = false;
-                    if (ruta_actual != nullptr && ruta_actual->tipo != TipoMovimiento::Itinerario) ruta_actual = nullptr;
-                }
-            }
-            bool afecta_anteriores = trayecto || (ruta_actual != nullptr && p.first->is_asegurada(ruta_actual));
-            if (p.first != sec && (!afecta_anteriores || ultimos_cvs_proximidad.empty() || ultimos_cvs_proximidad.find(p.first->id_cv) != ultimos_cvs_proximidad.end() || tipo != TipoMovimiento::Itinerario)) {
-                break;
-            }
-
-            p.second = opp_lado(dir);
-            sig = p.first->señal_inicio(p.second, prev.first);
-            next = p.first;
-            p = prev;
         }
     }
 }

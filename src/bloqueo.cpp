@@ -10,6 +10,11 @@ tipo(j.value("Tipo", TipoBloqueo::BAU)), bloqueo_emisor(lado == Lado::Impar ? Es
     for (auto &cv : j["CVs"]) {
         cvs.push_back(secciones[id_elemento(cv)]);
     }
+    if (!cvs.empty()) {
+        auto nxt = cvs[0]->get_seccion_in(lado, 0);
+        auto *sig = nxt.first->señal_inicio(opp_lado(nxt.second), cvs[0]);
+        if (sig != nullptr) señal_entrada = (señal_impl*)sig;
+    }
     if (j.contains("CVsEntrada")) {
         for (auto &cv : j["CVsEntrada"]) {
             cvs_entrada.push_back(::cvs[id_elemento(cv)]);
@@ -191,9 +196,11 @@ void bloqueo::message_cv(const id_elemento &id, estado_cv ecv)
     // Gestionar desbloqueo
     if (liberar && desbloqueo_permitido()) estado_objetivo = EstadoBloqueo::Desbloqueo;
 
-    // Soneria proximidad
-    if (index == 0 && ecv.estado_previo <= EstadoCV::Prenormalizado && ecv.estado > EstadoCV::Prenormalizado && estado == bloqueo_receptor) {
-        sonerias[TipoSoneria::OcupacionProximidad] = get_milliseconds();
+    if (ecv.estado_previo <= EstadoCV::Prenormalizado && ecv.estado > EstadoCV::Prenormalizado && estado == bloqueo_receptor && señal_entrada != nullptr) {
+        // Soneria proximidad
+        auto &prox = señal_entrada->proximidad_señal.ultimos_cvs_proximidad;
+        if (prox.find(id) != prox.end())
+            sonerias[TipoSoneria::OcupacionProximidad] = get_milliseconds();
     }
 
     update();
