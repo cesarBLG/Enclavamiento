@@ -132,7 +132,6 @@ class cv_impl_cv : public cv_impl
     cv_impl_cv(const id_elemento &id, const json &j) : cv_impl(id, j) {}
     void message_cv_campo(estado_cv ecv)
     {
-        estado_previo = estado;
         estado = ecv.estado;
         averia = ecv.averia;
         send_state();

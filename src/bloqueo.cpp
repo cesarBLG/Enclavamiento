@@ -159,7 +159,7 @@ void bloqueo::message_cv(const id_elemento &id, estado_cv ecv)
 
     // Desbloqueo si se produce liberación del último CV de trayecto
     if (estado == bloqueo_receptor && index == 0 && est_cv <= EstadoCV::Prenormalizado
-         && prev_est == (lado == Lado::Impar ? EstadoCV::OcupadoPar : EstadoCV::OcupadoImpar)
+         && (prev_est == (lado == Lado::Impar ? EstadoCV::OcupadoPar : EstadoCV::OcupadoImpar) || prev_est == EstadoCV::Ocupado)
          && (!ecv.evento || ecv.evento->lado == lado))
             liberar = true;
 
