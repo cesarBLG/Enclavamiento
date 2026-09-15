@@ -53,10 +53,8 @@ void señal_impl::determinar_aspecto()
             salida_trayecto = true;
         }
     }
-    if (ruta_activa != nullptr) {
-        auto &señales = ruta_activa->get_señales();
-        if ((señales.empty() || señales.back() == this) && !ruta_activa->deslizamiento_asegurado()) cerrar = true;
-    }
+    if (ruta_activa != nullptr && ruta_activa->es_ruta && !((ruta*)ruta_activa)->deslizamiento_asegurado())
+        cerrar = true;
     // Comprobamos todos los CVs hasta la señal siguiente o fin de movimiento
     while (sec_act != nullptr && sig_señal == nullptr) {
         bool seccion_asegurada = ruta_activa != nullptr && sec_act->is_asegurada(ruta_activa);

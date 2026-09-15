@@ -3,7 +3,15 @@
 destino_ruta::destino_ruta(const id_elemento &id, const json &j) : id(id), tipo(j["Tipo"]), topic("destino/"+id_to_mqtt(id.id)+"/state")
 {
     auto it = señal_impls.find(id);
-    if (it != señal_impls.end()) señal_fin = it->second;
+    if (tipo == TipoDestino::Señal && it != señal_impls.end()) {
+        señal_fin = it->second;
+
+        if (j.contains("Deslizamiento")) {
+            auto *d = new ruta_deslizamiento(this, j["Deslizamiento"]);
+            deslizamientos[TipoMovimiento::Itinerario] = d;
+            deslizamientos[TipoMovimiento::Maniobra] = d;
+        }
+    }
 }
 RespuestaMando destino_ruta::mando(const std::string &cmd, int me)
 {
@@ -140,14 +148,10 @@ ruta::ruta(const std::string &estacion, const json &j) : movimiento(estacion, j[
     }
     if (secciones.empty()) lado_bloqueo = lado;
     else lado_bloqueo = *secciones.back().dir;
-    if (j.contains("Deslizamiento")) {
-        auto &jdesliz = j["Deslizamiento"];
-        if (jdesliz.contains("Límite")) {
-            deslizamiento = new ruta_deslizamiento(this, jdesliz);
-        }
-        if (jdesliz.contains("InicioTemporizador")) seccion_inicio_temporizador_deslizamiento = ::secciones[id_elemento::from_default_dep(jdesliz["InicioTemporizador"], estacion)];
-        else seccion_inicio_temporizador_deslizamiento = secciones.back().seccion;
-        temporizador_deslizamiento = jdesliz.value("Diferímetro", 15000);
+    if (!ertms && destino->deslizamientos.find(tipo) != destino->deslizamientos.end()) {
+        deslizamiento = destino->deslizamientos[tipo];
+        seccion_inicio_temporizador_deslizamiento = secciones.back().seccion;
+        temporizador_deslizamiento = 15000;
     }
     if (j.contains("SeñalLiberación")) {
         señales.push_back(señal_impls[id_elemento::from_default_dep(j["SeñalLiberación"], estacion)]);
@@ -188,8 +192,8 @@ bool movimiento::posible_establecer(bool msg)
             }
         }
     }
-    for (auto &[r, id] : deslizamientos_afectados) {
-        int compat = r->deslizamiento->compatible(this);
+    for (auto &[desliz, id] : deslizamientos_afectados) {
+        int compat = desliz->compatible(this);
         if (compat < 0) {
             if (msg) log(this->id, "deslizamiento incompatible", LOG_DEBUG);
             return false;
@@ -200,6 +204,7 @@ bool movimiento::posible_establecer(bool msg)
 }
 bool movimiento::establecer(bool msg)
 {
+    deslizamientos_afectados.clear();
     if (!posible_establecer(msg)) return false;
     log(id, "mandada", LOG_DEBUG);
     mandada = true;
@@ -214,8 +219,8 @@ bool movimiento::establecer(bool msg)
         secciones_aseguradas.insert(sec);
     }
     mover_agujas();
-    for (auto &[r, id] : deslizamientos_afectados) {
-        r->deslizamiento->activar(id);
+    for (auto &[desliz, id] : deslizamientos_afectados) {
+        desliz->activar(id);
     }
     return true;
 }
@@ -351,11 +356,11 @@ bool ruta::posible_establecer(bool msg)
             if (msg) log(id, "bloqueo seccion", LOG_DEBUG);
             return false;
         }
-        for (auto &[r,d] : sec->get_deslizamiento()) {
-            deslizamientos_afectados[r] = -1;
+        for (auto &[_,nodo] : sec->get_deslizamiento()) {
+            deslizamientos_afectados[nodo->deslizamiento] = -1;
         }
     }
-    if (deslizamiento) deslizamientos_afectados[this] = -1;
+    if (deslizamiento) deslizamientos_afectados[deslizamiento] = -1;
 
     return movimiento::posible_establecer(msg);
 }
@@ -376,10 +381,13 @@ bool ruta::establecer(bool msg)
         log(id, "re-mandada", LOG_DEBUG);
         return true;
     }
-    if (!movimiento::establecer(msg)) return false;
+    destino->ruta_activa = this;
+    if (!movimiento::establecer(msg)) {
+        destino->ruta_activa = nullptr;
+        return false;
+    }
     clear_timer(diferimetro_dei);
     diferimetro_dei = nullptr;
-    destino->ruta_activa = this;
     return true;
 }
 void movimiento::update()
@@ -396,9 +404,6 @@ void movimiento::update()
                 break;
             }
         }
-    }
-    if (deslizamiento != nullptr) {
-        deslizamiento->update();
     }
     if (agujas_dispuestas && !formada) {
         formada = true;
@@ -501,6 +506,10 @@ void ruta::update()
     movimiento::update();
 
     if (!mandada) return;
+
+    if (deslizamiento != nullptr) {
+        deslizamiento->update();
+    }
 
     // Mandar cierre de PN si la proximidad está ocupada
     if ((proximidad_ocupada || proximidad.empty()) && señal_inicio->ruta_activa != nullptr) {
@@ -729,19 +738,14 @@ void movimiento::disolver()
         ag->liberar(this);
     }
     secciones_aseguradas.clear();
-    if (deslizamiento) {
-        deslizamiento->liberar();
-        deslizamientos_afectados.erase(this);
-    }
-    for (auto &[r,id] : deslizamientos_afectados) {
-        id = r->deslizamiento->compatible(nullptr);
-        r->deslizamiento->activar(id);
+    for (auto &[desliz,id] : deslizamientos_afectados) {
+        id = desliz->compatible(nullptr);
+        desliz->activar(id);
     }
     log(id, "disuelta");
 }
 void ruta::disolver()
 {
-    if (destino->ruta_activa == this) destino->ruta_activa = nullptr;
     supervisada = false;
     ocupada = false;
     clear_timer(diferimetro_dai);
@@ -751,6 +755,8 @@ void ruta::disolver()
     diferimetro_dei = nullptr;
     diferimetro_deslizamiento = nullptr;
     diferimetro_cancelado = false;
+    if (deslizamiento) deslizamiento->liberar();
+    if (destino->ruta_activa == this) destino->ruta_activa = nullptr;
     movimiento::disolver();
 }
 // Disolución parcial de la ruta hasta el primer CV ocupado

@@ -146,9 +146,9 @@ class aguja : public seccion_via, public estado_aguja
             }
             escape->escape = this;
         }
+        if (enclavada.empty()) log(id, "enclavada", LOG_INFO);
         enclavada.insert(r);
         posicion_enclavada = pos;
-        log(id, "enclavada", LOG_INFO);
         update();
         return true;
     }

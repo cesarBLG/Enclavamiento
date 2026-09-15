@@ -1,20 +1,18 @@
 #include "deslizamiento.h"
 #include "items.h"
-ruta_deslizamiento::ruta_deslizamiento(movimiento *r, const json &j) : r(r)
-{
-    auto rend = r->get_secciones().back();
-    auto start = rend.seccion->get_seccion_in(opp_lado(*rend.dir), rend.out);
+ruta_deslizamiento::ruta_deslizamiento(destino_ruta *fin, const json &j) : fin_movimiento(fin)
+{;
     std::set<seccion_via*> stop;
     for (auto &id : j["Límite"]) {
-        stop.insert(secciones[id_elemento::from_default_dep(id, r->estacion)]);
+        stop.insert(secciones[id_elemento::from_default_dep(id, fin->id.dependencia)]);
     }
-    root = std::make_shared<nodo_deslizamiento>(rend.seccion, start.first, opp_lado(start.second), this, stop);
+    root = std::make_shared<nodo_deslizamiento>(fin->señal_fin->seccion_prev, fin->señal_fin->seccion, fin->señal_fin->lado, this, stop);
     deslizamientos_orientados.push_back({});
     if (j.contains("DeslizamientosOrientados")) {
         for (auto &jo : j["DeslizamientosOrientados"]) {
             std::map<seccion_via*, std::pair<int,int>> pos;
             for (auto &[sec_id, jpos] : jo.items()) {
-                pos[::secciones[id_elemento::from_default_dep(sec_id, r->estacion)]] = jpos;
+                pos[::secciones[id_elemento::from_default_dep(sec_id, fin->id.dependencia)]] = jpos;
             }
             deslizamientos_orientados.push_back(pos);
         }
@@ -95,7 +93,7 @@ void nodo_deslizamiento::actualizar(bool set)
         auto it = posicion_aparatos.find(seccion);
         if (seccion->tipo == TipoSeccion::Aguja && it == posicion_aparatos.end()) {
             aguja *a = (aguja*)seccion;
-            a->desenclavar(deslizamiento->r);
+            a->desenclavar(deslizamiento->fin_movimiento->ruta_activa);
         }
     }
     int in = seccion->get_in(prev, dir);
@@ -110,10 +108,10 @@ void nodo_deslizamiento::actualizar(bool set)
         }
     }
     if (set) {
-        seccion->asegurar_deslizamiento(deslizamiento->r, this);
+        seccion->asegurar_deslizamiento(deslizamiento->fin_movimiento->ruta_activa, this);
         asegurado = true;
     } else {
-        seccion->liberar(deslizamiento->r);
+        seccion->liberar_deslizamiento(deslizamiento->fin_movimiento->ruta_activa, this);
         asegurado = false;
     }
 }
@@ -162,23 +160,50 @@ bool nodo_deslizamiento::is_asegurado(int id_deslizamiento)
 }
 void ruta_deslizamiento::activar(int id)
 {
-    log(r->id, "deslizamiento activo " + std::to_string(id));
+    if (deslizamiento_activo == id) return;
+    formado = false;
+    if (fin_movimiento->ruta_activa == nullptr) {
+        liberar();
+        return;
+    }
+    log(fin_movimiento->id, "deslizamiento activo " + std::to_string(id));
     deslizamiento_activo = id;
     root->actualizar(true);
     for (auto *r2 : rutas_afectadas) {
-        r2->deslizamientos_afectados[r] = id;
+        if (r2->deslizamientos_afectados.find(this) == r2->deslizamientos_afectados.end())
+            r2->deslizamientos_afectados[this] = id;
+    }
+}
+void ruta_deslizamiento::liberar()
+{
+    deslizamiento_activo = -1;
+    formado = false;
+    root->actualizar(false);
+    for (auto *r2 : rutas_afectadas) {
+        r2->deslizamientos_afectados.erase(this);
     }
 }
 void ruta_deslizamiento::update()
 {
     if (deslizamiento_activo < 0) return;
-    auto &posicion_aparatos = deslizamientos_orientados[deslizamiento_activo];
-    for (auto &[sec, pins] : posicion_aparatos) {
-        if (sec->tipo == TipoSeccion::Aguja) {
-            aguja *a = (aguja*)sec;
-            auto pos = a->get_posicion(Lado::Impar, pins.first, pins.second);
-            if (!a->enclavar(r, a->get_posicion(Lado::Impar, pins.first, pins.second))) {
-                break;
+    if (!formado) {
+        bool agujas_dispuestas = true;
+        auto &posicion_aparatos = deslizamientos_orientados[deslizamiento_activo];
+        for (auto &[sec, pins] : posicion_aparatos) {
+            if (sec->tipo == TipoSeccion::Aguja) {
+                aguja *a = (aguja*)sec;
+                auto pos = a->get_posicion(Lado::Impar, pins.first, pins.second);
+                if (!a->enclavar(fin_movimiento->ruta_activa, a->get_posicion(Lado::Impar, pins.first, pins.second))) {
+                    agujas_dispuestas = false;
+                    break;
+                }
+            }
+        }
+        if (agujas_dispuestas) {
+            formado = true;
+            log(fin_movimiento->id, "deslizamiento formado " + std::to_string(deslizamiento_activo));
+            for (auto &r : rutas_afectadas) {
+                r->deslizamientos_afectados[this] = deslizamiento_activo;
             }
         }
     }

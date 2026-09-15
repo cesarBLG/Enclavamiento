@@ -85,6 +85,7 @@ public:
     }
     virtual void asegurar(movimiento *ruta, int in, int out, std::optional<Lado> dir);
     void asegurar_deslizamiento(movimiento *ruta, nodo_deslizamiento* nodo);
+    void liberar_deslizamiento(movimiento *ruta, nodo_deslizamiento* nodo);
     virtual void liberar(movimiento *ruta);
     bool is_asegurada(movimiento *ruta=nullptr)
     {

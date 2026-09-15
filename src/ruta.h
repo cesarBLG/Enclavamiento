@@ -23,6 +23,7 @@ public:
     bool me_pendiente = false;
     ruta *ruta_activa = nullptr;
     señal_impl *señal_fin = nullptr;
+    std::map<TipoMovimiento, ruta_deslizamiento*> deslizamientos;
     destino_ruta(const id_elemento &id, const json &j);
     RespuestaMando mando(const std::string &cmd, int me);
     RemotaFMV get_estado_remota();
@@ -60,8 +61,7 @@ public:
     bool valid = false;
     CompatibilidadManiobra maniobra_compatible = CompatibilidadManiobra::IncompatibleBloqueo;
 
-    ruta_deslizamiento* deslizamiento = nullptr;
-    std::map<movimiento*,int> deslizamientos_afectados;
+    std::map<ruta_deslizamiento*,int> deslizamientos_afectados;
 protected:
     std::map<seccion_via*, EstadoCanton> ocupacion_maxima_secciones;
     std::map<seccion_via*, std::pair<int, int>> posicion_aparatos;
@@ -99,10 +99,6 @@ public:
     {
         return ocupacion_maxima_secciones;
     }
-    bool deslizamiento_asegurado()
-    {
-        return deslizamiento == nullptr || deslizamiento->is_asegurado();
-    }
 };
 class ruta : public movimiento
 {
@@ -121,6 +117,7 @@ protected:
     std::set<id_elemento> ultimos_cvs_proximidad;
     señal_impl *señal_inicio;
     destino_ruta *destino;
+    ruta_deslizamiento *deslizamiento = nullptr;
     Lado lado;
     Lado lado_bloqueo;
     estado_bloqueo bloqueo_act;
@@ -239,6 +236,13 @@ public:
     bool is_sucesion_automatica()
     {
         return sucesion_automatica;
+    }
+    bool deslizamiento_asegurado()
+    {
+        for (auto &[desliz, id] : deslizamientos_afectados) {
+            if (!desliz->is_asegurado(id)) return false;
+        }
+        return true;
     }
     std::optional<EstadoFAI> get_estado_fai()
     {

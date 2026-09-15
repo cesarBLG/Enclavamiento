@@ -2,6 +2,7 @@
 #include <enclavamiento.h>
 #include <set>
 class seccion_via;
+class destino_ruta;
 class movimiento;
 class ruta_deslizamiento;
 struct nodo_deslizamiento
@@ -24,12 +25,13 @@ struct nodo_deslizamiento
 };
 struct ruta_deslizamiento
 {
-    movimiento *r;
+    destino_ruta *fin_movimiento;
     std::set<movimiento*> rutas_afectadas;
     std::shared_ptr<nodo_deslizamiento> root;
     std::vector<std::map<seccion_via*, std::pair<int,int>>> deslizamientos_orientados;
     int deslizamiento_activo = -1;
-    ruta_deslizamiento(movimiento *r, const json &j);
+    bool formado = false;
+    ruta_deslizamiento(destino_ruta *fin, const json &j);
     int compatible(movimiento *r)
     {
         rutas_afectadas.clear();
@@ -42,20 +44,14 @@ struct ruta_deslizamiento
         return -1;
     }
     void activar(int id);
-    void liberar()
-    {
-        deslizamiento_activo = -1;
-        root->actualizar(false);
-    }
-    bool is_asegurado()
+    void liberar();
+    bool is_asegurado(bool id_orig)
     {
         if (deslizamiento_activo < 0)
             return false;
-        for (int i=0; i<deslizamientos_orientados.size(); i++) {
-            if (root->is_asegurado(i))
-                return true;
-        }
-        return false;
+        if (!root->is_asegurado(id_orig) && (id_orig == deslizamiento_activo || !root->is_asegurado(deslizamiento_activo)))
+            return false;
+        return true;
     }
     void update();
 };
