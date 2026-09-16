@@ -121,9 +121,9 @@ ruta::ruta(const std::string &estacion, const json &j) : movimiento(estacion, j[
 
             std::pair<int,int> pins;
             seccion_via *next;
-            if (posicion_aparatos.find(sec) != posicion_aparatos.end()) {
-                if (dir == Lado::Par) pins = {posicion_aparatos[sec].second, posicion_aparatos[sec].first};
-                else pins = posicion_aparatos[sec];
+            auto it = posicion_aparatos.find(sec);
+            if (it != posicion_aparatos.end()) {
+                pins = {it->second[opp_lado(dir)], it->second[dir]};
                 auto p = sec->get_seccion_in(opp_lado(dir), pins.second);
                 next = p.first;
                 sig_dir = opp_lado(p.second);
@@ -148,9 +148,9 @@ ruta::ruta(const std::string &estacion, const json &j) : movimiento(estacion, j[
     }
     if (j.contains("DiferímetroDeslizamiento")) {
         auto &jdesliz = j["DiferímetroDeslizamiento"];
-        if (jdesliz.contains("Inicio")) seccion_inicio_temporizador_deslizamiento = ::secciones[id_elemento::from_default_dep(jdesliz["InicioTemporizador"], estacion)];
+        if (jdesliz.contains("InicioTemporizador")) seccion_inicio_temporizador_deslizamiento = ::secciones[id_elemento::from_default_dep(jdesliz["InicioTemporizador"], estacion)];
         else seccion_inicio_temporizador_deslizamiento = secciones.back().seccion;
-        temporizador_deslizamiento = jdesliz.value("Valor", 30000);
+        temporizador_deslizamiento = jdesliz.value("Valor", 30)*1000;
     }
     if (j.contains("SeñalLiberación")) {
         señales.push_back(señal_impls[id_elemento::from_default_dep(j["SeñalLiberación"], estacion)]);
@@ -165,7 +165,7 @@ void movimiento::mover_agujas()
         for (auto &[sec, pins] : posicion_aparatos) {
             if (sec->tipo == TipoSeccion::Aguja) {
                 aguja *a = (aguja*)sec;
-                auto pos = a->get_posicion(Lado::Impar, pins.first, pins.second);
+                auto pos = a->get_posicion(pins);
                 a->mover(pos);
             }
         }
@@ -184,7 +184,7 @@ bool movimiento::posible_establecer(bool msg)
     for (auto &[sec, pins] : posicion_aparatos) {
         if (sec->tipo == TipoSeccion::Aguja) {
             aguja *a = (aguja*)sec;
-            auto pos = a->get_posicion(Lado::Impar, pins.first, pins.second);
+            auto pos = a->get_posicion(pins);
             if (!a->posible_mover(pos)) {
                 if (msg) log(id, "aguja bloqueada", LOG_DEBUG);
                 return false;
@@ -401,8 +401,8 @@ void movimiento::update()
     for (auto &[sec, pins] : posicion_aparatos) {
         if (sec->tipo == TipoSeccion::Aguja && (!formada || sec->is_asegurada(this))) {
             aguja *a = (aguja*)sec;
-            auto pos = a->get_posicion(Lado::Impar, pins.first, pins.second);
-            if (!a->enclavar(this, a->get_posicion(Lado::Impar, pins.first, pins.second))) {
+            auto pos = a->get_posicion(pins);
+            if (!a->enclavar(this, a->get_posicion(pins))) {
                 agujas_dispuestas = false;
                 break;
             }

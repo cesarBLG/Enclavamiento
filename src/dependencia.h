@@ -16,7 +16,7 @@ struct config_servicio_intermitente
     std::set<std::string> fais;
     std::set<std::string> itinerarios_apertura;
     std::map<std::string, config_señal_servicio_intermitente> señales_abiertas;
-    std::map<std::string, std::pair<int, int>> posicion_aparatos;
+    std::map<std::string, lados<int>> posicion_aparatos;
     std::map<std::string, std::pair<int, int>> secciones;
 };
 class movimiento_servicio_intermitente : public movimiento

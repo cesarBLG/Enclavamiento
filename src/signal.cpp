@@ -477,7 +477,7 @@ void proximidad::construir0(seccion_via *next, seccion_via *sec, Lado dir)
         proximidad0[sec] = {dir, next};
     } else {
         std::vector<std::pair<seccion_via *, Lado>> prev;
-        sec->prev_secciones(next, dir, prev);
+        sec->prev_secciones(next, dir, prev, true);
         for (auto &[sec2, dir2] : prev) {
             if (sec->señal_inicio(dir, sec2) != nullptr) continue;
             construir0(sec, sec2, dir2);

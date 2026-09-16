@@ -64,7 +64,7 @@ public:
     std::map<ruta_deslizamiento*,int> deslizamientos_afectados;
 protected:
     std::map<seccion_via*, EstadoCanton> ocupacion_maxima_secciones;
-    std::map<seccion_via*, std::pair<int, int>> posicion_aparatos;
+    std::map<seccion_via*, lados<int>> posicion_aparatos;
     std::vector<señal_impl*> señales;
     std::vector<elemento_ruta> secciones;
     std::set<seccion_via*> secciones_aseguradas;

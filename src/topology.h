@@ -28,6 +28,55 @@ struct punto_negro
     std::optional<std::pair<Lado, int>> pin_propio;
     std::optional<std::pair<Lado, int>> pin_ajeno;
 };
+/*struct nodo_flanco
+{
+    seccion_via *next;
+    seccion_via *seccion;
+    Lado dir;
+    std::optional<std::pair<int,int>> posicion;
+    std::vector<nodo_flanco*> nodos;
+    nodo_flanco(seccion_via *next, seccion_via *sec, Lado dir, const std::vector<id_elemento> &ultimas_secciones)
+    {
+
+    }
+    bool activar()
+    {
+        if (posicion && seccion->tipo == TipoSeccion::Aguja) {
+            auto *a = (aguja*)seccion;
+            auto pos = a->get_posicion(Lado::Impar, posicion->first, posicion->second);
+            a->mover(pos);
+        }
+        for (auto &n : nodos) {
+            n->activar(m);
+        }
+    }
+    bool desactivar(movimiento *m)
+    {
+        if (posicion) seccion->liberar(m);
+        for (auto &n : nodos) {
+            n->desactivar(m);
+        }
+    }
+    bool protegido(movimiento *m)
+    {
+        if (posicion) {
+            if (posicion != seccion->active_outs)
+                return false;
+            if (seccion->tipo == TipoSeccion::Aguja) {
+                auto *a = (aguja*)seccion;
+                auto pos = a->get_posicion(Lado::Impar, posicion->first, posicion->second);
+                a->enclavar(m, pos);
+            }
+        }
+        auto *cv = seccion->get_cv();
+        if (cv != nullptr && cv->ocupacion_intempestiva)
+            return false;
+        for (auto &n : nodos) {
+            if (!n->protegido())
+                return false;
+        }
+    }
+};*/
 class seccion_via
 {
 public:
@@ -50,6 +99,7 @@ protected:
 
     lados<std::vector<conexion>> siguientes_secciones;
     lados<std::map<int,int>> active_outs;
+    std::vector<lados<int>> all_outs;
     std::optional<reserva_seccion> ruta_asegurada;
 
     std::map<nodo_deslizamiento*, movimiento*> deslizamiento;
@@ -71,7 +121,7 @@ public:
     }
     seccion_via* siguiente_seccion(int pin, Lado &dir, bool usar_ruta_asegurada=false);
     std::pair<seccion_via*,Lado> get_seccion_in(Lado dir, int pin);
-    void prev_secciones(seccion_via *next, Lado dir_fwd, std::vector<std::pair<seccion_via*, Lado>> &secciones);
+    void prev_secciones(seccion_via *next, Lado dir_fwd, std::vector<std::pair<seccion_via*, Lado>> &secciones, bool activas=true);
     señal *señal_inicio(Lado lado, int pin);
     señal *señal_inicio(Lado lado, seccion_via *prev)
     {

@@ -4,13 +4,12 @@
 #include "pn_enclavado.h"
 seccion_via::seccion_via(const id_elemento &id, const json &j, TipoSeccion tipo) : id(id), bloqueo_asociado(j.contains("Bloqueo") ? std::optional<id_elemento>(id_elemento(j["Bloqueo"])) : std::nullopt), tipo(tipo), id_cv(j.value("CV", id.id))
 {
-    if (tipo == TipoSeccion::Lineal) {
-        active_outs[Lado::Impar][0] = 0;
-        active_outs[Lado::Par][0] = 0;
-    } else if (tipo == TipoSeccion::Cruzamiento) {
-        for (int i=0; i<2; i++) {
-            active_outs[Lado::Impar][i] = i;
-            active_outs[Lado::Par][i] = i;
+    if (tipo == TipoSeccion::Lineal || tipo == TipoSeccion::Cruzamiento) {
+        for (int i=0; i<(tipo == TipoSeccion::Cruzamiento ? 2 : 1); i++) {
+            for (auto &l : {Lado::Impar, Lado::Par}) {
+                active_outs[l][i] = i;
+            }
+            all_outs.push_back({i, i});
         }
     }
     auto cv_it = cvs.find(id_cv);
@@ -95,9 +94,18 @@ bool seccion_via::asegurar_posible(movimiento *ruta, int in, int out, std::optio
 }
 bool seccion_via::deslizamiento_posible(int in, int out, Lado dir)
 {
-    if (ruta_asegurada && (ruta_asegurada->lado != dir || ruta_asegurada->outs[opp_lado(dir)] != in/* || ruta_asegurada->outs[dir] != out*/)) {
+    if (ruta_asegurada && (ruta_asegurada->lado != dir || ruta_asegurada->outs[opp_lado(dir)] != in)) {
         return false;
     }
+
+    bool relevante = false;
+    for (auto &pins : all_outs) {
+        if (pins[dir] == out && pins[opp_lado(dir)] == in) {
+            relevante = true;
+            break;
+        }
+    }
+    if (!relevante) return true;
 
     for (auto &pt : puntos_negros) {
         if (!pt.pin_propio || (dir == pt.pin_propio->first && out == pt.pin_propio->second) || (dir != pt.pin_propio->first && in == pt.pin_propio->second)) {
@@ -124,11 +132,15 @@ bool seccion_via::transitable(int in, Lado dir)
                     return false;
             }
             auto *cv = sec->get_cv();
-            if (cv != nullptr) {
-                if (cv->ocupacion_intempestiva)
+            if (cv != nullptr && cv->get_state() > EstadoCV::Prenormalizado) {
+                /*if (cv->ocupacion_intempestiva)
+                    return false;*/
+                if (!pt.pin_ajeno || sec->ocupacion_outs[pt.pin_ajeno->first] < 0 || sec->ocupacion_outs[pt.pin_ajeno->first] == pt.pin_ajeno->second)
                     return false;
-                if (cv->get_state() > EstadoCV::Prenormalizado && (pt.pin_ajeno->second < 0 || sec->ocupacion_outs[pt.pin_ajeno->first] == pt.pin_ajeno->second))
-                    return false;
+                for (auto &[in,out] : sec->active_outs[pt.pin_ajeno->first]) {
+                    if (out < 0 || out == pt.pin_ajeno->second)
+                        return false;
+                }
             }
         }
     }
@@ -150,20 +162,9 @@ TipoMovimiento seccion_via::get_tipo_movimiento()
 void seccion_via::message_cv(const id_elemento &id, estado_cv ev)
 {
     if (id != id_cv) return;
-    if (ev.estado_previo <= EstadoCV::Prenormalizado && ev.estado > EstadoCV::Prenormalizado && ocupacion_outs[Lado::Impar] < 0 && ocupacion_outs[Lado::Par] < 0) {
-        if (trayecto) {
-            ocupacion_outs = {0, 0};
-        } else if (ruta_asegurada) {
-            ocupacion_outs = ruta_asegurada->outs;
-        } else {
-            ocupacion_outs = {-1, -1};
-        }
-    }
-    if (ev.estado <= EstadoCV::Prenormalizado)
-        ocupacion_outs = {-1, -1};
 
+    bool intempestiva = false;
     if ((ev.evento && ev.evento->ocupacion || (!ev.evento && ev.estado_previo <= EstadoCV::Prenormalizado)) && ev.estado > EstadoCV::Prenormalizado) {
-        bool intempestiva = false;
         if (trayecto) {
             if (ev.evento && bloqueo_asociado && bloqueo_act.estado != (ev.evento->lado == Lado::Impar ? EstadoBloqueo::BloqueoImpar : EstadoBloqueo::BloqueoPar) && bloqueo_act.ruta[ev.evento->lado] != TipoMovimiento::Maniobra) {
                 //intempestiva = true;
@@ -197,10 +198,21 @@ void seccion_via::message_cv(const id_elemento &id, estado_cv ev)
                 }
             }
         }
-        if (intempestiva) {
-            log(cv_seccion->id, "ocupacion intempestiva", LOG_WARNING);
-            cv_seccion->ocupacion_intempestiva = true;
+    }
+    if (intempestiva) {
+        log(cv_seccion->id, "ocupacion intempestiva", LOG_WARNING);
+        cv_seccion->ocupacion_intempestiva = true;
+    }
+
+    if (ev.estado_previo <= EstadoCV::Prenormalizado && ev.estado > EstadoCV::Prenormalizado) {
+        for (Lado l : {Lado::Impar, Lado::Par}) {
+            if (ruta_asegurada && !intempestiva && ((ruta_asegurada->lado && ruta_asegurada->lado == opp_lado(l)) || ruta_asegurada->outs[l] == active_outs[l][ruta_asegurada->outs[opp_lado(l)]]))
+                ocupacion_outs[l] = ruta_asegurada->outs[l];
+            else if (active_outs[opp_lado(l)].size() == 1)
+                ocupacion_outs[l] = active_outs[opp_lado(l)].begin()->first;
         }
+    } else if (ev.estado <= EstadoCV::Prenormalizado) {
+        ocupacion_outs = {-1, -1};
     }
 
     for (auto *pn : pns) {
@@ -246,19 +258,26 @@ std::pair<seccion_via*,Lado> seccion_via::get_seccion_in(Lado dir, int pin)
     return {secciones[sigs[pin].id],sigs[pin].invertir_paridad ? lado : dir};
 }
 
-void seccion_via::prev_secciones(seccion_via *next, Lado dir_fwd, std::vector<std::pair<seccion_via*, Lado>> &secciones)
+void seccion_via::prev_secciones(seccion_via *next, Lado dir_fwd, std::vector<std::pair<seccion_via*, Lado>> &secciones, bool activas)
 {
     Lado lado = opp_lado(dir_fwd);
     int out = get_out(next, dir_fwd);
     if (out < 0) return;
     std::set<int> ins;
-    for (auto &[in, out2] : active_outs[dir_fwd]) {
-        if (out2 == out) {
-            ins.insert(in);
+    if (activas) {
+        for (auto &[in, out2] : active_outs[dir_fwd]) {
+            if (out2 == out) {
+                ins.insert(in);
+            }
         }
-    }
-    if (ruta_asegurada && ruta_asegurada->outs[dir_fwd] == out) {
-        ins.insert(ruta_asegurada->outs[lado]);
+        if (ruta_asegurada && ruta_asegurada->outs[dir_fwd] == out) {
+            ins.insert(ruta_asegurada->outs[lado]);
+        }
+    } else {
+        for (auto &pins : all_outs) {
+            if (pins[dir_fwd] == out)
+                ins.insert(pins[lado]);
+        }
     }
     for (int in : ins) {
         auto &sig = siguientes_secciones[lado];

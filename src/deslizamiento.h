@@ -28,7 +28,7 @@ struct ruta_deslizamiento
     destino_ruta *fin_movimiento;
     std::set<movimiento*> rutas_afectadas;
     std::shared_ptr<nodo_deslizamiento> root;
-    std::vector<std::map<seccion_via*, std::pair<int,int>>> deslizamientos_orientados;
+    std::vector<std::map<seccion_via*, lados<int>>> deslizamientos_orientados;
     int deslizamiento_activo = -1;
     bool formado = false;
     ruta_deslizamiento(destino_ruta *fin, const json &j);

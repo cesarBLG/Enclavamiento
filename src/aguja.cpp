@@ -7,6 +7,10 @@ aguja::aguja(const id_elemento &id, const json &j) : seccion_via(id, j, TipoSecc
     if (j.contains("SeccionesTalón")) siguientes_secciones[lado] = j["SeccionesTalón"];
     talonable = j.value("Talonable", true);
     if (j.contains("PosiciónMuelle")) talonable_muelle = j["PosiciónMuelle"] == 1 ? PosicionAguja::Invertida : PosicionAguja::Normal;
+    lados<int> pins = {0,0};
+    all_outs.push_back({pins});
+    pins[lado] = 1;
+    all_outs.push_back(pins);
     update();
 }
 RespuestaMando aguja::mando(const std::string &cmd, int me)
@@ -74,7 +78,7 @@ RemotaAG aguja::get_estado_remota()
     r.AG_ME = me_pendiente ? 1 : 0;
     r.AG_BIA = bloqueo_seccion ? 1 : 0;
     r.AG_OCUP_TIPO = cv_seccion != nullptr && cv_seccion->ocupacion_intempestiva ? 1 : 0;
-    if (cv_seccion != nullptr && cv_seccion->get_state() > EstadoCV::Prenormalizado && (cv_seccion->ocupacion_intempestiva || ruta_asegurada)) r.AG_EST = 3;
+    if (cv_seccion != nullptr && cv_seccion->get_state() > EstadoCV::Prenormalizado && (cv_seccion->ocupacion_intempestiva || ruta_asegurada || cv_seccion->is_averia())) r.AG_EST = 3;
     else if (ruta_asegurada && ruta_asegurada->ruta_asegurada->tipo == TipoMovimiento::Maniobra) r.AG_EST = 2;
     else if (ruta_asegurada && (ruta_asegurada->ruta_asegurada->tipo == TipoMovimiento::Itinerario || ruta_asegurada->ruta_asegurada->tipo == TipoMovimiento::Rebase)) r.AG_EST = 1;
     else if (cv_seccion != nullptr && cv_seccion->get_state() == EstadoCV::Prenormalizado) r.AG_EST = 3;
@@ -87,7 +91,7 @@ RemotaAG aguja::get_estado_remota()
         std::optional<PosicionAguja> pos;
         auto &posicion_aparatos = n->deslizamiento->deslizamientos_orientados[n->deslizamiento->deslizamiento_activo];
         auto it = posicion_aparatos.find(this);
-        if (it != posicion_aparatos.end()) pos = get_posicion(Lado::Impar, it->second.first, it->second.second);
+        if (it != posicion_aparatos.end()) pos = get_posicion(it->second);
 
         int in = get_in(n->prev, n->dir);
         bool norm = false;

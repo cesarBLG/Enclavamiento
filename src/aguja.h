@@ -157,9 +157,9 @@ class aguja : public seccion_via, public estado_aguja
         enclavada.erase(r);
         if (enclavada.empty()) posicion_enclavada = std::nullopt;
     }
-    PosicionAguja get_posicion(Lado dir, int in, int out)
+    PosicionAguja get_posicion(lados<int> pos)
     {
-        return (dir == lado ? out : in) == 1 ? PosicionAguja::Invertida : PosicionAguja::Normal;
+        return pos[lado] == 1 ? PosicionAguja::Invertida : PosicionAguja::Normal;
     }
     RespuestaMando mando(const std::string &cmd, int me) override;
     RemotaAG get_estado_remota();
