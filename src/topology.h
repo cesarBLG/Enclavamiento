@@ -79,6 +79,7 @@ public:
     const id_elemento id_cv;
 
     std::set<pn_enclavado*> pns;
+    std::vector<lados<int>> all_outs;
 protected:
     lados<std::map<int,señal*>> señales;
     cv *cv_seccion;
@@ -87,7 +88,6 @@ protected:
 
     lados<std::vector<conexion>> siguientes_secciones;
     lados<std::map<int,int>> active_outs;
-    std::vector<lados<int>> all_outs;
     std::optional<reserva_seccion> ruta_asegurada;
 
     std::map<nodo_deslizamiento*, movimiento*> deslizamiento;

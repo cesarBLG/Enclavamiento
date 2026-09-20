@@ -146,12 +146,13 @@ public:
         bool reverse;
         bool ocupar=true;
         bool liberar=true;
-        std::string cv_colateral;
+        id_elemento seccion;
+        int pin;
+        bool averia = false;
+        bool desconexion = false;
     };
-protected:
     std::map<std::string, cejes_position> cejes;
-    std::set<std::string> averia_cejes;
-    std::set<std::string> desconexion_cejes;
+protected:
     bool topera = false;
 
     int64_t tiempo_auto_prenormalizacion;
@@ -180,11 +181,11 @@ public:
         lados<bool> ocupado;
         ocupado[Lado::Impar] = num_ejes[Lado::Impar] > 0;
         ocupado[Lado::Par] = num_ejes[Lado::Par] > 0;
-        for (auto &id : averia_cejes) {
-            ocupado[cejes[id].lado] = true;
-        }
-        for (auto &id : desconexion_cejes) {
-            ocupado[cejes[id].lado] = true;
+        for (auto &[id, ceje] : cejes) {
+            if (ceje.averia || ceje.desconexion) {
+                averia = true;
+                ocupado[cejes[id].lado] = true;
+            }   
         }
         if (ocupado[Lado::Impar] && ocupado[Lado::Par]) {
             estado_raw = EstadoCV::Ocupado;
@@ -195,7 +196,6 @@ public:
         } else {
             estado_raw = normalizado ? EstadoCV::Libre : EstadoCV::Prenormalizado;
         }
-        if (!averia_cejes.empty() || !desconexion_cejes.empty()) averia = true;
         if (estado_raw > EstadoCV::Prenormalizado && !averia) {
             bool normalizar = true;
             for (auto lado : {Lado::Impar, Lado::Par}) {
@@ -215,7 +215,7 @@ public:
         } else if (timer_liberacion == nullptr) {
             timer_liberacion = set_timer([this]() {
                 estado = estado_raw;
-                if (averia_cejes.empty() && desconexion_cejes.empty()) averia = false;
+                if (!is_averia()) averia = false;
                 timer_liberacion = nullptr;
                 send_state();
             }, 1000);
@@ -229,15 +229,14 @@ public:
         if (payload == "Error" || payload == "\"desconexion\"") {
             if (it->second.ocupar) {
                 log(id, "avería contador ejes", LOG_DEBUG);
-                if (payload == "\"desconexion\"") desconexion_cejes.insert(id.id);
-                else averia_cejes.insert(id.id);
+                if (payload == "\"desconexion\"") it->second.desconexion = true;
+                else it->second.averia = true;
                 normalizado = false;
                 update();
             }
         } else if (payload == "conexion") {
-            auto it2 = desconexion_cejes.find(id.id);
-            if (it2 != desconexion_cejes.end()) {
-                desconexion_cejes.erase(it2);
+            if (it->second.desconexion) {
+                it->second.desconexion = false;
                 update();
             }
         } else {
@@ -256,9 +255,8 @@ public:
                 if (msg == "Nominal") msg = "Reverse";
                 else if (msg == "Reverse") msg = "Nominal";
             }
-            averia_cejes.erase(id.id);
-            desconexion_cejes.erase(id.id);
-            bool averia = !averia_cejes.empty() || !desconexion_cejes.empty();
+            it->second.averia = it->second.desconexion = false;
+            bool averia = is_averia();
             auto now = get_milliseconds();
             for (int i=0; i<num; i++) {
                 if (msg == "Nominal" && it->second.ocupar) {
@@ -335,7 +333,7 @@ public:
                 }, tiempo_auto_prenormalizacion);
             }
             set_timer_auto_prenormalizacion_tren();
-            evento = {lado, msg == "Nominal", it->second.cv_colateral};
+            evento = {lado, msg == "Nominal", it->second.seccion, it->second.pin};
             update();
         }
     }
@@ -370,7 +368,9 @@ public:
         if (cmd == "LC" && estado > EstadoCV::Prenormalizado) {
             if (me) {
                 log(id, "prenormalizar", LOG_DEBUG);
-                averia_cejes.clear();
+                for (auto &[id, ceje] : cejes) {
+                    ceje.averia = false;
+                }
                 prenormalizar();
                 aceptado = RespuestaMando::Aceptado;
             } else {
@@ -411,18 +411,12 @@ public:
         }, tiempo_auto_prenormalizacion_tren);
     }
 
-    void asignar_cejes(std::map<id_elemento,std::vector<id_elemento>> &cejes_to_cvs)
+    bool is_averia()
     {
-        for (auto &[idce, pos] : cejes) {
-            auto it = cejes_to_cvs.find(idce);
-            if (it != cejes_to_cvs.end()) {
-                for (auto &idcv : it->second) {
-                    if (idcv != id.id) {
-                        pos.cv_colateral = idcv.id;
-                    }
-                }
-            }
+        for (auto &[id, ceje] : cejes) {
+            if (ceje.averia || ceje.desconexion) return true;
         }
+        return false;
     }
 };
 void from_json(const json &j, cv_impl_cejes::cejes_position &position);

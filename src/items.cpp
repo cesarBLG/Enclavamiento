@@ -384,12 +384,6 @@ void init_items_ordered(const json &j, std::string tipo)
                     secciones[is] = new seccion_via(is, jsec, tipo);
                 }
             }
-            for (auto &[id, jsec] : jdep["Secciones"].items()) {
-                id_elemento is(estacion,id);
-                if (agujas.find(is) != agujas.end() && jsec.contains("Escape")) {
-                    agujas[is]->set_escape(agujas[id_elemento::from_default_dep(jsec["Escape"], estacion)]);
-                }
-            }
         }
         if (tipo == "PNs") {
             for (auto &[id, jpn] : jdep["PNs"].items()) {
@@ -431,6 +425,16 @@ void init_items_ordered(const json &j, std::string tipo)
             }
         }
     }
+    for (auto &[estacion, jdep] : j.items()) {
+        if (tipo == "Secciones") {
+            for (auto &[id, jsec] : jdep["Secciones"].items()) {
+                id_elemento is(estacion,id);
+                if (agujas.find(is) != agujas.end() && jsec.contains("Escape")) {
+                    agujas[is]->set_escape(agujas[id_elemento::from_default_dep(jsec["Escape"], estacion)]);
+                }
+            }
+        }
+    }
 }
 void init_items(const json &j)
 {
@@ -449,8 +453,29 @@ void init_items(const json &j)
         init_items_ordered(jdeps, "Rutas");
     }
     for (auto &[id, cv] : cv_impls) {
-        if (cv->contador_ejes)
-            ((cv_impl_cejes*)cv)->asignar_cejes(cejes_to_cvs);
+        if (cv->contador_ejes) {
+            if (cv->secciones.size() != 1) continue;
+            auto *sec = *cv->secciones.begin();
+            for (auto &[id,ceje] : ((cv_impl_cejes*)cv)->cejes) {
+                if (ceje.seccion.id != "") continue;
+                int in = -1;
+                for (auto &outs : sec->all_outs) {
+                    int in2 = outs[opp_lado(ceje.lado)];
+                    if (in2 != in) {
+                        if (in < 0) {
+                            in = in2;
+                        } else {
+                            in = -1;
+                            break;
+                        }
+                    }
+                }
+                if (in >= 0) {
+                    ceje.seccion = sec->id;
+                    ceje.pin = in;
+                }
+            }
+        }
     }
     for (auto &kvp : dependencias) {
         for (auto *ruta : kvp.second->rutas) {

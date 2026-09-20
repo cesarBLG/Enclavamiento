@@ -442,7 +442,7 @@ void señal_impl::message_cv(const id_elemento &id, estado_cv ev)
                 if (sig->ruta_activa == ruta_activa) break;
             }
         }
-        if (ev.evento && (ev.evento->cv_colateral == "" || seccion_prev == nullptr || ev.evento->cv_colateral == seccion_prev->id_cv.id)) {
+        if (ev.evento && (ev.evento->seccion.id == "" || (ev.evento->seccion == seccion->id && ev.evento->pin == pin))) {
             // Si la señal estaba cerrada, es un rebase de señal
             if (aspecto == Aspecto::Parada) {
                 if (ruta_necesaria && get_milliseconds() - ultimo_paso_abierta > 30000) {

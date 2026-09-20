@@ -5,7 +5,8 @@ struct evento_cv
 {
     Lado lado;
     bool ocupacion;
-    std::string cv_colateral;
+    id_elemento seccion;
+    int pin;
 };
 struct estado_cv
 {

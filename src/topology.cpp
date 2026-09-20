@@ -219,15 +219,9 @@ void seccion_via::message_cv(const id_elemento &id, estado_cv ev)
         } else {
             if (!ruta_asegurada_cv) {
                 intempestiva = true;
-            } else if (ev.evento && ev.evento->cv_colateral != "") {
-                Lado l = opp_lado(ev.evento->lado);
-                auto &sigs = siguientes_secciones[l];
-                for (int i=0; i<sigs.size(); i++) {
-                    if (secciones[sigs[i].id]->id_cv == ev.evento->cv_colateral && (!ruta_asegurada || ruta_asegurada->outs[l] != i)) {
-                        intempestiva = true;
-                        break;
-                    }
-                }
+            } else if (ev.evento && ev.evento->seccion == this->id) {
+                if (!ruta_asegurada || ruta_asegurada->outs[opp_lado(ev.evento->lado)] != ev.evento->pin)
+                    intempestiva = true;
             } else if (ruta_asegurada && ruta_asegurada->lado) {
                 Lado opp = opp_lado(*ruta_asegurada->lado);
                 int in = ruta_asegurada->outs[opp];
@@ -246,7 +240,9 @@ void seccion_via::message_cv(const id_elemento &id, estado_cv ev)
 
     if (ev.estado_previo <= EstadoCV::Prenormalizado && ev.estado > EstadoCV::Prenormalizado) {
         for (Lado l : {Lado::Impar, Lado::Par}) {
-            if (ruta_asegurada && !intempestiva && ((ruta_asegurada->lado && ruta_asegurada->lado == opp_lado(l)) || ruta_asegurada->outs[l] == active_outs[l][ruta_asegurada->outs[opp_lado(l)]]))
+            if (ev.evento && ev.evento->seccion == this->id && (ev.evento->lado != l || active_outs[l][ev.evento->pin] >= 0))
+                ocupacion_outs[l] = ev.evento->pin;
+            else if (ruta_asegurada && !intempestiva && ((ruta_asegurada->lado && ruta_asegurada->lado == opp_lado(l)) || ruta_asegurada->outs[l] == active_outs[l][ruta_asegurada->outs[opp_lado(l)]]))
                 ocupacion_outs[l] = ruta_asegurada->outs[l];
             else if ((!ruta_asegurada_cv || ruta_asegurada || intempestiva) && active_outs[opp_lado(l)].size() == 1)
                 ocupacion_outs[l] = active_outs[opp_lado(l)].begin()->first;

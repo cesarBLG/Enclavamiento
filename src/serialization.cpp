@@ -286,13 +286,19 @@ void from_json(const json &j, evento_cv &ev)
 {
     ev.lado = j["Lado"];
     ev.ocupacion = j["Ocupación"];
-    ev.cv_colateral = j["CVColateral"];
+    if (j.contains("Sección")) {
+        ev.seccion = id_elemento(j["Sección"]);
+        ev.pin = j.value("Pin", 0);
+    }
 }
 void to_json(json &j, const evento_cv &ev)
 {
     j["Lado"] = ev.lado;
     j["Ocupación"] = ev.ocupacion;
-    j["CVColateral"] = ev.cv_colateral;
+    if (ev.seccion.id != "") {
+        j["Sección"] = ev.seccion.id;
+        j["Pin"] = ev.pin;
+    }
 }
 
 void to_json(json &j, const estado_bloqueo &estado)

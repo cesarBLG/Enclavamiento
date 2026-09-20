@@ -67,10 +67,13 @@ cv_impl_cejes::cv_impl_cejes(const id_elemento &id, const json &j) : cv_impl(id,
     }
     if (!lados_cejes[Lado::Impar] || !lados_cejes[Lado::Par]) topera = true;
 
-    for (auto &[idc, pos] : cejes) {
-        if (pos.ocupar) desconexion_cejes.insert(idc);
+    averia = false;
+    for (auto &[idc, ceje] : cejes) {
+        if (ceje.ocupar) {
+            ceje.desconexion = true;
+            averia = true;
+        }
     }
-    averia = !desconexion_cejes.empty();
 }
 void from_json(const json &j, cv_impl_cejes::cejes_position &position)
 {
@@ -78,4 +81,8 @@ void from_json(const json &j, cv_impl_cejes::cejes_position &position)
     position.reverse = j.value("Reverse", false);
     position.liberar = j.value("Liberar", true);
     position.ocupar = j.value("Ocupar", true);
+    if (j.contains("Sección")) {
+        position.seccion = id_elemento(j["Sección"]);
+        position.pin = j.value("Pin", 0);
+    }
 }
