@@ -73,7 +73,7 @@ frontera *destino_ruta::get_frontera()
     }
     return nullptr;
 }
-ruta::ruta(const std::string &estacion, const json &j) : movimiento(estacion, j["Tipo"], (j["Tipo"] == TipoMovimiento::Itinerario ? (ertms ? "ER " : "I ") : (j["Tipo"] == TipoMovimiento::Rebase ? "R " : "M "))+estacion+" "+j["Inicio"].get<std::string>()+" "+j["Destino"].get<std::string>()), id_inicio(j["Inicio"]), id_destino(j["Destino"]), bloqueo_salida(j.contains("Bloqueo") ? std::optional<id_elemento>(id_elemento(j["Bloqueo"])) : std::nullopt)
+ruta::ruta(const std::string &estacion, const json &j) : movimiento(estacion, j["Tipo"], (j["Tipo"] == TipoMovimiento::Itinerario ? ("I ") : (j["Tipo"] == TipoMovimiento::Rebase ? "R " : "M "))+estacion+" "+j["Inicio"].get<std::string>()+" "+j["Destino"].get<std::string>()), id_inicio(j["Inicio"]), id_destino(j["Destino"]), bloqueo_salida(j.contains("Bloqueo") ? std::optional<id_elemento>(id_elemento(j["Bloqueo"])) : std::nullopt)
 {
     id_elemento id_señal(estacion, id_inicio);
     if (señal_impls.find(id_señal) == señal_impls.end()) {
@@ -161,12 +161,12 @@ ruta::ruta(const std::string &estacion, const json &j) : movimiento(estacion, j[
 }
 void movimiento::mover_agujas()
 {
-    if (!dependencias[estacion]->bloqueo_agujas) {
-        for (auto &[sec, pins] : posicion_aparatos) {
-            if (sec->tipo == TipoSeccion::Aguja) {
-                aguja *a = (aguja*)sec;
-                auto pos = a->get_posicion(pins);
-                a->mover(pos);
+    for (auto &[sec, pins] : posicion_aparatos) {
+        if (sec->tipo == TipoSeccion::Aguja) {
+            aguja *a = (aguja*)sec;
+            auto pos = a->get_posicion(pins);
+            if (dependencias[sec->id.dependencia]->bloqueo_agujas || !a->mover(pos)) {
+                a->requerir_movimiento(this, pos);
             }
         }
     }

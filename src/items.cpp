@@ -22,7 +22,7 @@ std::set<std::string> comandos_señal = {"CS","CSEÑ","NPS","BS","ABS","DS","SA"
 std::set<std::string> comandos_destino = {"BDE","BD","ABDE","ABD","BDS","ABDS","DEI"};
 std::set<std::string> comandos_bloqueo = {"B","AB","CSB","NSB","PB","APB","NB","AS","AAS","CSP"};
 std::set<std::string> comandos_seccion = {"BV","BIV","ABV","DIV","FO","AFO"};
-std::set<std::string> comandos_aguja = {"MA","AN","AI","MAT","ATN","ATI","BA","ABA","BIA","DIA"};
+std::set<std::string> comandos_aguja = {"MA","AN","AI","MAT","ATN","ATI","MAE","ANE","AIE","BA","ABA","BIA","DIA"};
 std::set<std::string> comandos_cv = {"BTV","ABTV","DTV","LC"};
 std::set<std::string> comandos_ignorar_mando = {"C", "TML", "TME", "CML", "RML", "ME", "BL"};
 std::set<std::string> comandos_ctc = {"C", "L", "AS", "AAS"};
@@ -387,7 +387,7 @@ void init_items_ordered(const json &j, std::string tipo)
             for (auto &[id, jsec] : jdep["Secciones"].items()) {
                 id_elemento is(estacion,id);
                 if (agujas.find(is) != agujas.end() && jsec.contains("Escape")) {
-                    agujas[is]->escape = agujas[id_elemento::from_default_dep(jsec["Escape"], estacion)];
+                    agujas[is]->set_escape(agujas[id_elemento::from_default_dep(jsec["Escape"], estacion)]);
                 }
             }
         }

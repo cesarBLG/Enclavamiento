@@ -24,59 +24,47 @@ struct reserva_seccion
 };
 struct punto_negro
 {
-    id_elemento seccion;
+    seccion_via *seccion_afectada;
+    id_elemento seccion_causante;
     std::optional<std::pair<Lado, int>> pin_propio;
     std::optional<std::pair<Lado, int>> pin_ajeno;
+    punto_negro() = default;
+    punto_negro(seccion_via *sec, const json &j);
 };
-/*struct nodo_flanco
+extern std::map<id_elemento, std::vector<punto_negro*>> puntos_negros_por_causa;
+class seccion_via;
+struct nodo_flanco
 {
     seccion_via *next;
     seccion_via *seccion;
     Lado dir;
-    std::optional<std::pair<int,int>> posicion;
-    std::vector<nodo_flanco*> nodos;
-    nodo_flanco(seccion_via *next, seccion_via *sec, Lado dir, const std::vector<id_elemento> &ultimas_secciones)
+    std::optional<lados<int>> posicion;
+    std::vector<nodo_flanco*> prev;
+    nodo_flanco(seccion_via *next, seccion_via *sec, Lado dir, const std::set<seccion_via*> &stop, const std::map<seccion_via*, lados<int>> &posicion_aparatos);
+    void activar(movimiento *m);
+    void desactivar(movimiento *m);
+    bool protegido(movimiento *m);
+};
+struct flanco
+{
+    seccion_via *seccion;
+    Lado dir;
+    int in;
+    nodo_flanco *root;
+    flanco(seccion_via *sec, const json &j);
+    void activar(movimiento *m)
     {
-
+        root->activar(m);
     }
-    bool activar()
+    void desactivar(movimiento *m)
     {
-        if (posicion && seccion->tipo == TipoSeccion::Aguja) {
-            auto *a = (aguja*)seccion;
-            auto pos = a->get_posicion(Lado::Impar, posicion->first, posicion->second);
-            a->mover(pos);
-        }
-        for (auto &n : nodos) {
-            n->activar(m);
-        }
-    }
-    bool desactivar(movimiento *m)
-    {
-        if (posicion) seccion->liberar(m);
-        for (auto &n : nodos) {
-            n->desactivar(m);
-        }
+        root->desactivar(m);
     }
     bool protegido(movimiento *m)
     {
-        if (posicion) {
-            if (posicion != seccion->active_outs)
-                return false;
-            if (seccion->tipo == TipoSeccion::Aguja) {
-                auto *a = (aguja*)seccion;
-                auto pos = a->get_posicion(Lado::Impar, posicion->first, posicion->second);
-                a->enclavar(m, pos);
-            }
-        }
-        auto *cv = seccion->get_cv();
-        if (cv != nullptr && cv->ocupacion_intempestiva)
-            return false;
-        for (auto &n : nodos) {
-            if (!n->protegido())
-                return false;
-        }
+        return root->protegido(m);
     }
-};*/
+};
 class seccion_via
 {
 public:
@@ -104,7 +92,8 @@ protected:
 
     std::map<nodo_deslizamiento*, movimiento*> deslizamiento;
 
-    std::vector<punto_negro> puntos_negros;
+    std::vector<punto_negro*> puntos_negros;
+    std::vector<flanco*> proteccion_flanco;
 
     lados<int> ocupacion_outs;
 
@@ -152,6 +141,7 @@ public:
         return transitable(get_in(prev, dir), dir);
     }
     virtual bool transitable(int in, Lado dir);
+    bool afectada_galibo(int in, int out, Lado dir);
     std::optional<reserva_seccion> get_ruta_asegurada()
     {
         return ruta_asegurada;
@@ -210,6 +200,10 @@ public:
     int num_outs(Lado l)
     {
         return siguientes_secciones[l].size();
+    }
+    int get_active_out(int in, Lado dir)
+    {
+        return active_outs[dir][in];
     }
     virtual bool is_desviada(seccion_via *prev, Lado dir);
     RemotaCV get_estado_remota();

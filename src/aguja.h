@@ -11,9 +11,10 @@ class aguja : public seccion_via, public estado_aguja
     bool bloqueo = false;;
     std::set<movimiento*> enclavada;
     std::optional<PosicionAguja> posicion_enclavada;
-    Lado lado;
-    public:
+    std::map<movimiento*, PosicionAguja> requerida_movimiento;
     aguja *escape = nullptr;
+    public:
+    const Lado lado;
     const std::string topic_mando;
     aguja(const id_elemento &id, const json &j);
     void update()
@@ -53,6 +54,13 @@ class aguja : public seccion_via, public estado_aguja
             else if (comprobacion == PosicionAguja::Invertida) log(id, "comprobando a invertida", LOG_INFO);
             else log(id, "sin comprobación", LOG_INFO);
         }
+        for (auto it = requerida_movimiento.begin(); it != requerida_movimiento.end(); ) {
+            if (it->second == comprobacion) {
+                it = requerida_movimiento.erase(it);
+            } else {
+                ++it;
+            }
+        }
         if (!mandada && comprobacion) mandada = {*comprobacion, 0};
         update();
     }
@@ -66,7 +74,7 @@ class aguja : public seccion_via, public estado_aguja
         seccion_via::asegurar(ruta, in, out, dir);
         remota_cambio_elemento("sec", id);
     }
-    void liberar(movimiento *ruta)
+    void liberar(movimiento *ruta) override
     {
         seccion_via::liberar(ruta);
         if (escape != nullptr) {
@@ -81,6 +89,7 @@ class aguja : public seccion_via, public estado_aguja
             enclavada.erase(ruta);
             if (enclavada.empty()) posicion_enclavada = std::nullopt;
         }
+        requerida_movimiento.erase(ruta);
         remota_cambio_elemento("sec", id);
     }
     bool transitable(int pin, Lado dir) override
@@ -100,6 +109,7 @@ class aguja : public seccion_via, public estado_aguja
         if ((mandada && mandada->first == pos) || comprobacion == pos) return true;
         if (bloqueo || !enclavada.empty() || talonable_muelle) return false;
         if (!anular_pedal && cv_seccion != nullptr && cv_seccion->get_state() > EstadoCV::Prenormalizado) return false;
+        if (!anular_pedal && afectada_galibo(0, pos == PosicionAguja::Invertida ? 0 : 1, lado)) return false;
         if (escape != nullptr && (pos == PosicionAguja::Normal || !escape->talonable)) {
             escape->escape = nullptr;
             if (!escape->posible_mover(pos, anular_pedal)) {
@@ -133,6 +143,12 @@ class aguja : public seccion_via, public estado_aguja
         log(id, pos == PosicionAguja::Invertida ? "mandada a invertida" : "mandada a normal");
         return true;
     }
+    void requerir_movimiento(movimiento *r, PosicionAguja pos)
+    {
+        if (!enclavada.empty() || comprobacion == pos) return;
+        requerida_movimiento[r] = pos;
+        update();
+    }
     bool enclavar(movimiento *r, PosicionAguja pos)
     {
         if (enclavada.find(r) != enclavada.end()) return true;
@@ -157,6 +173,7 @@ class aguja : public seccion_via, public estado_aguja
         enclavada.erase(r);
         if (enclavada.empty()) posicion_enclavada = std::nullopt;
     }
+    void set_escape(aguja *ag);
     PosicionAguja get_posicion(lados<int> pos)
     {
         return pos[lado] == 1 ? PosicionAguja::Invertida : PosicionAguja::Normal;

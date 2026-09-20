@@ -6,7 +6,7 @@ ruta_deslizamiento::ruta_deslizamiento(destino_ruta *fin, const json &j) : fin_m
     for (auto &id : j["Límite"]) {
         stop.insert(secciones[id_elemento::from_default_dep(id, fin->id.dependencia)]);
     }
-    root = std::make_shared<nodo_deslizamiento>(fin->señal_fin->seccion_prev, fin->señal_fin->seccion, fin->señal_fin->lado, this, stop);
+    root = new nodo_deslizamiento(fin->señal_fin->seccion_prev, fin->señal_fin->seccion, fin->señal_fin->lado, this, stop);
     if (j.contains("DeslizamientosOrientados")) {
         for (auto &jo : j["DeslizamientosOrientados"]) {
             std::map<seccion_via*, lados<int>> pos;
@@ -28,7 +28,7 @@ nodo_deslizamiento::nodo_deslizamiento(seccion_via *prev, seccion_via *sec, Lado
     for (auto &p : secciones) {
         if (p.first == nullptr) continue;
         if (end && stop.find(p.first) == stop.end()) continue;
-        next.push_back(std::make_shared<nodo_deslizamiento>(sec, p.first, opp_lado(p.second), deslizamiento, stop));
+        next.push_back(new nodo_deslizamiento(sec, p.first, opp_lado(p.second), deslizamiento, stop));
     }
 }
 bool nodo_deslizamiento::compatible(movimiento *r, int id_deslizamiento)
@@ -95,9 +95,13 @@ void nodo_deslizamiento::actualizar(bool set)
     if (deslizamiento->deslizamiento_activo >= 0) {
         auto &posicion_aparatos = deslizamiento->deslizamientos_orientados[deslizamiento->deslizamiento_activo];
         auto it = posicion_aparatos.find(seccion);
-        if (seccion->tipo == TipoSeccion::Aguja && it == posicion_aparatos.end()) {
+        if (seccion->tipo == TipoSeccion::Aguja) {
             aguja *a = (aguja*)seccion;
-            a->desenclavar(deslizamiento->fin_movimiento->ruta_activa);
+            if (it == posicion_aparatos.end()) {
+                a->desenclavar(deslizamiento->fin_movimiento->ruta_activa);
+            } else if (dependencias[seccion->id.dependencia]->bloqueo_agujas || !a->mover(a->get_posicion(it->second))) {
+                a->requerir_movimiento(deslizamiento->fin_movimiento->ruta_activa, a->get_posicion(it->second));
+            }
         }
     }
     int in = seccion->get_in(prev, dir);

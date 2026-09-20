@@ -49,6 +49,22 @@ RespuestaMando aguja::mando(const std::string &cmd, int me)
             return RespuestaMando::OrdenRechazada;
         if (mover(pos))
             return RespuestaMando::Aceptado;
+    } else if (cmd == "MAE" || cmd == "ANE" || cmd == "AIE") {
+        PosicionAguja pos;
+        if (cmd == "ANE" || (cmd == "MAE" && !mandada && comprobacion && *comprobacion == PosicionAguja::Invertida) || (cmd == "MA" && mandada && mandada->first == PosicionAguja::Invertida))
+            pos = PosicionAguja::Normal;
+        else if (cmd == "AIE" || (cmd == "MAE" && !mandada && comprobacion && *comprobacion == PosicionAguja::Normal) || (cmd == "MA" && mandada && mandada->first == PosicionAguja::Normal))
+            pos = PosicionAguja::Invertida;
+        else
+            return RespuestaMando::OrdenRechazada;
+        if (me) {
+            if (mover(pos, true))
+                return RespuestaMando::Aceptado;
+        } else {
+            me_pendiente = true;
+            remota_cambio_elemento("sec", id);
+            return RespuestaMando::MandoEspecialNecesario;
+        }
     } else if (cmd == "BA" && !bloqueo) {
         bloqueo = true;
         log(id, "bloqueo aguja", LOG_DEBUG);
@@ -78,13 +94,15 @@ RemotaAG aguja::get_estado_remota()
     r.AG_ME = me_pendiente ? 1 : 0;
     r.AG_BIA = bloqueo_seccion ? 1 : 0;
     r.AG_OCUP_TIPO = cv_seccion != nullptr && cv_seccion->ocupacion_intempestiva ? 1 : 0;
-    if (cv_seccion != nullptr && cv_seccion->get_state() > EstadoCV::Prenormalizado && (cv_seccion->ocupacion_intempestiva || ruta_asegurada || cv_seccion->is_averia())) r.AG_EST = 3;
+    if (cv_seccion != nullptr && cv_seccion->get_state() > EstadoCV::Prenormalizado && (cv_seccion->ocupacion_intempestiva || ocupacion_outs[opp_lado(lado)] >= 0 || cv_seccion->is_averia())) r.AG_EST = 3;
     else if (ruta_asegurada && ruta_asegurada->ruta_asegurada->tipo == TipoMovimiento::Maniobra) r.AG_EST = 2;
     else if (ruta_asegurada && (ruta_asegurada->ruta_asegurada->tipo == TipoMovimiento::Itinerario || ruta_asegurada->ruta_asegurada->tipo == TipoMovimiento::Rebase)) r.AG_EST = 1;
     else if (cv_seccion != nullptr && cv_seccion->get_state() == EstadoCV::Prenormalizado) r.AG_EST = 3;
     else r.AG_EST = 0;
-    if (!ruta_asegurada) r.AG_DIR = 0;
-    else r.AG_DIR = ruta_asegurada->outs[lado] == 1 ? 2 : 1;
+    if (cv_seccion != nullptr && (cv_seccion->ocupacion_intempestiva || cv_seccion->is_averia())) r.AG_DIR = 0;
+    else if (ocupacion_outs[Lado::Impar] >= 0 && ocupacion_outs[Lado::Par] >= 0) r.AG_DIR = ocupacion_outs[lado] == 1 ? 2 : 1;
+    else if (ruta_asegurada) r.AG_DIR = ruta_asegurada->outs[lado] == 1 ? 2 : 1;
+    else r.AG_DIR = 0;
     r.AG_DES_N = 0;
     r.AG_DES_I = 0;
     for (auto &[n, mov] : deslizamiento) {
@@ -119,9 +137,10 @@ RemotaAG aguja::get_estado_remota()
     else r.AG_COMP = 0;
     r.AG_BA = bloqueo ? 1 : 0;
     if (!enclavada.empty()) r.AG_ENC = 1;
-    else if (mandada && comprobacion != mandada->first && mandada->second != 0) r.AG_ENC = 2;
+    else if (!requerida_movimiento.empty()) r.AG_ENC = 2;
     else r.AG_ENC = 0;
-    r.AG_GAL = 0;
+    if ((comprobacion != PosicionAguja::Invertida && afectada_galibo(0, 0, lado)) || (comprobacion != PosicionAguja::Normal && afectada_galibo(0, 1, lado))) r.AG_GAL = 1;
+    else r.AG_GAL = 0;
     return r;
 }
 seccion_via *aguja::ruta_fija(seccion_via *prev, Lado &dir)
@@ -152,4 +171,15 @@ seccion_via *aguja::ruta_fija(seccion_via *prev, Lado &dir)
     auto p = siguientes_secciones[dir][out];
     if (p.invertir_paridad) dir = opp_lado(dir);
     return secciones[p.id];
+}
+void aguja::set_escape(aguja *ag)
+{
+    escape = ag;
+    auto *pt = new punto_negro();
+    pt->seccion_afectada = this;
+    pt->pin_ajeno = {ag->lado, 1};
+    pt->pin_propio = {lado, 0};
+    pt->seccion_causante = ag->id.id;
+    puntos_negros.push_back(pt);
+    puntos_negros_por_causa[ag->id].push_back(pt);
 }

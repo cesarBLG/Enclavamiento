@@ -2,6 +2,7 @@
 #include "ruta.h"
 #include "items.h"
 #include "pn_enclavado.h"
+std::map<id_elemento, std::vector<punto_negro*>> puntos_negros_por_causa;
 seccion_via::seccion_via(const id_elemento &id, const json &j, TipoSeccion tipo) : id(id), bloqueo_asociado(j.contains("Bloqueo") ? std::optional<id_elemento>(id_elemento(j["Bloqueo"])) : std::nullopt), tipo(tipo), id_cv(j.value("CV", id.id))
 {
     if (tipo == TipoSeccion::Lineal || tipo == TipoSeccion::Cruzamiento) {
@@ -22,18 +23,35 @@ seccion_via::seccion_via(const id_elemento &id, const json &j, TipoSeccion tipo)
     if (j.contains("Conexiones")) {
         siguientes_secciones = j["Conexiones"];
     }
+    if (j.contains("Flanco")) {
+        for (auto &jf : j["Flanco"]) {
+            proteccion_flanco.push_back(new flanco(this, jf));
+        }
+    }
+    if (j.contains("PuntosNegros")) {
+        for (auto &jg : j["PuntosNegros"]) {
+            auto *pt = new punto_negro(this, jg);
+            puntos_negros.push_back(pt);
+            puntos_negros_por_causa[pt->seccion_causante].push_back(pt);
+        }
+    }
     trayecto = j.value("Trayecto", bloqueo_asociado.has_value());
 }
 void seccion_via::asegurar(movimiento *ruta, int in, int out, std::optional<Lado> dir)
 {
+    if (ruta_asegurada || ruta == nullptr) return;
     auto r = reserva_seccion();
     r.ruta_asegurada = ruta;
     r.outs[dir ? *dir : Lado::Impar] = out;
     r.outs[opp_lado(dir ? *dir : Lado::Impar)] = in;
     r.lado = dir;
-    if (ruta_asegurada || ruta == nullptr) return;
     log(id, "reservada", LOG_DEBUG);
     ruta_asegurada = r;
+    for (auto *f : proteccion_flanco) {
+        if (f->in == r.outs[opp_lado(f->dir)])
+            continue;
+        f->activar(ruta);
+    }
     remota_cambio_elemento("sec", id);
 }
 void seccion_via::asegurar_deslizamiento(movimiento *ruta, nodo_deslizamiento* nodo)
@@ -66,6 +84,11 @@ void seccion_via::liberar(movimiento *ruta)
                 pn->desactivar_ruta(*ruta_asegurada->lado);
             }
         }
+        for (auto *f : proteccion_flanco) {
+            if (f->in == ruta_asegurada->outs[opp_lado(f->dir)])
+                continue;
+            f->desactivar(ruta_asegurada->ruta_asegurada);
+        }
         ruta_asegurada = std::nullopt;
         remota_cambio_elemento("sec", id);
     }
@@ -79,12 +102,12 @@ bool seccion_via::asegurar_posible(movimiento *ruta, int in, int out, std::optio
     }
     if (ruta_asegurada && ruta_asegurada->ruta_asegurada != ruta) return false;
 
-    for (auto &pt : puntos_negros) {
+    for (auto *pt : puntos_negros) {
         Lado dir2 = dir ? *dir : Lado::Impar;
-        if (!pt.pin_propio || (dir2 == pt.pin_propio->first && out == pt.pin_propio->second) || (dir2 != pt.pin_propio->first && in == pt.pin_propio->second)) {
-            auto *sec = secciones[pt.seccion];
+        if (!pt->pin_propio || (dir2 == pt->pin_propio->first && out == pt->pin_propio->second) || (dir2 != pt->pin_propio->first && in == pt->pin_propio->second)) {
+            auto *sec = secciones[pt->seccion_causante];
             if (sec->ruta_asegurada && sec->ruta_asegurada->ruta_asegurada != ruta) {
-                if (!pt.pin_ajeno || sec->ruta_asegurada->outs[pt.pin_ajeno->first] == pt.pin_ajeno->second)
+                if (!pt->pin_ajeno || sec->ruta_asegurada->outs[pt->pin_ajeno->first] == pt->pin_ajeno->second)
                     return false;
             }
         }
@@ -107,11 +130,11 @@ bool seccion_via::deslizamiento_posible(int in, int out, Lado dir)
     }
     if (!relevante) return true;
 
-    for (auto &pt : puntos_negros) {
-        if (!pt.pin_propio || (dir == pt.pin_propio->first && out == pt.pin_propio->second) || (dir != pt.pin_propio->first && in == pt.pin_propio->second)) {
-            auto *sec = secciones[pt.seccion];
+    for (auto *pt : puntos_negros) {
+        if (!pt->pin_propio || (dir == pt->pin_propio->first && out == pt->pin_propio->second) || (dir != pt->pin_propio->first && in == pt->pin_propio->second)) {
+            auto *sec = secciones[pt->seccion_causante];
             if (sec->ruta_asegurada) {
-                if (!pt.pin_ajeno || sec->ruta_asegurada->outs[pt.pin_ajeno->first] == pt.pin_ajeno->second)
+                if (!pt->pin_ajeno || sec->ruta_asegurada->outs[pt->pin_ajeno->first] == pt->pin_ajeno->second)
                     return false;
             }
         }
@@ -124,30 +147,47 @@ bool seccion_via::transitable(int in, Lado dir)
     if (in < 0) return false;
     int out = active_outs[dir][in];
     if (out < 0) return false;
-    for (auto &pt : puntos_negros) {
-        if (!pt.pin_propio || (dir == pt.pin_propio->first && out == pt.pin_propio->second) || (dir != pt.pin_propio->first && in == pt.pin_propio->second)) {
-            auto *sec = secciones[pt.seccion];
+
+    for (auto *pt : puntos_negros) {
+        if (!pt->pin_propio || (dir == pt->pin_propio->first && out == pt->pin_propio->second) || (dir != pt->pin_propio->first && in == pt->pin_propio->second)) {
+            auto *sec = secciones[pt->seccion_causante];
             if (sec->ruta_asegurada && (!ruta_asegurada || sec->ruta_asegurada->ruta_asegurada != ruta_asegurada->ruta_asegurada)) {
-                if (!pt.pin_ajeno || sec->ruta_asegurada->outs[pt.pin_ajeno->first] == pt.pin_ajeno->second)
+                if (!pt->pin_ajeno || sec->ruta_asegurada->outs[pt->pin_ajeno->first] == pt->pin_ajeno->second)
                     return false;
-            }
-            auto *cv = sec->get_cv();
-            if (cv != nullptr && cv->get_state() > EstadoCV::Prenormalizado) {
-                /*if (cv->ocupacion_intempestiva)
-                    return false;*/
-                if (!pt.pin_ajeno || sec->ocupacion_outs[pt.pin_ajeno->first] < 0 || sec->ocupacion_outs[pt.pin_ajeno->first] == pt.pin_ajeno->second)
-                    return false;
-                for (auto &[in,out] : sec->active_outs[pt.pin_ajeno->first]) {
-                    if (out < 0 || out == pt.pin_ajeno->second)
-                        return false;
-                }
             }
         }
+    }
+    if (afectada_galibo(in, out, dir)) return false;
+    for (auto*f : proteccion_flanco) {
+        if (f->in == (dir == f->dir ? in : out))
+            continue;
+        if (!f->protegido(ruta_asegurada ? ruta_asegurada->ruta_asegurada : nullptr))
+            return false;
     }
     // TODO: Maniobra local
     if (ruta_asegurada && (ruta_asegurada->outs[dir] != out || ruta_asegurada->outs[opp_lado(dir)] != in))
         return false;
     return true;
+}
+bool seccion_via::afectada_galibo(int in, int out, Lado dir)
+{
+    for (auto *pt : puntos_negros) {
+        if (!pt->pin_propio || (dir == pt->pin_propio->first && out == pt->pin_propio->second) || (dir != pt->pin_propio->first && in == pt->pin_propio->second)) {
+            auto *sec = secciones[pt->seccion_causante];
+            auto *cv = sec->get_cv();
+            if (cv != nullptr && cv->get_state() > EstadoCV::Prenormalizado) {
+                /*if (cv->ocupacion_intempestiva)
+                    return false;*/
+                if (!pt->pin_ajeno || sec->ocupacion_outs[pt->pin_ajeno->first] < 0 || sec->ocupacion_outs[pt->pin_ajeno->first] == pt->pin_ajeno->second)
+                    return true;
+                /*for (auto &[in2,out2] : sec->active_outs[pt.pin_ajeno->first]) {
+                    if (out2 < 0 || out2 == pt.pin_ajeno->second)
+                        return true;
+                }*/
+            }
+        }
+    }
+    return false;
 }
 TipoMovimiento seccion_via::get_tipo_movimiento()
 {
@@ -163,6 +203,13 @@ void seccion_via::message_cv(const id_elemento &id, estado_cv ev)
 {
     if (id != id_cv) return;
 
+    std::optional<reserva_seccion> ruta_asegurada_cv;
+    for (auto *sec : cv_seccion->secciones) {
+        if (sec->ruta_asegurada) {
+            ruta_asegurada_cv = sec->ruta_asegurada;
+            break;
+        }
+    }
     bool intempestiva = false;
     if ((ev.evento && ev.evento->ocupacion || (!ev.evento && ev.estado_previo <= EstadoCV::Prenormalizado)) && ev.estado > EstadoCV::Prenormalizado) {
         if (trayecto) {
@@ -170,13 +217,6 @@ void seccion_via::message_cv(const id_elemento &id, estado_cv ev)
                 //intempestiva = true;
             }
         } else {
-            std::optional<reserva_seccion> ruta_asegurada_cv;
-            for (auto *sec : cv_seccion->secciones) {
-                if (sec->ruta_asegurada) {
-                    ruta_asegurada_cv = sec->ruta_asegurada;
-                    break;
-                }
-            }
             if (!ruta_asegurada_cv) {
                 intempestiva = true;
             } else if (ev.evento && ev.evento->cv_colateral != "") {
@@ -208,7 +248,7 @@ void seccion_via::message_cv(const id_elemento &id, estado_cv ev)
         for (Lado l : {Lado::Impar, Lado::Par}) {
             if (ruta_asegurada && !intempestiva && ((ruta_asegurada->lado && ruta_asegurada->lado == opp_lado(l)) || ruta_asegurada->outs[l] == active_outs[l][ruta_asegurada->outs[opp_lado(l)]]))
                 ocupacion_outs[l] = ruta_asegurada->outs[l];
-            else if (active_outs[opp_lado(l)].size() == 1)
+            else if ((!ruta_asegurada_cv || ruta_asegurada || intempestiva) && active_outs[opp_lado(l)].size() == 1)
                 ocupacion_outs[l] = active_outs[opp_lado(l)].begin()->first;
         }
     } else if (ev.estado <= EstadoCV::Prenormalizado) {
@@ -217,6 +257,13 @@ void seccion_via::message_cv(const id_elemento &id, estado_cv ev)
 
     for (auto *pn : pns) {
         pn->message_cv(ev);
+    }
+
+    auto it = puntos_negros_por_causa.find(this->id);
+    if (it != puntos_negros_por_causa.end()) {
+        for (auto *pt : it->second) {
+            remota_cambio_elemento("sec", pt->seccion_afectada->id);
+        }
     }
 
     remota_cambio_elemento("cv", id);
@@ -367,4 +414,88 @@ void from_json(const json &j, seccion_via::conexion &conex)
 {
     if (j.contains("Id")) conex.id = id_elemento(j["Id"]);
     conex.invertir_paridad = j.value("InvertirParidad", false);
+}
+
+punto_negro::punto_negro(seccion_via *sec, const json &j) : seccion_afectada(sec)
+{
+    seccion_causante = id_elemento::from_default_dep(sec->id.dependencia, j["Id"]);
+    if (j.contains("Afectado"))
+        pin_propio = {j["Afectado"]["Lado"], j["Afectado"]["Pin"]};
+    if (j.contains("Causante"))
+        pin_propio = {j["Causante"]["Lado"], j["Causante"]["Pin"]};
+}
+flanco::flanco(seccion_via *sec, const json &j)
+{
+    dir = j["Lado"];
+    in = j["Pin"];
+    std::set<seccion_via*> stop;
+    for (auto &id : j["Límite"]) {
+        stop.insert(secciones[id_elemento::from_default_dep(id, sec->id.dependencia)]);
+    }
+    std::map<seccion_via*, lados<int>> pos;
+    if (j.contains("PosiciónAparatos")) {
+        for (auto &[sec_id, jpos] : j["PosiciónAparatos"].items()) {
+            pos[::secciones[id_elemento::from_default_dep(sec_id, sec->id.dependencia)]] = jpos;
+        }
+    }
+    auto p = sec->get_seccion_in(dir, in);
+    root = new nodo_flanco(sec, p.first, p.second, stop, pos);
+}
+nodo_flanco::nodo_flanco(seccion_via *next, seccion_via *sec, Lado dir, const std::set<seccion_via*> &stop, const std::map<seccion_via*, lados<int>> &posicion_aparatos) : next(next), seccion(sec), dir(dir)
+{
+    auto it = posicion_aparatos.find(sec);
+    if (it != posicion_aparatos.end()) posicion = it->second;
+    std::vector<std::pair<seccion_via*, Lado>> secciones;
+    sec->prev_secciones(next, dir, secciones, false);
+    bool end = stop.find(sec) != stop.end();
+    for (auto &p : secciones) {
+        if (p.first == nullptr) continue;
+        if (end && stop.find(p.first) == stop.end()) continue;
+        prev.push_back(new nodo_flanco(sec, p.first, p.second, stop, posicion_aparatos));
+    }
+}
+void nodo_flanco::activar(movimiento *m)
+{
+    if (posicion && seccion->tipo == TipoSeccion::Aguja) {
+        auto *a = (aguja*)seccion;
+        auto pos = a->get_posicion(*posicion);
+        if (dependencias[a->id.dependencia]->bloqueo_agujas || !a->mover(pos)) {
+            a->requerir_movimiento(m, pos);
+        }
+    }
+    for (auto &n : prev) {
+        n->activar(m);
+    }
+}
+void nodo_flanco::desactivar(movimiento *m)
+{
+    if (posicion && !seccion->is_asegurada(m)) seccion->liberar(m);
+    for (auto &n : prev) {
+        n->desactivar(m);
+    }
+}
+bool nodo_flanco::protegido(movimiento *m)
+{
+    if (posicion) {
+        if (seccion->get_active_out((*posicion)[opp_lado(dir)], dir) != (*posicion)[dir])
+            return false;
+        if (seccion->tipo == TipoSeccion::Aguja && m != nullptr) {
+            auto *a = (aguja*)seccion;
+            auto pos = a->get_posicion(*posicion);
+            a->enclavar(m, pos);
+        }
+    }
+    auto *cv = seccion->get_cv();
+    if (cv != nullptr && cv->ocupacion_intempestiva)
+        return false;
+    int out = seccion->get_out(next, dir);
+    for (auto &n : prev) {
+        int in = seccion->get_in(n->seccion, dir);
+        int out2 = seccion->get_active_out(in, dir);
+        if (out != out2 && out2 >= 0)
+            continue;
+        if (!n->protegido(m))
+            return false;
+    }
+    return true;
 }

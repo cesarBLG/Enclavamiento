@@ -10,7 +10,7 @@ struct nodo_deslizamiento
     seccion_via *seccion;
     const Lado dir;
     seccion_via *prev;
-    std::vector<std::shared_ptr<nodo_deslizamiento>> next;
+    std::vector<nodo_deslizamiento*> next;
     ruta_deslizamiento *deslizamiento;
     EstadoCanton maxima_ocupacion;
     bool asegurado = false;
@@ -27,7 +27,7 @@ struct ruta_deslizamiento
 {
     destino_ruta *fin_movimiento;
     std::set<movimiento*> rutas_afectadas;
-    std::shared_ptr<nodo_deslizamiento> root;
+    nodo_deslizamiento *root;
     std::vector<std::map<seccion_via*, lados<int>>> deslizamientos_orientados;
     int deslizamiento_activo = -1;
     bool formado = false;
