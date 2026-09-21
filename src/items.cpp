@@ -348,7 +348,6 @@ void handle_message(const std::string &topic, const std::string &payload)
         return;
     }
 }
-std::map<id_elemento,std::vector<id_elemento>> cejes_to_cvs;
 void init_items_ordered(const json &j, std::string tipo)
 {
     for (auto &[estacion, jdep] : j.items()) {
@@ -360,9 +359,6 @@ void init_items_ordered(const json &j, std::string tipo)
                     cvs[ic] = new cv(ic, TipoSeccion::Lineal);
                 } else if (jcv.contains("ContadoresEjes")) {
                     cv_impls[ic] = new cv_impl_cejes(ic, jcv);
-                    for (auto &[key,val] : jcv["ContadoresEjes"].items()) {
-                        cejes_to_cvs[key].push_back(ic);
-                    }
                     cvs[ic] = cv_impls[ic];
                 } else {
                     cv_impls[ic] = new cv_impl_cv(ic, jcv);
@@ -452,12 +448,21 @@ void init_items(const json &j)
         init_items_ordered(jdeps, "DestinosRuta");
         init_items_ordered(jdeps, "Rutas");
     }
+    std::map<std::string, cv_impl_cejes::cejes_position> cejes_to_pos;
     for (auto &[id, cv] : cv_impls) {
-        if (cv->contador_ejes) {
-            if (cv->secciones.size() != 1) continue;
-            auto *sec = *cv->secciones.begin();
-            for (auto &[id,ceje] : ((cv_impl_cejes*)cv)->cejes) {
-                if (ceje.seccion.id != "") continue;
+        if (!cv->contador_ejes) continue;
+        for (auto &[id,ceje] : ((cv_impl_cejes*)cv)->cejes) {
+            if (ceje.seccion.id != "") {
+                cejes_to_pos[id] = ceje;
+                continue;
+            }
+            auto it = señales.find(id);
+            if (it != señales.end() && it->second->seccion->get_cv() == cv) {
+                ceje.seccion = it->second->seccion->id;
+                ceje.pin = it->second->pin;
+                cejes_to_pos[id] = ceje;
+            } else if (cv->secciones.size() == 1) {
+                auto *sec = *cv->secciones.begin();
                 int in = -1;
                 for (auto &outs : sec->all_outs) {
                     int in2 = outs[opp_lado(ceje.lado)];
@@ -473,7 +478,23 @@ void init_items(const json &j)
                 if (in >= 0) {
                     ceje.seccion = sec->id;
                     ceje.pin = in;
+                    cejes_to_pos[id] = ceje;
                 }
+            }
+        }
+    }
+    for (auto &[id, cv] : cv_impls) {
+        if (!cv->contador_ejes) continue;
+        for (auto &[id,ceje] : ((cv_impl_cejes*)cv)->cejes) {
+            if (ceje.seccion.id != "")
+                continue;
+            auto it = cejes_to_pos.find(id);
+            if (it == cejes_to_pos.end()) continue;
+            auto *sec = secciones[it->second.seccion];
+            auto p = sec->get_seccion_in(it->second.lado, it->second.pin);
+            if (p.first != nullptr && p.first->get_cv() == cv) {
+                ceje.seccion = p.first->id;
+                ceje.pin = p.first->get_in(sec, opp_lado(p.second));
             }
         }
     }
