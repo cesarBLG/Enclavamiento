@@ -19,6 +19,9 @@ tipo(j.value("Tipo", TipoBloqueo::BAU)), bloqueo_emisor(lado == Lado::Impar ? Es
         for (auto &cv : j["CVsEntrada"]) {
             cvs_entrada.push_back(::cvs[id_elemento(cv)]);
         }
+    } else if (!cvs.empty()) {
+        auto nxt = cvs[0]->get_seccion_in(lado, 0);
+        if (nxt.first != nullptr && nxt.first->get_cv() != nullptr) cvs_entrada.push_back(::cvs[nxt.first->id_cv]);
     }
 }
 bool bloqueo::bloqueo_permitido(bool emisor)
@@ -118,7 +121,7 @@ void bloqueo::message_cv(const id_elemento &id, estado_cv ecv)
     if (!escape && estado != bloqueo_emisor && tipo != TipoBloqueo::BAD && tipo != TipoBloqueo::BLAD) {
         bool esc=false;
         // Liberación circuito de agujas estando ocupado el de entrada
-        if (cvs_entrada.size() > 1 && id == cvs_entrada[1]->id && ((ecv.evento->lado == lado && !ecv.evento->ocupacion) || (!ecv.evento && ecv.estado_previo > EstadoCV::Prenormalizado && ecv.estado <= EstadoCV::Prenormalizado)) && cvs_entrada[0]->get_state() > EstadoCV::Prenormalizado) {
+        if (ruta == TipoMovimiento::Ninguno && cvs_entrada.size() > 1 && id == cvs_entrada[1]->id && ((ecv.evento->lado == lado && !ecv.evento->ocupacion) || (!ecv.evento && ecv.estado_previo > EstadoCV::Prenormalizado && ecv.estado <= EstadoCV::Prenormalizado)) && cvs_entrada[0]->get_state() > EstadoCV::Prenormalizado) {
             esc = true;
         }
         if ((ecv.evento && ecv.evento->lado == lado && ecv.evento->ocupacion) || (!ecv.evento && ecv.estado_previo <= EstadoCV::Prenormalizado && ecv.estado > EstadoCV::Prenormalizado && !ecv.averia)) {
