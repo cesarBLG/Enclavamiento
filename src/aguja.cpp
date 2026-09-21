@@ -139,7 +139,7 @@ RemotaAG aguja::get_estado_remota()
     if (!enclavada.empty()) r.AG_ENC = 1;
     else if (!requerida_movimiento.empty()) r.AG_ENC = 2;
     else r.AG_ENC = 0;
-    if ((comprobacion != PosicionAguja::Invertida && afectada_galibo(0, 0, lado)) || (comprobacion != PosicionAguja::Normal && afectada_galibo(0, 1, lado))) r.AG_GAL = 1;
+    if ((comprobacion != PosicionAguja::Invertida && afectada_galibo(lados<int>::from_directional(0, 0, lado))) || (comprobacion != PosicionAguja::Normal && afectada_galibo(lados<int>::from_directional(0, 1, lado)))) r.AG_GAL = 1;
     else r.AG_GAL = 0;
     return r;
 }

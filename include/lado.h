@@ -17,6 +17,13 @@ struct lados
     {
         return par == o.par && impar == o.impar;
     }
+    static lados<T> from_directional(T in, T out, Lado dir)
+    {
+        lados<T> l;
+        l[dir] = out;
+        l[opp_lado(dir)] = in;
+        return l;
+    }
 };
 #ifndef WITHOUT_JSON
 #include "json.h"

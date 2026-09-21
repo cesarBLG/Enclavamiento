@@ -119,22 +119,24 @@ ruta::ruta(const std::string &estacion, const json &j) : movimiento(estacion, j[
                 if (sig != nullptr && señal_impls.find(sig->id) != señal_impls.end()) señales.push_back(señal_impls[sig->id]);
             }
 
-            std::pair<int,int> pins;
+            lados<int> outs;
             seccion_via *next;
             auto it = posicion_aparatos.find(sec);
             if (it != posicion_aparatos.end()) {
-                pins = {it->second[opp_lado(dir)], it->second[dir]};
-                auto p = sec->get_seccion_in(opp_lado(dir), pins.second);
+                outs = it->second;
+                auto p = sec->get_seccion_in(opp_lado(dir), it->second[dir]);
                 next = p.first;
                 sig_dir = opp_lado(p.second);
             } else if (prv == nullptr) {
                 next = sec->siguiente_seccion(señal_inicio->pin, sig_dir);
-                pins = {señal_inicio->pin, sec->get_out(next, dir)};
+                outs[opp_lado(dir)] = señal_inicio->pin;
+                outs[dir] = sec->get_out(next, dir);
             } else {
                 next = sec->siguiente_seccion(prv, sig_dir);
-                pins = {sec->get_in(prv, dir), sec->get_out(next, dir)};
+                outs[opp_lado(dir)] = sec->get_in(prv, dir);
+                outs[dir] = sec->get_out(next, dir);
             }
-            secciones.push_back({sec, dir, pins.first, pins.second});
+            secciones.push_back({sec, dir, outs});
             prv = sec;
             sec = next;
             dir = sig_dir;
@@ -185,7 +187,7 @@ bool movimiento::posible_establecer(bool msg)
         if (sec->tipo == TipoSeccion::Aguja) {
             aguja *a = (aguja*)sec;
             auto pos = a->get_posicion(pins);
-            if (!a->posible_mover(pos)) {
+            if (!a->posible_mover(pos, true)) {
                 if (msg) log(id, "aguja bloqueada", LOG_DEBUG);
                 return false;
             }
@@ -214,7 +216,7 @@ bool movimiento::establecer(bool msg)
     for (int i=0; i<secciones.size(); i++) {
         // Asegurar todas las secciones en el sentido de la ruta
         auto *sec = secciones[i].seccion;
-        sec->asegurar(this, secciones[i].in, secciones[i].out, secciones[i].dir);
+        sec->asegurar(this, secciones[i].outs, secciones[i].dir);
         secciones_aseguradas.insert(sec);
     }
     mover_agujas();
@@ -303,7 +305,7 @@ bool ruta::posible_establecer(bool msg)
                     l = señal_inicio->lado;
                 } else {
                     sec = secciones.back().seccion;
-                    auto p = secciones.back().seccion->get_seccion_in(opp_lado(*secciones.back().dir), secciones.back().out);
+                    auto p = secciones.back().seccion->get_seccion_in(opp_lado(*secciones.back().dir), secciones.back().outs[*secciones.back().dir]);
                     sig = p.first;
                     l = opp_lado(p.second);
                 }
@@ -350,7 +352,7 @@ bool ruta::posible_establecer(bool msg)
     for (int i=0; i<secciones.size(); i++) {
         auto *sec = secciones[i].seccion;
         // La ruta requiere secciones ya aseguradas por otra ruta
-        if (!sec->asegurar_posible(this, secciones[i].in, secciones[i].out, secciones[i].dir)) {
+        if (!sec->asegurar_posible(this, secciones[i].outs, secciones[i].dir)) {
             if (msg) log(id, "asegurar imposible", LOG_DEBUG);
             return false;
         }

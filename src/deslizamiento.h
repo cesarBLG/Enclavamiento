@@ -22,6 +22,7 @@ struct nodo_deslizamiento
     void actualizar(bool set);
     void cambio_activacion(bool accesible, bool acceso_impedido);
     bool is_asegurado(int id_deslizamiento);
+    bool invade_galibo(std::optional<std::pair<Lado,int>> pin_causa, int id_deslizamiento);
 };
 struct ruta_deslizamiento
 {
@@ -32,17 +33,7 @@ struct ruta_deslizamiento
     int deslizamiento_activo = -1;
     bool formado = false;
     ruta_deslizamiento(destino_ruta *fin, const json &j);
-    int compatible(movimiento *r)
-    {
-        rutas_afectadas.clear();
-        if (r != nullptr) rutas_afectadas.insert(r);
-        for (int i=0; i<deslizamientos_orientados.size(); i++) {
-            if (root->compatible(r, i)) {
-                return i;
-            }
-        }
-        return -1;
-    }
+    int compatible(movimiento *r);
     void activar(int id);
     void liberar();
     bool is_asegurado(bool id_orig)

@@ -37,13 +37,12 @@ seccion_via::seccion_via(const id_elemento &id, const json &j, TipoSeccion tipo)
     }
     trayecto = j.value("Trayecto", bloqueo_asociado.has_value());
 }
-void seccion_via::asegurar(movimiento *ruta, int in, int out, std::optional<Lado> dir)
+void seccion_via::asegurar(movimiento *ruta, lados<int> outs, std::optional<Lado> dir)
 {
     if (ruta_asegurada || ruta == nullptr) return;
     auto r = reserva_seccion();
     r.ruta_asegurada = ruta;
-    r.outs[dir ? *dir : Lado::Impar] = out;
-    r.outs[opp_lado(dir ? *dir : Lado::Impar)] = in;
+    r.outs = outs;
     r.lado = dir;
     log(id, "reservada", LOG_DEBUG);
     ruta_asegurada = r;
@@ -93,7 +92,20 @@ void seccion_via::liberar(movimiento *ruta)
         remota_cambio_elemento("sec", id);
     }
 }
-bool seccion_via::asegurar_posible(movimiento *ruta, int in, int out, std::optional<Lado> dir)
+bool seccion_via::invade_galibo(lados<int> outs, movimiento *ruta)
+{
+    // Comprobar si hay otra ruta asegurada incompatible por gálibo
+    for (auto *pt : puntos_negros) {
+        if (!pt->afectado_propio(outs)) continue;
+        auto *sec = secciones[pt->seccion_causante];
+        if (sec->ruta_asegurada && sec->ruta_asegurada->ruta_asegurada != ruta) {
+            if (!pt->pin_ajeno || sec->ruta_asegurada->outs[pt->pin_ajeno->first] == pt->pin_ajeno->second)
+                return true;
+        }
+    }
+    return false;
+}
+bool seccion_via::asegurar_posible(movimiento *ruta, lados<int> outs, std::optional<Lado> dir)
 {
     if (cv_seccion != nullptr) {
         for (auto &sec : cv_seccion->secciones) {
@@ -102,16 +114,7 @@ bool seccion_via::asegurar_posible(movimiento *ruta, int in, int out, std::optio
     }
     if (ruta_asegurada && ruta_asegurada->ruta_asegurada != ruta) return false;
 
-    for (auto *pt : puntos_negros) {
-        Lado dir2 = dir ? *dir : Lado::Impar;
-        if (!pt->pin_propio || (dir2 == pt->pin_propio->first && out == pt->pin_propio->second) || (dir2 != pt->pin_propio->first && in == pt->pin_propio->second)) {
-            auto *sec = secciones[pt->seccion_causante];
-            if (sec->ruta_asegurada && sec->ruta_asegurada->ruta_asegurada != ruta) {
-                if (!pt->pin_ajeno || sec->ruta_asegurada->outs[pt->pin_ajeno->first] == pt->pin_ajeno->second)
-                    return false;
-            }
-        }
-    }
+    if (invade_galibo(outs, ruta)) return false;
 
     return true;
 }
@@ -121,24 +124,7 @@ bool seccion_via::deslizamiento_posible(int in, int out, Lado dir)
         return false;
     }
 
-    bool relevante = false;
-    for (auto &pins : all_outs) {
-        if (pins[dir] == out && pins[opp_lado(dir)] == in) {
-            relevante = true;
-            break;
-        }
-    }
-    if (!relevante) return true;
-
-    for (auto *pt : puntos_negros) {
-        if (!pt->pin_propio || (dir == pt->pin_propio->first && out == pt->pin_propio->second) || (dir != pt->pin_propio->first && in == pt->pin_propio->second)) {
-            auto *sec = secciones[pt->seccion_causante];
-            if (sec->ruta_asegurada) {
-                if (!pt->pin_ajeno || sec->ruta_asegurada->outs[pt->pin_ajeno->first] == pt->pin_ajeno->second)
-                    return false;
-            }
-        }
-    }
+    if (invade_galibo(lados<int>::from_directional(in, out, dir))) return false;
 
     return true;
 }
@@ -147,17 +133,21 @@ bool seccion_via::transitable(int in, Lado dir)
     if (in < 0) return false;
     int out = active_outs[dir][in];
     if (out < 0) return false;
+    auto outs = lados<int>::from_directional(in, out, dir);
 
+    if (invade_galibo(outs) || afectada_galibo(outs)) return false;
+
+    // Comprobar que no hay un deslizamiento que invada gálibo
     for (auto *pt : puntos_negros) {
-        if (!pt->pin_propio || (dir == pt->pin_propio->first && out == pt->pin_propio->second) || (dir != pt->pin_propio->first && in == pt->pin_propio->second)) {
-            auto *sec = secciones[pt->seccion_causante];
-            if (sec->ruta_asegurada && (!ruta_asegurada || sec->ruta_asegurada->ruta_asegurada != ruta_asegurada->ruta_asegurada)) {
-                if (!pt->pin_ajeno || sec->ruta_asegurada->outs[pt->pin_ajeno->first] == pt->pin_ajeno->second)
-                    return false;
-            }
+        if (!pt->afectado_propio(outs)) continue;
+        auto *sec = secciones[pt->seccion_causante];
+        for (auto &[desliz, r] : sec->deslizamiento) {
+            if (ruta_asegurada && ruta_asegurada->ruta_asegurada == r) continue;
+            if (desliz->invade_galibo(pt->pin_ajeno, desliz->deslizamiento->deslizamiento_activo))
+                return false;
         }
     }
-    if (afectada_galibo(in, out, dir)) return false;
+
     for (auto*f : proteccion_flanco) {
         if (f->in == (dir == f->dir ? in : out))
             continue;
@@ -169,21 +159,24 @@ bool seccion_via::transitable(int in, Lado dir)
         return false;
     return true;
 }
-bool seccion_via::afectada_galibo(int in, int out, Lado dir)
+bool seccion_via::afectada_galibo(lados<int> outs)
 {
     for (auto *pt : puntos_negros) {
-        if (!pt->pin_propio || (dir == pt->pin_propio->first && out == pt->pin_propio->second) || (dir != pt->pin_propio->first && in == pt->pin_propio->second)) {
-            auto *sec = secciones[pt->seccion_causante];
-            auto *cv = sec->get_cv();
-            if (cv != nullptr && cv->get_state() > EstadoCV::Prenormalizado) {
-                /*if (cv->ocupacion_intempestiva)
-                    return false;*/
-                if (!pt->pin_ajeno || sec->ocupacion_outs[pt->pin_ajeno->first] < 0 || sec->ocupacion_outs[pt->pin_ajeno->first] == pt->pin_ajeno->second)
+        if (!pt->afectado_propio(outs)) continue;
+        auto *sec = secciones[pt->seccion_causante];
+        auto *cv = sec->get_cv();
+        if (cv != nullptr && cv->get_state() > EstadoCV::Prenormalizado) {
+            // Ocupación en la posición de falta de gálibo
+            if (!pt->pin_ajeno || sec->ocupacion_outs[pt->pin_ajeno->first] == pt->pin_ajeno->second)
+                return true;
+            // Ocupación en posición desconocida
+            if (sec->ocupacion_outs[pt->pin_ajeno->first] < 0 && (cv->ocupacion_intempestiva || sec->ocupacion_outs[opp_lado(pt->pin_ajeno->first)] >= 0))
+                return true;
+            // Posición actual desconocida
+            int in2 = sec->active_outs[opp_lado(pt->pin_ajeno->first)][pt->pin_ajeno->second];
+            for (auto &[in3,out3] : sec->active_outs[pt->pin_ajeno->first]) {
+                if ((out3 < 0 && in2 == in3) || out3 == pt->pin_ajeno->second)
                     return true;
-                /*for (auto &[in2,out2] : sec->active_outs[pt.pin_ajeno->first]) {
-                    if (out2 < 0 || out2 == pt.pin_ajeno->second)
-                        return true;
-                }*/
             }
         }
     }
@@ -218,11 +211,14 @@ void seccion_via::message_cv(const id_elemento &id, estado_cv ev)
             }
         } else {
             if (!ruta_asegurada_cv) {
+                // Si no hay ninguna ruta que discurra por el CV, es intempestiva
                 intempestiva = true;
             } else if (ev.evento && ev.evento->seccion == this->id) {
+                // Si se conoce el punto de entrada de la ocupación, comprobar que corresponde al de la ruta asegurada
                 if (!ruta_asegurada || ruta_asegurada->outs[opp_lado(ev.evento->lado)] != ev.evento->pin)
                     intempestiva = true;
             } else if (ruta_asegurada && ruta_asegurada->lado) {
+                // Comprobar que el CV anterior está ocupado
                 Lado opp = opp_lado(*ruta_asegurada->lado);
                 int in = ruta_asegurada->outs[opp];
                 if (in >= 0 && siguientes_secciones[opp][in].id.id != "") {
@@ -239,11 +235,15 @@ void seccion_via::message_cv(const id_elemento &id, estado_cv ev)
     }
 
     if (ev.estado_previo <= EstadoCV::Prenormalizado && ev.estado > EstadoCV::Prenormalizado) {
+        // Determina los pines por los que se produce la ocupación
         for (Lado l : {Lado::Impar, Lado::Par}) {
+            // Punto de entrada al CV en esta sección + punto de salida comprobando
             if (ev.evento && ev.evento->seccion == this->id && (ev.evento->lado != l || active_outs[l][ev.evento->pin] >= 0))
                 ocupacion_outs[l] = ev.evento->pin;
+            // Punto de entrada normal para la ruta + punto de salida comprobando
             else if (ruta_asegurada && !intempestiva && ((ruta_asegurada->lado && ruta_asegurada->lado == opp_lado(l)) || ruta_asegurada->outs[l] == active_outs[l][ruta_asegurada->outs[opp_lado(l)]]))
                 ocupacion_outs[l] = ruta_asegurada->outs[l];
+            // Punto de entrada/salida único
             else if ((!ruta_asegurada_cv || ruta_asegurada || intempestiva) && active_outs[opp_lado(l)].size() == 1)
                 ocupacion_outs[l] = active_outs[opp_lado(l)].begin()->first;
         }

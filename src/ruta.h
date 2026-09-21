@@ -47,8 +47,7 @@ struct elemento_ruta
 {
     seccion_via *seccion;
     std::optional<Lado> dir;
-    int in;
-    int out;
+    lados<int> outs;
 };
 class movimiento
 {
@@ -256,6 +255,10 @@ public:
     señal_impl *get_señal_inicio()
     {
         return señal_inicio;
+    }
+    destino_ruta *get_destino()
+    {
+        return destino;
     }
     bool set_fai(bool activar) {
         if (activar) {

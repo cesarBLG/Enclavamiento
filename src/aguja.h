@@ -69,9 +69,9 @@ class aguja : public seccion_via, public estado_aguja
         if (id != id_cv) return;
         seccion_via::message_cv(id, ev);
     }
-    void asegurar(movimiento *ruta, int in, int out, std::optional<Lado> dir) override
+    void asegurar(movimiento *ruta, lados<int> outs, std::optional<Lado> dir) override
     {
-        seccion_via::asegurar(ruta, in, out, dir);
+        seccion_via::asegurar(ruta, outs, dir);
         remota_cambio_elemento("sec", id);
     }
     void liberar(movimiento *ruta) override
@@ -109,7 +109,7 @@ class aguja : public seccion_via, public estado_aguja
         if ((mandada && mandada->first == pos) || comprobacion == pos) return true;
         if (bloqueo || !enclavada.empty() || talonable_muelle) return false;
         if (!anular_pedal && cv_seccion != nullptr && cv_seccion->get_state() > EstadoCV::Prenormalizado) return false;
-        if (!anular_pedal && afectada_galibo(0, pos == PosicionAguja::Invertida ? 0 : 1, lado)) return false;
+        if (!anular_pedal && afectada_galibo(lados<int>::from_directional(0, pos == PosicionAguja::Invertida ? 0 : 1, lado))) return false;
         if (escape != nullptr && (pos == PosicionAguja::Normal || !escape->talonable)) {
             escape->escape = nullptr;
             if (!escape->posible_mover(pos, anular_pedal)) {

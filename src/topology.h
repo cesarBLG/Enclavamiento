@@ -30,6 +30,10 @@ struct punto_negro
     std::optional<std::pair<Lado, int>> pin_ajeno;
     punto_negro() = default;
     punto_negro(seccion_via *sec, const json &j);
+    bool afectado_propio(lados<int> outs)
+    {
+        return !pin_propio || outs[pin_propio->first] == pin_propio->second;
+    }
 };
 extern std::map<id_elemento, std::vector<punto_negro*>> puntos_negros_por_causa;
 class seccion_via;
@@ -122,7 +126,7 @@ public:
     {
         return cv_seccion;
     }
-    virtual void asegurar(movimiento *ruta, int in, int out, std::optional<Lado> dir);
+    virtual void asegurar(movimiento *ruta, lados<int> outs, std::optional<Lado> dir);
     void asegurar_deslizamiento(movimiento *ruta, nodo_deslizamiento* nodo);
     void liberar_deslizamiento(movimiento *ruta, nodo_deslizamiento* nodo);
     virtual void liberar(movimiento *ruta);
@@ -134,14 +138,15 @@ public:
             return false;
         }
     }
-    bool asegurar_posible(movimiento *ruta, int in, int out, std::optional<Lado> dir);
+    bool asegurar_posible(movimiento *ruta, lados<int> outs, std::optional<Lado> dir);
     bool deslizamiento_posible(int in, int out, Lado dir);
     bool transitable(seccion_via *prev, Lado dir)
     {
         return transitable(get_in(prev, dir), dir);
     }
     virtual bool transitable(int in, Lado dir);
-    bool afectada_galibo(int in, int out, Lado dir);
+    bool afectada_galibo(lados<int> outs);
+    bool invade_galibo(lados<int> outs, movimiento *ruta=nullptr);
     std::optional<reserva_seccion> get_ruta_asegurada()
     {
         return ruta_asegurada;
