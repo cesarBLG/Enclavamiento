@@ -18,4 +18,5 @@ pn_enclavado::pn_enclavado(const id_elemento &id, const json &j) : id(id), topic
         tipo = {TipoPN::Automatico, TipoPN::Automatico};
     else
         tipo = {TipoPN::Enclavado, TipoPN::Enclavado};
+    subscribe("pn/"+id_to_mqtt(id.id)+"/comprobacion");
 }

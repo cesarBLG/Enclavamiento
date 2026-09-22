@@ -32,6 +32,8 @@ señal_impl::señal_impl(const id_elemento &id, const json &j) : señal(id, j), 
     clear_request = !cierre_stick;
     aprec_anterior = parametros.aprec_anterior;
     aspecto_desviada = parametros.aspecto_desviada;
+
+    subscribe("signal/"+id_to_mqtt(id.id)+"/rec_aprec");
 }
 void señal_impl::determinar_aspecto()
 {

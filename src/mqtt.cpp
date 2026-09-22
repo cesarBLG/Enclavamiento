@@ -13,6 +13,7 @@ std::string name;
 
 std::map<std::string, std::vector<std::string>> handled_topics;
 std::set<std::string> managed_topics;
+std::set<std::string> subscribed_topics;
 bool connected = false;
 bool gestor_conectado = true;
 void on_connect(struct mosquitto *mosq, void *userdata, int rc)
@@ -22,23 +23,18 @@ void on_connect(struct mosquitto *mosq, void *userdata, int rc)
         connected = true;
         mosquitto_subscribe(mosq, nullptr, "gestor_conexion", 0);
         mosquitto_subscribe(mosq, nullptr, "desconexion/+", 0);
-        mosquitto_subscribe(mosq, nullptr, "mando/+", 0);
-        mosquitto_subscribe(mosq, nullptr, "cejes/+/+/event", 0);
-        mosquitto_subscribe(mosq, nullptr, "cv/+/+/state", 0);
-        mosquitto_subscribe(mosq, nullptr, "cv/+/+/field_state", 0);
-        mosquitto_subscribe(mosq, nullptr, "cv/+/+/action", 0);
-        mosquitto_subscribe(mosq, nullptr, "bloqueo/+/+/state", 0);
-        mosquitto_subscribe(mosq, nullptr, "bloqueo/+/+/colateral", 0);
-        mosquitto_subscribe(mosq, nullptr, "signal/+/+/state", 0);
-        mosquitto_subscribe(mosq, nullptr, "signal/+/+/rec_aprec", 0);
-        mosquitto_subscribe(mosq, nullptr, "pn/+/+/comprobacion", 0);
-        mosquitto_subscribe(mosq, nullptr, "aguja/+/+/comprobacion", 0);
-        mosquitto_subscribe(mosq, nullptr, "fec/+", 0);
+        for (auto &t : subscribed_topics) {
+            mosquitto_subscribe(mosq, nullptr, t.c_str(), 0);
+        }
     } else {
         log("mqtt", "connection failed", LOG_DEBUG);
     }
 }
-
+void subscribe(const std::string &topic)
+{
+    if (subscribed_topics.insert(topic).second && connected)
+        mosquitto_subscribe(mosq, nullptr, topic.c_str(), 0);
+}
 void send_message(const std::string &topic, const std::string &payload, int qos, bool retain)
 {
     mosquitto_publish(mosq, nullptr, topic.c_str(), payload.size(), payload.c_str(), qos, retain);

@@ -357,6 +357,7 @@ void init_items_ordered(const json &j, std::string tipo)
                 id_elemento ic(estacion,id);
                 if (dependencias.find(estacion) == dependencias.end()) {
                     cvs[ic] = new cv(ic, TipoSeccion::Lineal);
+                    subscribe("cv/"+id_to_mqtt(ic.id)+"/state");
                 } else if (jcv.contains("ContadoresEjes")) {
                     cv_impls[ic] = new cv_impl_cejes(ic, jcv);
                     cvs[ic] = cv_impls[ic];
@@ -393,6 +394,7 @@ void init_items_ordered(const json &j, std::string tipo)
                 if (dependencias.find(estacion) == dependencias.end()) {
                     auto *señ = new señal(is, js);
                     señales[is] = señ;
+                    subscribe("signal/"+id_to_mqtt(is.id)+"/state");
                 } else {
                     auto *señ = new señal_impl(is, js);
                     señales[is] = señ;
@@ -517,6 +519,9 @@ void init_items(const json &j)
         topicstr<<top<<"\n";
     }
     send_message("desconexion/"+name, topicstr.str(), 1, true);
+
+    subscribe("mando/+");
+    subscribe("fec/+");
 }
 int64_t last_sent_state;
 void loop_items()

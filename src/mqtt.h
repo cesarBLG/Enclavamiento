@@ -14,6 +14,7 @@ extern std::set<std::string> managed_topics;
 
 void send_message(const std::string &topic, const std::string &payload, int qos=0, bool retain=false);
 void handle_message(const std::string &topic, const std::string &payload);
+void subscribe(const std::string &topic);
 std::string id_to_mqtt(std::string id);
 std::string id_from_mqtt(std::string id);
 

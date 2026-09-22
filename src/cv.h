@@ -129,7 +129,7 @@ public:
 class cv_impl_cv : public cv_impl
 {
     public:
-    cv_impl_cv(const id_elemento &id, const json &j) : cv_impl(id, j) {}
+    cv_impl_cv(const id_elemento &id, const json &j);
     void message_cv_campo(estado_cv ecv)
     {
         estado = ecv.estado;

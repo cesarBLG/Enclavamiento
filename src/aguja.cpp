@@ -10,6 +10,7 @@ aguja::aguja(const id_elemento &id, const json &j) : seccion_via(id, j, TipoSecc
     all_outs[lado][0] = {0,1};
     all_outs[opp_lado(lado)][0].insert(0);
     all_outs[opp_lado(lado)][1].insert(0);
+    subscribe("aguja/"+id_to_mqtt(id.id)+"/comprobacion");
     update();
 }
 RespuestaMando aguja::mando(const std::string &cmd, int me)

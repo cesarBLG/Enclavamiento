@@ -48,6 +48,11 @@ cv_impl::cv_impl(const id_elemento &id, const json &j) : cv(id, j.value("Tipo", 
 {
     estado = estado_previo = EstadoCV::Ocupado;
     averia = true;
+    subscribe("cv/"+id_to_mqtt(id.id)+"/action");
+}
+cv_impl_cv::cv_impl_cv(const id_elemento &id, const json &j) : cv_impl(id, j)
+{
+    subscribe("cv/"+id_to_mqtt(id.id)+"/field_state");
 }
 cv_impl_cejes::cv_impl_cejes(const id_elemento &id, const json &j) : cv_impl(id, j), cejes(j["ContadoresEjes"])
 {
@@ -61,19 +66,19 @@ cv_impl_cejes::cv_impl_cejes(const id_elemento &id, const json &j) : cv_impl(id,
     perdida_secuencia = false;
     estado_raw = estado = estado_previo = cejes.empty() ? EstadoCV::Libre : EstadoCV::Ocupado;
 
-    lados<bool> lados_cejes;
-    for (auto &[id, pos] : cejes) {
-        lados_cejes[pos.lado] = true;
-    }
-    if (!lados_cejes[Lado::Impar] || !lados_cejes[Lado::Par]) topera = true;
-
     averia = false;
-    for (auto &[idc, ceje] : cejes) {
+    lados<bool> lados_cejes;
+    for (auto &[id, ceje] : cejes) {
+        lados_cejes[ceje.lado] = true;
+
         if (ceje.ocupar) {
             ceje.desconexion = true;
             averia = true;
         }
+
+        subscribe("cejes/"+id_to_mqtt(id)+"/event");
     }
+    if (!lados_cejes[Lado::Impar] || !lados_cejes[Lado::Par]) topera = true;
 }
 void from_json(const json &j, cv_impl_cejes::cejes_position &position)
 {
