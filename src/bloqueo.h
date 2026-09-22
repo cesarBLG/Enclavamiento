@@ -25,7 +25,8 @@ protected:
     Lado sentido_preferente;
     EstadoBloqueo estado_inicial;
     std::vector<seccion_via*> cvs;
-    std::vector<cv*> cvs_entrada;
+    cv* cv_entrada = nullptr;
+    std::vector<std::pair<seccion_via*,std::vector<elemento_ruta>>> cvs_agujas;
     lados<bool> ocupado;
     estado_bloqueo_lado colateral;
     estado_bloqueo estado_completo;
@@ -35,6 +36,7 @@ protected:
     std::map<TipoSoneria,int64_t> sonerias;
 public:
     bloqueo(const std::string &estacion, const json &j);
+    void construir_cv_agujas(seccion_via *sec, seccion_via *prev, Lado dir, std::vector<elemento_ruta> &r);
     void send_state();
     bool bloqueo_permitido(bool emisor);
     bool desbloqueo_permitido();

@@ -43,12 +43,6 @@ public:
     }
     frontera* get_frontera();
 };
-struct elemento_ruta
-{
-    seccion_via *seccion;
-    std::optional<Lado> dir;
-    lados<int> outs;
-};
 class movimiento
 {
 public:

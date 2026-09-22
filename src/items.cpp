@@ -463,21 +463,10 @@ void init_items(const json &j)
                 cejes_to_pos[id] = ceje;
             } else if (cv->secciones.size() == 1) {
                 auto *sec = *cv->secciones.begin();
-                int in = -1;
-                for (auto &outs : sec->all_outs) {
-                    int in2 = outs[opp_lado(ceje.lado)];
-                    if (in2 != in) {
-                        if (in < 0) {
-                            in = in2;
-                        } else {
-                            in = -1;
-                            break;
-                        }
-                    }
-                }
-                if (in >= 0) {
+                auto &s = sec->all_outs[ceje.lado];
+                if (s.size() == 1) {
                     ceje.seccion = sec->id;
-                    ceje.pin = in;
+                    ceje.pin = s.begin()->first;
                     cejes_to_pos[id] = ceje;
                 }
             }

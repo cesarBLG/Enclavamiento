@@ -9,7 +9,6 @@
 #include "time.h"
 #include "log.h"
 #include "cv.h"
-#include "bloqueo.h"
 #include "estado_aguja.h"
 #include <optional>
 class movimiento;
@@ -20,6 +19,12 @@ struct reserva_seccion
 {
     movimiento *ruta_asegurada;
     std::optional<Lado> lado;
+    lados<int> outs;
+};
+struct elemento_ruta
+{
+    seccion_via *seccion;
+    std::optional<Lado> dir;
     lados<int> outs;
 };
 struct punto_negro
@@ -83,7 +88,7 @@ public:
     const id_elemento id_cv;
 
     std::set<pn_enclavado*> pns;
-    std::vector<lados<int>> all_outs;
+    lados<std::map<int,std::set<int>>> all_outs;
 protected:
     lados<std::map<int,señal*>> señales;
     cv *cv_seccion;
@@ -209,6 +214,34 @@ public:
     int get_active_out(int in, Lado dir)
     {
         return active_outs[dir][in];
+    }
+    bool acceso_posible(int out, Lado dir, bool activas=false, bool comprobando=false)
+    {
+        if (activas) {
+            for (auto &[in, out2] : active_outs[dir]) {
+                if (out == out2)
+                    return true;
+                if (out2 == -1 && !comprobando) return acceso_posible(in, out, dir);
+            }
+        } else {
+            for (auto &[in, s] : all_outs[dir]) {
+                if (s.find(out) != s.end())
+                    return true;
+            }
+        }
+    }
+    bool acceso_posible(int in, int out, Lado dir, bool activas=false, bool comprobando=false)
+    {
+        if (activas) {
+            int out2 = active_outs[dir][in];
+            if (out == out2)
+                return true;
+            if (out2 == -1 && !comprobando) return acceso_posible(in, out, dir);
+        } else {
+            auto &s = all_outs[dir][in];
+            return s.find(out) != s.end();
+        }
+        return false;
     }
     virtual bool is_desviada(seccion_via *prev, Lado dir);
     RemotaCV get_estado_remota();

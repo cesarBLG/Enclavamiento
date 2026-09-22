@@ -85,14 +85,7 @@ bool nodo_deslizamiento::compatible(movimiento *r, int id_deslizamiento)
             if (out != it->second[dir])
                 continue;
         }
-        bool relevante = false;
-        for (auto &pins : seccion->all_outs) {
-            if (pins[dir] == out && pins[opp_lado(dir)] == in) {
-                relevante = true;
-                break;
-            }
-        }
-        if (!relevante)
+        if (!seccion->acceso_posible(in, out, dir))
             continue;
         // Comprobar si el deslizamiento es compatible con rutas ya formadas
         if (!seccion->deslizamiento_posible(in, out, dir)) {
@@ -122,14 +115,7 @@ bool nodo_deslizamiento::invade_galibo(std::optional<std::pair<Lado,int>> pin_ca
                 if (out != it->second[dir])
                     continue;
             }
-            bool relevante = false;
-            for (auto &pins : seccion->all_outs) {
-                if (pins[dir] == out && pins[opp_lado(dir)] == in) {
-                    relevante = true;
-                    break;
-                }
-            }
-            if (!relevante)
+            if (!seccion->acceso_posible(in, out, dir))
                 continue;
             if (out == pin_causa->second)
                 return true;

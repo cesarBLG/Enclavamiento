@@ -7,10 +7,9 @@ aguja::aguja(const id_elemento &id, const json &j) : seccion_via(id, j, TipoSecc
     if (j.contains("SeccionesTalón")) siguientes_secciones[lado] = j["SeccionesTalón"];
     talonable = j.value("Talonable", true);
     if (j.contains("PosiciónMuelle")) talonable_muelle = j["PosiciónMuelle"] == 1 ? PosicionAguja::Invertida : PosicionAguja::Normal;
-    lados<int> pins = {0,0};
-    all_outs.push_back({pins});
-    pins[lado] = 1;
-    all_outs.push_back(pins);
+    all_outs[lado][0] = {0,1};
+    all_outs[opp_lado(lado)][0].insert(0);
+    all_outs[opp_lado(lado)][1].insert(0);
     update();
 }
 RespuestaMando aguja::mando(const std::string &cmd, int me)

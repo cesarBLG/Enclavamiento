@@ -9,8 +9,8 @@ seccion_via::seccion_via(const id_elemento &id, const json &j, TipoSeccion tipo)
         for (int i=0; i<(tipo == TipoSeccion::Cruzamiento ? 2 : 1); i++) {
             for (auto &l : {Lado::Impar, Lado::Par}) {
                 active_outs[l][i] = i;
+                all_outs[l][i].insert(i);
             }
-            all_outs.push_back({i, i});
         }
     }
     auto cv_it = cvs.find(id_cv);
@@ -306,25 +306,16 @@ void seccion_via::prev_secciones(seccion_via *next, Lado dir_fwd, std::vector<st
     Lado lado = opp_lado(dir_fwd);
     int out = get_out(next, dir_fwd);
     if (out < 0) return;
-    std::set<int> ins;
-    if (activas) {
-        for (auto &[in, out2] : active_outs[dir_fwd]) {
-            if (out2 == out) {
-                ins.insert(in);
-            }
+    auto &sig = siguientes_secciones[lado];
+    for (int in=0; in<sig.size(); in++) {
+        if (activas) {
+            if (active_outs[dir_fwd][in] != out && (!ruta_asegurada || ruta_asegurada->outs[dir_fwd] != out))
+                continue;
+        } else {
+            auto &s = all_outs[dir_fwd][in];
+            if (s.find(out) == s.end())
+                continue;
         }
-        if (ruta_asegurada && ruta_asegurada->outs[dir_fwd] == out) {
-            ins.insert(ruta_asegurada->outs[lado]);
-        }
-    } else {
-        for (auto &pins : all_outs) {
-            if (pins[dir_fwd] == out)
-                ins.insert(pins[lado]);
-        }
-    }
-    for (int in : ins) {
-        auto &sig = siguientes_secciones[lado];
-        if (sig.size() <= in) continue;
         auto p = sig[in];
         if (p.id.id == "") continue;
         secciones.push_back({::secciones[p.id], p.invertir_paridad ? lado : dir_fwd});

@@ -10,18 +10,37 @@ tipo(j.value("Tipo", TipoBloqueo::BAU)), bloqueo_emisor(lado == Lado::Impar ? Es
     for (auto &cv : j["CVs"]) {
         cvs.push_back(secciones[id_elemento(cv)]);
     }
+    int num_cve = j.value("CVsEntrada", 1);
     if (!cvs.empty()) {
         auto nxt = cvs[0]->get_seccion_in(lado, 0);
-        auto *sig = nxt.first->señal_inicio(opp_lado(nxt.second), cvs[0]);
-        if (sig != nullptr) señal_entrada = (señal_impl*)sig;
-    }
-    if (j.contains("CVsEntrada")) {
-        for (auto &cv : j["CVsEntrada"]) {
-            cvs_entrada.push_back(::cvs[id_elemento(cv)]);
+        if (nxt.first != nullptr) {
+            auto *sig = nxt.first->señal_inicio(opp_lado(nxt.second), cvs[0]);
+            if (sig != nullptr) señal_entrada = (señal_impl*)sig;
+            if (nxt.first->get_cv() != nullptr && num_cve > 0) {
+                cv_entrada = nxt.first->get_cv();
+                std::vector<elemento_ruta> r;
+                if (num_cve > 1) construir_cv_agujas(nxt.first, cvs[0], nxt.second, r);
+            }
         }
-    } else if (!cvs.empty()) {
-        auto nxt = cvs[0]->get_seccion_in(lado, 0);
-        if (nxt.first != nullptr && nxt.first->get_cv() != nullptr) cvs_entrada.push_back(::cvs[nxt.first->id_cv]);
+    }
+}
+void bloqueo::construir_cv_agujas(seccion_via *sec, seccion_via *prev, Lado dir, std::vector<elemento_ruta> &r)
+{
+    if (sec->get_cv() != nullptr && sec->get_cv() != cv_entrada) {
+        cvs_agujas.push_back({sec, r});
+        return;
+    }
+    std::vector<std::pair<seccion_via*,Lado>> nxt;
+    sec->prev_secciones(prev, dir, nxt, false);
+    for (int i=0; i<nxt.size(); i++) {
+        if (i == 0) {
+            r.push_back({sec, dir, lados<int>::from_directional(sec->get_in(nxt[i].first, dir), sec->get_out(prev, dir), dir)});
+            construir_cv_agujas(nxt[i].first, sec, nxt[i].second, r);
+        } else {
+            std::vector<elemento_ruta> r2;
+            r2.push_back({sec, dir, lados<int>::from_directional(sec->get_in(nxt[i].first, dir), sec->get_out(prev, dir), dir)});
+            construir_cv_agujas(nxt[i].first, sec, nxt[i].second, r2);
+        }
     }
 }
 bool bloqueo::bloqueo_permitido(bool emisor)
@@ -69,7 +88,7 @@ bool bloqueo::desbloqueo_permitido()
     // - Si no existe posibilidad de cruce en la estación emisora (estación cerrada sin agujas talonables),
     //   esta estación no puede ser receptora de otro bloqueo
     if (ruta == TipoMovimiento::Itinerario || colateral.ruta == TipoMovimiento::Itinerario || ocupado.par || ocupado.impar) return false;
-    if (escape && !cvs_entrada.empty() && cvs_entrada[0]->get_state() > EstadoCV::Prenormalizado) return false;
+    if (escape && cv_entrada != nullptr && cv_entrada->get_state() > EstadoCV::Prenormalizado) return false;
     if (tipo == TipoBloqueo::BAD || tipo == TipoBloqueo::BLAD) return false;
     if (estado == bloqueo_emisor) {
         if (bloqueo_vinculado != nullptr && (colateral.bloqueo_siguiente || bloqueo_vinculado->propagacion_completa) && (bloqueo_vinculado->estado == bloqueo_vinculado->bloqueo_receptor || bloqueo_vinculado->colateral.estado_objetivo == bloqueo_vinculado->bloqueo_receptor || bloqueo_vinculado->estado == EstadoBloqueo::SinDatos)) {
@@ -121,16 +140,29 @@ void bloqueo::message_cv(const id_elemento &id, estado_cv ecv)
     if (!escape && estado != bloqueo_emisor && tipo != TipoBloqueo::BAD && tipo != TipoBloqueo::BLAD) {
         bool esc=false;
         // Liberación circuito de agujas estando ocupado el de entrada
-        if (ruta == TipoMovimiento::Ninguno && cvs_entrada.size() > 1 && id == cvs_entrada[1]->id && ((ecv.evento->lado == lado && !ecv.evento->ocupacion) || (!ecv.evento && ecv.estado_previo > EstadoCV::Prenormalizado && ecv.estado <= EstadoCV::Prenormalizado)) && cvs_entrada[0]->get_state() > EstadoCV::Prenormalizado) {
-            esc = true;
+        if (ruta == TipoMovimiento::Ninguno && ((ecv.evento && ecv.evento->lado == lado && !ecv.evento->ocupacion) || (!ecv.evento && ecv.estado_previo > EstadoCV::Prenormalizado && ecv.estado <= EstadoCV::Prenormalizado)) && cv_entrada != nullptr && cv_entrada->get_state() > EstadoCV::Prenormalizado && !cv_entrada->is_averia()) {
+            for (auto &[sec, r] : cvs_agujas) {
+                if (sec->get_cv()->id != id) continue;
+                bool accesible = true;
+                for (auto &e : r) {
+                    if (!e.seccion->acceso_posible(e.outs[opp_lado(*e.dir)], e.outs[*e.dir], *e.dir, true)) {
+                        accesible = false;
+                        break;
+                    }
+                }
+                if (accesible) {
+                    esc = true;
+                    break;
+                }
+            }
         }
         if ((ecv.evento && ecv.evento->lado == lado && ecv.evento->ocupacion) || (!ecv.evento && ecv.estado_previo <= EstadoCV::Prenormalizado && ecv.estado > EstadoCV::Prenormalizado && !ecv.averia)) {
             // Ocupación del circuito de entrada hacia el bloqueo
-            if (cvs_entrada.size() == 1 && id == cvs_entrada[0]->id && ecv.evento && ruta == TipoMovimiento::Ninguno) {
+            if (cvs_agujas.empty() && cv_entrada != nullptr && id == cv_entrada->id && ecv.evento && ruta == TipoMovimiento::Ninguno) {
                 esc = true;
             }
             // Ocupación del primer circuito de trayecto
-            if (index == 0 && (ecv.evento || (!cvs_entrada.empty() && cvs_entrada[0]->get_state() > EstadoCV::Prenormalizado))) {
+            if (index == 0 && (ecv.evento || (cv_entrada != nullptr && cv_entrada->get_state() > EstadoCV::Prenormalizado))) {
                 // No se produce escape si está establecida maniobra que incluye el CV de trayecto
                 if (ruta != TipoMovimiento::Maniobra || !cvs[index]->is_asegurada()) {
                     esc = true;
