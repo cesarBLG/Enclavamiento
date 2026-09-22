@@ -494,6 +494,17 @@ void init_items(const json &j)
             rutas.insert(ruta);
         }
     }
+    for (auto &[id,sec] : secciones) {
+        for (auto &pt : sec->puntos_negros) {
+            punto_negro pt2 = pt;
+            pt2.ocupacion = false;
+            pt2.pin_ajeno = pt.pin_propio;
+            pt2.pin_propio = pt.pin_ajeno;
+            pt2.seccion_causante = sec->id;
+            pt2.seccion_afectada = secciones[pt.seccion_causante];
+            secciones[pt.seccion_causante]->puntos_negros.push_back(pt2);
+        }
+    }
 
     //std::stringstream managed_topics;
     for (auto &kvp : cv_impls) {

@@ -33,14 +33,18 @@ struct punto_negro
     id_elemento seccion_causante;
     std::optional<std::pair<Lado, int>> pin_propio;
     std::optional<std::pair<Lado, int>> pin_ajeno;
+    bool ocupacion = true;
     punto_negro() = default;
     punto_negro(seccion_via *sec, const json &j);
     bool afectado_propio(lados<int> outs)
     {
         return !pin_propio || outs[pin_propio->first] == pin_propio->second;
     }
+    bool afectado_ajeno(lados<int> outs)
+    {
+        return !pin_ajeno || outs[pin_ajeno->first] == pin_ajeno->second;
+    }
 };
-extern std::map<id_elemento, std::vector<punto_negro*>> puntos_negros_por_causa;
 class seccion_via;
 struct nodo_flanco
 {
@@ -89,6 +93,7 @@ public:
 
     std::set<pn_enclavado*> pns;
     lados<std::map<int,std::set<int>>> all_outs;
+    std::vector<punto_negro> puntos_negros;
 protected:
     lados<std::map<int,señal*>> señales;
     cv *cv_seccion;
@@ -101,7 +106,6 @@ protected:
 
     std::map<nodo_deslizamiento*, movimiento*> deslizamiento;
 
-    std::vector<punto_negro*> puntos_negros;
     std::vector<flanco*> proteccion_flanco;
 
     lados<int> ocupacion_outs;
@@ -144,7 +148,6 @@ public:
         }
     }
     bool asegurar_posible(movimiento *ruta, lados<int> outs, std::optional<Lado> dir);
-    bool deslizamiento_posible(int in, int out, Lado dir);
     bool transitable(seccion_via *prev, Lado dir)
     {
         return transitable(get_in(prev, dir), dir);

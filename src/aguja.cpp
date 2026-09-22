@@ -175,11 +175,10 @@ seccion_via *aguja::ruta_fija(seccion_via *prev, Lado &dir)
 void aguja::set_escape(aguja *ag)
 {
     escape = ag;
-    auto *pt = new punto_negro();
-    pt->seccion_afectada = this;
-    pt->pin_ajeno = {ag->lado, 1};
-    pt->pin_propio = {lado, 0};
-    pt->seccion_causante = ag->id.id;
+    punto_negro pt;
+    pt.seccion_afectada = this;
+    pt.pin_ajeno = {ag->lado, 1};
+    pt.pin_propio = {lado, 0};
+    pt.seccion_causante = ag->id.id;
     puntos_negros.push_back(pt);
-    puntos_negros_por_causa[ag->id].push_back(pt);
 }

@@ -163,7 +163,7 @@ Cada bloqueo es un objeto de un array.
 | `Tipo` | `BAU`, `BAD`, `BAB`, `BLAU`, `BLAD` o `BLAB` | `BAU` | Modalidad de bloqueo. |
 | `SentidoPreferente` | `Lado` | — | **Obligatorio** salvo en `BAU` y `BLAU`. Determina el estado inicial de `BAD` y `BLAD`, inhibe el desbloqueo automático en ese sentido. |
 | `CVs` | array de referencias a secciones | — | **Obligatorio.** Secciones del trayecto de bloqueo, empezando por el más cercano a la estación. |
-| `CVsEntrada` | array de referencias a CV | — | CVs de entrada para detectar escapes de material. |
+| `CVsEntrada` | entero | 1 | Número de CVs de entrada/agujas para detectar escapes de material. |
 
 ### Destino de ruta (`DestinosRuta`)
 

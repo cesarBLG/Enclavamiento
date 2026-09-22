@@ -2,7 +2,6 @@
 #include "ruta.h"
 #include "items.h"
 #include "pn_enclavado.h"
-std::map<id_elemento, std::vector<punto_negro*>> puntos_negros_por_causa;
 seccion_via::seccion_via(const id_elemento &id, const json &j, TipoSeccion tipo) : id(id), bloqueo_asociado(j.contains("Bloqueo") ? std::optional<id_elemento>(id_elemento(j["Bloqueo"])) : std::nullopt), tipo(tipo), id_cv(j.value("CV", id.id))
 {
     if (tipo == TipoSeccion::Lineal || tipo == TipoSeccion::Cruzamiento) {
@@ -30,9 +29,8 @@ seccion_via::seccion_via(const id_elemento &id, const json &j, TipoSeccion tipo)
     }
     if (j.contains("PuntosNegros")) {
         for (auto &jg : j["PuntosNegros"]) {
-            auto *pt = new punto_negro(this, jg);
+            punto_negro pt(this, jg);
             puntos_negros.push_back(pt);
-            puntos_negros_por_causa[pt->seccion_causante].push_back(pt);
         }
     }
     trayecto = j.value("Trayecto", bloqueo_asociado.has_value());
@@ -95,11 +93,11 @@ void seccion_via::liberar(movimiento *ruta)
 bool seccion_via::invade_galibo(lados<int> outs, movimiento *ruta)
 {
     // Comprobar si hay otra ruta asegurada incompatible por gálibo
-    for (auto *pt : puntos_negros) {
-        if (!pt->afectado_propio(outs)) continue;
-        auto *sec = secciones[pt->seccion_causante];
+    for (auto &pt : puntos_negros) {
+        if (!pt.afectado_propio(outs)) continue;
+        auto *sec = secciones[pt.seccion_causante];
         if (sec->ruta_asegurada && sec->ruta_asegurada->ruta_asegurada != ruta) {
-            if (!pt->pin_ajeno || sec->ruta_asegurada->outs[pt->pin_ajeno->first] == pt->pin_ajeno->second)
+            if (pt.afectado_ajeno(sec->ruta_asegurada->outs))
                 return true;
         }
     }
@@ -118,16 +116,6 @@ bool seccion_via::asegurar_posible(movimiento *ruta, lados<int> outs, std::optio
 
     return true;
 }
-bool seccion_via::deslizamiento_posible(int in, int out, Lado dir)
-{
-    if (ruta_asegurada && (ruta_asegurada->lado != dir || ruta_asegurada->outs[opp_lado(dir)] != in)) {
-        return false;
-    }
-
-    if (invade_galibo(lados<int>::from_directional(in, out, dir))) return false;
-
-    return true;
-}
 bool seccion_via::transitable(int in, Lado dir)
 {
     if (in < 0) return false;
@@ -135,16 +123,18 @@ bool seccion_via::transitable(int in, Lado dir)
     if (out < 0) return false;
     auto outs = lados<int>::from_directional(in, out, dir);
 
-    if (invade_galibo(outs) || afectada_galibo(outs)) return false;
+    if (afectada_galibo(outs)) return false;
 
     // Comprobar que no hay un deslizamiento que invada gálibo
-    for (auto *pt : puntos_negros) {
-        if (!pt->afectado_propio(outs)) continue;
-        auto *sec = secciones[pt->seccion_causante];
-        for (auto &[desliz, r] : sec->deslizamiento) {
-            if (ruta_asegurada && ruta_asegurada->ruta_asegurada == r) continue;
-            if (desliz->invade_galibo(pt->pin_ajeno, desliz->deslizamiento->deslizamiento_activo))
-                return false;
+    if (!ruta_asegurada) {
+        if (invade_galibo(outs)) return false;
+        for (auto &pt : puntos_negros) {
+            if (!pt.afectado_propio(outs)) continue;
+            auto *sec = secciones[pt.seccion_causante];
+            for (auto &[desliz, r] : sec->deslizamiento) {
+                if (desliz->invade_galibo(pt.pin_ajeno, desliz->deslizamiento->deslizamiento_activo))
+                    return false;
+            }
         }
     }
 
@@ -161,21 +151,21 @@ bool seccion_via::transitable(int in, Lado dir)
 }
 bool seccion_via::afectada_galibo(lados<int> outs)
 {
-    for (auto *pt : puntos_negros) {
-        if (!pt->afectado_propio(outs)) continue;
-        auto *sec = secciones[pt->seccion_causante];
+    for (auto &pt : puntos_negros) {
+        if (!pt.ocupacion || !pt.afectado_propio(outs)) continue;
+        auto *sec = secciones[pt.seccion_causante];
         auto *cv = sec->get_cv();
         if (cv != nullptr && cv->get_state() > EstadoCV::Prenormalizado) {
             // Ocupación en la posición de falta de gálibo
-            if (!pt->pin_ajeno || sec->ocupacion_outs[pt->pin_ajeno->first] == pt->pin_ajeno->second)
+            if (pt.afectado_ajeno(sec->ocupacion_outs))
                 return true;
             // Ocupación en posición desconocida
-            if (sec->ocupacion_outs[pt->pin_ajeno->first] < 0 && (cv->ocupacion_intempestiva || sec->ocupacion_outs[opp_lado(pt->pin_ajeno->first)] >= 0))
+            if (sec->ocupacion_outs[pt.pin_ajeno->first] < 0 && (cv->ocupacion_intempestiva || sec->ocupacion_outs[opp_lado(pt.pin_ajeno->first)] >= 0))
                 return true;
             // Posición actual desconocida
-            int in2 = sec->active_outs[opp_lado(pt->pin_ajeno->first)][pt->pin_ajeno->second];
-            for (auto &[in3,out3] : sec->active_outs[pt->pin_ajeno->first]) {
-                if ((out3 < 0 && in2 == in3) || out3 == pt->pin_ajeno->second)
+            int in2 = sec->active_outs[opp_lado(pt.pin_ajeno->first)][pt.pin_ajeno->second];
+            for (auto &[in3,out3] : sec->active_outs[pt.pin_ajeno->first]) {
+                if ((out3 < 0 && in2 == in3) || out3 == pt.pin_ajeno->second)
                     return true;
             }
         }
@@ -255,11 +245,8 @@ void seccion_via::message_cv(const id_elemento &id, estado_cv ev)
         pn->message_cv(ev);
     }
 
-    auto it = puntos_negros_por_causa.find(this->id);
-    if (it != puntos_negros_por_causa.end()) {
-        for (auto *pt : it->second) {
-            remota_cambio_elemento("sec", pt->seccion_afectada->id);
-        }
+    for (auto &pt : puntos_negros) {
+        remota_cambio_elemento("sec", pt.seccion_causante);
     }
 
     remota_cambio_elemento("cv", id);

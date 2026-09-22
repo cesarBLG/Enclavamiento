@@ -63,22 +63,29 @@ bool nodo_deslizamiento::compatible(movimiento *r, int id_deslizamiento)
         if (in != it->second[opp_lado(dir)])
             return false;
     }
+
     // Comprobar si el deslizamiento es compatible con la ruta a formar
     if (r != nullptr) {
         auto secciones_ruta = r->get_secciones();
         for (int i=0; i<secciones_ruta.size(); i++) {
             auto [sec2, dir2, outs] = secciones_ruta[i];
-            for (auto *pt : puntos_negros_por_causa[seccion->id]) {
-                if (pt->seccion_afectada != sec2 || !pt->afectado_propio(outs))
+
+            if (sec2 == seccion && it != posicion_aparatos.end() && outs[dir] != it->second[dir]) return false;
+
+            // No comprobar rutas de continuación
+            if (r->es_ruta && ((ruta*)r)->get_señal_inicio() == deslizamiento->fin_movimiento->señal_fin) continue;
+
+            for (auto &pt : seccion->puntos_negros) {
+                if (pt.seccion_causante != sec2->id || !pt.afectado_ajeno(outs))
                     continue;
-                if (invade_galibo(pt->pin_ajeno, id_deslizamiento))
+                if (invade_galibo(pt.pin_propio, id_deslizamiento))
                     return false;
             }
-            if (sec2 != seccion) continue;
-            if (dir != dir2 || in != outs[opp_lado(dir)]) return false;
+
+            if (sec2 == seccion && (dir != dir2 || in != outs[opp_lado(dir)])) return false;
         }
-        // TODO: comprobar aparatos
     }
+
     int num = seccion->num_outs(dir);
     for (int out=0; out<num; out++) {
         if (it != posicion_aparatos.end()) {
@@ -87,11 +94,28 @@ bool nodo_deslizamiento::compatible(movimiento *r, int id_deslizamiento)
         }
         if (!seccion->acceso_posible(in, out, dir))
             continue;
-        // Comprobar si el deslizamiento es compatible con rutas ya formadas
-        if (!seccion->deslizamiento_posible(in, out, dir)) {
-            if (seccion->get_ruta_asegurada())
-                deslizamiento->rutas_afectadas.insert(seccion->get_ruta_asegurada()->ruta_asegurada);
+
+        auto ruta_asegurada = seccion->get_ruta_asegurada();
+        if (ruta_asegurada && (ruta_asegurada->lado != dir || ruta_asegurada->outs[opp_lado(dir)] != in)) {
+            // Deslizamiento incompatible con ruta ya formada
+            deslizamiento->rutas_afectadas.insert(ruta_asegurada->ruta_asegurada);
             return false;
+        } else if (!ruta_asegurada) {
+            // Comprobar si hay otra ruta asegurada incompatible por gálibo
+            auto outs = lados<int>::from_directional(in, out, dir);
+            for (auto &pt : seccion->puntos_negros) {
+                if (!pt.afectado_propio(outs)) continue;
+                auto *sec = secciones[pt.seccion_causante];
+                ruta_asegurada = sec->get_ruta_asegurada();
+                if (ruta_asegurada) {
+                    // No comprobar rutas de continuación
+                    if (ruta_asegurada->ruta_asegurada->es_ruta && ((ruta*)ruta_asegurada->ruta_asegurada)->get_señal_inicio() == deslizamiento->fin_movimiento->señal_fin) continue;
+                    if (pt.afectado_ajeno(ruta_asegurada->outs)) {
+                        deslizamiento->rutas_afectadas.insert(ruta_asegurada->ruta_asegurada);
+                        return false;
+                    }
+                }
+            }
         }
     }
     for (auto &n : next) {
@@ -103,10 +127,10 @@ bool nodo_deslizamiento::compatible(movimiento *r, int id_deslizamiento)
     }
     return true;
 }
-bool nodo_deslizamiento::invade_galibo(std::optional<std::pair<Lado,int>> pin_causa, int id_deslizamiento)
+bool nodo_deslizamiento::invade_galibo(std::optional<std::pair<Lado,int>> pin, int id_deslizamiento)
 {
     int in = seccion->get_in(prev, dir);
-    if (dir == pin_causa->first) {
+    if (dir == pin->first) {
         int num = seccion->num_outs(dir);
         auto &posicion_aparatos = deslizamiento->deslizamientos_orientados[id_deslizamiento];
         auto it = posicion_aparatos.find(seccion);
@@ -117,10 +141,10 @@ bool nodo_deslizamiento::invade_galibo(std::optional<std::pair<Lado,int>> pin_ca
             }
             if (!seccion->acceso_posible(in, out, dir))
                 continue;
-            if (out == pin_causa->second)
+            if (out == pin->second)
                 return true;
         }
-    } else if (in == pin_causa->second) {
+    } else if (in == pin->second) {
         return true;
     }
     return false;
