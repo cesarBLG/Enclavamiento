@@ -1,7 +1,7 @@
 #include "signal.h"
 #include "ruta.h"
 #include "items.h"
-señal::señal(const id_elemento &id, const json &j) : id(id), lado(j["Lado"]), tipo(j["Tipo"]), pin(j.value("Pin", 0)), bloqueo_asociado(j.contains("Bloqueo") ? std::optional<id_elemento>(id_elemento(j["Bloqueo"])) : std::nullopt), seccion(secciones[id_elemento(j["Sección"])]), seccion_prev(seccion->get_seccion_in(lado, pin).first), lado_prev(seccion->get_seccion_in(lado, pin).second)
+señal::señal(const id_elemento &id, const json &j) : id(id), lado(j["Lado"]), tipo(j["Tipo"]), pin(j.value("Pin", 0)), bloqueo_asociado(j.contains("Bloqueo") ? std::optional<id_elemento>(id_elemento(j["Bloqueo"])) : std::nullopt), seccion(secciones[id_elemento(j["Sección"])]), seccion_prev(seccion->get_seccion_in(lado, pin).first), lado_prev(seccion->get_seccion_in(lado, pin).second), señal_virtual(j.value("ERTMS", false))
 {
     seccion->vincular_señal(this, lado, pin);
     if (j.contains("AspectoAnteriorSeñal")) {
@@ -110,7 +110,7 @@ void señal_impl::determinar_aspecto()
         // Cerrar señales intermedias y de salida si falla comunicación con colateral
         cerrar |= bloqueo_act.estado == EstadoBloqueo::SinDatos;
         // Cerrar señal avanzada si está establecido el itinerario o maniobra de salida
-        cerrar |= tipo_opp != TipoMovimiento::Ninguno && tipo == TipoSeñal::Avanzada;
+        cerrar |= (tipo_opp == TipoMovimiento::Itinerario || (tipo_opp == TipoMovimiento::Maniobra && bloqueos[*bloq_id]->deslizamiento_bloqueo)) && tipo == TipoSeñal::Avanzada;
         // Cerrar señales intermedias y de salida si hay escape de material en sentido contrario
         cerrar |= bloqueo_act.escape[opp_lado(dir)];
         // Impedir maniobra de salida en caso de escape de material propio, salvo que la maniobra sea compatible con bloqueo receptor
@@ -233,7 +233,7 @@ void señal_impl::determinar_aspecto()
         aspecto_maximo_anterior_señal = std::min(aspecto_maximo_anterior_señal, aspecto);
     }
     // En caso de ruta a desviada, mostrar anuncio de precaución en señal anterior
-    if (desviada && aprec_anterior && tipo != TipoSeñal::Maniobra)
+    if (desviada && aprec_anterior && tipo != TipoSeñal::Maniobra && tipo != TipoSeñal::Retroceso && !señal_virtual)
         aspecto_maximo_anterior_señal = std::min(aspecto_maximo_anterior_señal, Aspecto::AnuncioPrecaucion);
 
     // En caso de pantallas cerradas, las señal anterior puede ordenar como máximo parada selectiva
@@ -244,8 +244,8 @@ void señal_impl::determinar_aspecto()
         if (sig_señal != nullptr)
             aspecto_maximo_anterior_señal = std::min(aspecto_maximo_anterior_señal, sig_señal->aspecto_maximo_anterior_señal);
     }
-    if (tipo == TipoSeñal::Maniobra && sig_señal != nullptr) aspecto_maximo_anterior_señal = std::min(aspecto_maximo_anterior_señal, sig_señal->aspecto_maximo_anterior_señal);
-    if (tipo == TipoSeñal::Maniobra || señal_virtual) this->desviada = desviada;
+    if ((tipo == TipoSeñal::Maniobra || tipo == TipoSeñal::Retroceso) && sig_señal != nullptr) aspecto_maximo_anterior_señal = std::min(aspecto_maximo_anterior_señal, sig_señal->aspecto_maximo_anterior_señal);
+    if (tipo == TipoSeñal::Maniobra || tipo == TipoSeñal::Retroceso || señal_virtual) this->desviada = desviada;
 }
 void señal_impl::update()
 {
@@ -338,7 +338,7 @@ RespuestaMando señal_impl::mando(const std::string &cmd, int me)
     }
     return RespuestaMando::OrdenRechazada;
 }
-std::pair<RemotaSIG, RemotaIMV> señal_impl::get_estado_remota()
+RemotaSIG señal_impl::get_estado_remota_sig()
 {
     RemotaSIG r;
     r.SIG_DAT = 1;
@@ -399,6 +399,10 @@ std::pair<RemotaSIG, RemotaIMV> señal_impl::get_estado_remota()
         r.SIG_FAI = 0;
     }
     r.SIG_GRP_ARS = 0;
+    return r;
+}
+RemotaIMV señal_impl::get_estado_remota_imv()
+{
     RemotaIMV i;
     if (ruta_activa != nullptr && ruta_activa->es_ruta && ((ruta*)ruta_activa)->get_señal_inicio() == this) {
         i = ((ruta*)ruta_activa)->get_estado_remota_inicio();
@@ -407,7 +411,15 @@ std::pair<RemotaSIG, RemotaIMV> señal_impl::get_estado_remota()
         i.IMV_DIF_VAL = 0;
         i.IMV_EST = rebasada ? 7 : 0;
     }
-    return {r, i};
+    return i;
+}
+RemotaPV señal_impl::get_estado_remota_pv()
+{
+    RemotaPV r;
+    r.PV_DAT = 1;
+    r.PV_DAT = aspecto == Aspecto::Parada ? 0 : 1;
+    r.PV_CS_IND = clear_request ? 0 : 1;
+    return r;
 }
 estado_inicio_ruta señal_impl::get_estado_inicio()
 {

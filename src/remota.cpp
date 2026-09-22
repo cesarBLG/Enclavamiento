@@ -84,11 +84,16 @@ void update_remota()
         fmvs[id] = r;
     }
     for (auto &[id, sig] : señal_impls) {
-        auto p = sig->get_estado_remota();
-        auto r = json(p.first);
-        if (sendall || r != sigs[id]) push(j, {ElementoRemota::SIG, id}, r);
-        sigs[id] = r;
-        r = json(p.second);
+        if (sig->señal_virtual) {
+            auto r = json(sig->get_estado_remota_pv());
+            if (sendall || r != sigs[id]) push(j, {ElementoRemota::PV, id}, r);
+            sigs[id] = r;
+        } else {
+            auto r = json(sig->get_estado_remota_sig());
+            if (sendall || r != sigs[id]) push(j, {ElementoRemota::SIG, id}, r);
+            sigs[id] = r;
+        }
+        auto r = json(sig->get_estado_remota_imv());
         if (sendall || r != imvs[id]) push(j, {ElementoRemota::IMV, id}, r);
         imvs[id] = r;
     }

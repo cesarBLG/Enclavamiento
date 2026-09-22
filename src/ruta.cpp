@@ -73,7 +73,7 @@ frontera *destino_ruta::get_frontera()
     }
     return nullptr;
 }
-ruta::ruta(const std::string &estacion, const json &j) : movimiento(estacion, j["Tipo"], (j["Tipo"] == TipoMovimiento::Itinerario ? ("I ") : (j["Tipo"] == TipoMovimiento::Rebase ? "R " : "M "))+estacion+" "+j["Inicio"].get<std::string>()+" "+j["Destino"].get<std::string>()), id_inicio(j["Inicio"]), id_destino(j["Destino"]), bloqueo_salida(j.contains("Bloqueo") ? std::optional<id_elemento>(id_elemento(j["Bloqueo"])) : std::nullopt)
+ruta::ruta(const std::string &estacion, const json &j) : movimiento(estacion, j["Tipo"], estacion+" "+j["Inicio"].get<std::string>()+" "+j["Destino"].get<std::string>(), true, j.value("ERTMS", false)), id_inicio(j["Inicio"]), id_destino(j["Destino"]), bloqueo_salida(j.contains("Bloqueo") ? std::optional<id_elemento>(id_elemento(j["Bloqueo"])) : std::nullopt)
 {
     id_elemento id_señal(estacion, id_inicio);
     if (señal_impls.find(id_señal) == señal_impls.end()) {
@@ -112,7 +112,7 @@ ruta::ruta(const std::string &estacion, const json &j) : movimiento(estacion, j[
         auto *fin = ::secciones[id_elemento(j["SecciónFin"])];
         do
         {
-            ocupacion_maxima_secciones[sec] = sec == fin && (tipo == TipoMovimiento::Rebase || tipo == TipoMovimiento::Maniobra) && j.contains("Deslizamiento") ? EstadoCanton::Ocupado : EstadoCanton::Prenormalizado;
+            ocupacion_maxima_secciones[sec] = sec == fin && (tipo == TipoMovimiento::Rebase || tipo == TipoMovimiento::Maniobra) && j.contains("DiferímetroDeslizamiento") ? EstadoCanton::Ocupado : EstadoCanton::Prenormalizado;
 
             if (sec != señal_inicio->seccion) {
                 auto *sig = sec->señal_inicio(dir, prv);
@@ -309,7 +309,7 @@ bool ruta::posible_establecer(bool msg)
                     sig = p.first;
                     l = opp_lado(p.second);
                 }
-                if (sec->is_trayecto() || parametros.deslizamiento_bloqueo) {
+                if (sec->is_trayecto() || (bloqueos.find(*bloqueo_salida) != bloqueos.end() ? bloqueos[*bloqueo_salida]->deslizamiento_bloqueo : parametros.deslizamiento_bloqueo)) {
                     // Requerir CV de avanzada libre
                     // También debe estar libre la proximidad de la avanzada (completa si hay bloqueo receptor)
                     while (sig != nullptr && sig->is_trayecto()) {
@@ -523,17 +523,6 @@ void ruta::update()
 
     // Desenclavar ruta al paso de la circulación
     if ((ocupada || señal_inicio->get_cv_inicio() == nullptr) && !sucesion_automatica) {
-        // En maniobra, cerrar señal cuando se libera el CV de señal
-        if (tipo == TipoMovimiento::Maniobra && señal_inicio->ruta_activa == this) {
-            for (int i=0; i<secciones.size(); i++) {
-                if (secciones[i].seccion->get_cv() != nullptr) {
-                    if (secciones[i].seccion->get_cv()->get_state() <= EstadoCV::Prenormalizado) {
-                        señal_inicio->ruta_activa = nullptr;
-                    }
-                    break;
-                }
-            }
-        }
         // Desenclavar secciones conforme se liberan
         for (int i=0; i<secciones.size(); i++) {
             bool anterior_libre = false;
@@ -631,8 +620,8 @@ void ruta::message_cv(const id_elemento &id, estado_cv ecv)
         // Impedir nueva activación de FAI hasta que transcurra cierto tiempo
         if (estado_fai == EstadoFAI::EnEspera) inicio_temporizacion_fai = get_milliseconds();
     }
-    // En maniobra, cerrar señal si se libera el circuito anterior a la señal
-    if (tipo == TipoMovimiento::Maniobra && !sucesion_automatica && (ocupada || cv_inicio == nullptr) && ecv.estado <= EstadoCV::Prenormalizado && ecv.estado_previo > EstadoCV::Prenormalizado) {
+    // En maniobra, cerrar señal si se libera el circuito anterior a la señal o el de señal
+    if (tipo == TipoMovimiento::Maniobra && !sucesion_automatica && señal_inicio->ruta_activa == this && (ocupada || cv_inicio == nullptr) && ecv.estado <= EstadoCV::Prenormalizado && ecv.estado_previo > EstadoCV::Prenormalizado) {
         bool proximidad_liberada = false;
         if (señal_inicio->proximidad_señal.proximidad0.size() > 0) {
             proximidad_liberada = true;
@@ -646,7 +635,7 @@ void ruta::message_cv(const id_elemento &id, estado_cv ecv)
             }
             if (!cambio_proximidad) proximidad_liberada = false;
         }
-        if (proximidad_liberada) señal_inicio->ruta_activa = nullptr;
+        if (proximidad_liberada || (cv_inicio != nullptr && cv_inicio->id == id)) señal_inicio->ruta_activa = nullptr;
     }
 }
 bool ruta::dai(bool anular_bloqueo)

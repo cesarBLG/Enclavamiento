@@ -21,6 +21,7 @@ public:
     const std::string topic;
     const std::string topic_colateral;
     señal_impl *señal_entrada = nullptr;
+    bool deslizamiento_bloqueo;
 protected:
     Lado sentido_preferente;
     EstadoBloqueo estado_inicial;

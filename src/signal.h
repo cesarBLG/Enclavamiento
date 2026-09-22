@@ -114,7 +114,9 @@ public:
     cv* get_cv_inicio();
     void message_señal(estado_señal est) override {}
     RespuestaMando mando(const std::string &cmd, int me);
-    std::pair<RemotaSIG, RemotaIMV> get_estado_remota();
+    RemotaSIG get_estado_remota_sig();
+    RemotaIMV get_estado_remota_imv();
+    RemotaPV get_estado_remota_pv();
     estado_inicio_ruta get_estado_inicio();
     bool is_rebasada() { return rebasada; }
     void set_reconocimiento_aprec(bool rec) { aprec_anterior_reconocido = rec; }

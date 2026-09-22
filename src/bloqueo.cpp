@@ -23,6 +23,7 @@ tipo(j.value("Tipo", TipoBloqueo::BAU)), bloqueo_emisor(lado == Lado::Impar ? Es
             }
         }
     }
+    deslizamiento_bloqueo = j.value("Deslizamiento", parametros.deslizamiento_bloqueo);
 }
 void bloqueo::construir_cv_agujas(seccion_via *sec, seccion_via *prev, Lado dir, std::vector<elemento_ruta> &r)
 {

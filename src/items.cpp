@@ -17,7 +17,7 @@ std::map<std::string, dependencia*> dependencias;
 std::map<id_elemento, pn_enclavado*> pns;
 parametros_predeterminados parametros;
 
-std::set<std::string> comandos_ruta = {"I","R","M","FAI","ID"};
+std::set<std::string> comandos_ruta = {"I","ER","R","M","FAI","ID"};
 std::set<std::string> comandos_señal = {"CS","CSEÑ","NPS","BS","ABS","DS","SA","ASA","DAI","DAB","AFA"};
 std::set<std::string> comandos_destino = {"BDE","BD","ABDE","ABD","BDS","ABDS","DEI"};
 std::set<std::string> comandos_bloqueo = {"B","AB","CSB","NSB","PB","APB","NB","AS","AAS","CSP"};

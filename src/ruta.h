@@ -47,7 +47,7 @@ class movimiento
 {
 public:
     const TipoMovimiento tipo;
-    const bool ertms = false;
+    const bool ertms;
     const bool es_ruta;
     const std::string estacion;
     const std::string id;
@@ -66,7 +66,7 @@ protected:
     bool mandada = false;
     bool formada = false;
 public:
-    movimiento(const std::string &estacion, TipoMovimiento tipo, const std::string &id, bool es_ruta=true) : estacion(estacion), tipo(tipo), id(id), es_ruta(es_ruta) {}
+    movimiento(const std::string &estacion, TipoMovimiento tipo, const std::string &id, bool es_ruta=true, bool ertms=false) : estacion(estacion), tipo(tipo), id((tipo == TipoMovimiento::Itinerario ? (ertms ? "ER " : "I ") : (tipo == TipoMovimiento::Rebase ? "R " : (es_ruta ? "M " : "ML ")))+id), es_ruta(es_ruta), ertms(ertms) {}
     virtual bool establecer(bool msg=false);
     virtual bool posible_establecer(bool msg=false);
     virtual void disolver();
