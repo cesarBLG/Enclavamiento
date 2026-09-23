@@ -101,6 +101,8 @@ En caso de CV lineales, debe haber una única sección por CV, con el mismo nomb
 | `Bloqueo` | referencia a bloqueo | — | Bloqueo al que pertenece la sección. |
 | `Trayecto` | booleano | `true` si pertenece a bloqueo | Indica que la sección corresponde a trayecto (fuera de la estación). |
 | `Conexiones` | objeto de lados | — | Conexión con otras secciones. En cada lado, un array de conexiones, en el orden de pin de salida. Es la forma habitual para lineales y cruzamientos. |
+| `Flanco` | array | — | Secciones de protección de flanco. |
+| `PuntosNegros` | array | — | Puntos negros por falta de gálibo. |
 
 Un objeto de lados tiene forma `{"Impar": valor, "Par": valor}`. Una
 conexión puede ser una cadena con el id del destino, o un objeto:
@@ -109,6 +111,36 @@ conexión puede ser una cadena con el id del destino, o un objeto:
 | --- | --- | --- | --- |
 | `Id` | referencia a sección | — | **Obligatorio.** Sección conectada. |
 | `InvertirParidad` | booleano | `false` | Cambia el sentido de circulación al atravesar la conexión. |
+
+#### Protección de flanco (`Flanco`)
+
+Cada entrada de `Flanco` define una sección de vía que debe estar libre por protección de flanco.
+
+| Campo | Tipo | Por defecto | Descripción |
+| --- | --- | --- | --- |
+| `Lado` | `Lado` | — | **Obligatorio.** Sentido de circulación al que se impide acceso a la aguja protegida. |
+| `Pin` | entero | — | **Obligatorio.** Pin de entrada a la sección protegida. |
+| `Límite` | array de referencias a sección | — | **Obligatorio.** Secciones hasta las que se extiende la protección de flanco. |
+| `PosiciónAparatos` | objeto `sección → [par, impar]` | — | Agujas de protección de flanco que deben quedar fijadas y enclavadas. |
+
+#### Puntos negros (`PuntosNegros`)
+
+Cada entrada de `PuntosNegros` describe una incompatibilidad por falta de gálibo entre
+dos secciones. Establece incompatibilidad de itinerarios e impide la apertura de señal cuando
+la aguja que provoca la falta de gálibo está ocupado.
+
+| Campo | Tipo | Por defecto | Descripción |
+| --- | --- | --- | --- |
+| `Id` | referencia a sección | — | **Obligatorio.** Sección que provoca la falta de gálibo. |
+| `Afectado` | objeto de lado y pin | — | Pin por el que se impide la circulación. |
+| `Causante` | objeto de lado y pin | — | Pin de la sección que causa la falta de gálibo. |
+
+Objeto de `Afectado` y `Causante`:
+
+| Campo | Tipo | Por defecto | Descripción |
+| --- | --- | --- | --- |
+| `Lado` | `Lado` | — | **Obligatorio.** Lado de la sección que provoca o queda afectada por gálibo. |
+| `Pin` | entero | — | **Obligatorio.** Pin de la sección que provoca o queda afectada por gálibo. |
 
 #### Aguja
 
@@ -142,6 +174,7 @@ mantener los dos itinerarios independientes (del pin 0 al 0 y del 1 al 1)
 | --- | --- | --- | --- |
 | `Lado` | `Lado` | — | **Obligatorio.** Sentido de circulación protegido. |
 | `Tipo` | tipo de señal | — | **Obligatorio.** `Entrada`, `Salida`, `Avanzada`, `Maniobra`, `Retroceso`, `Intermedia` o `PostePuntoProtegido`. |
+| `ERTMS` | booleano | false | Indica que la señal es una pantalla virtual de ERTMS. |
 | `Sección` | referencia a sección | — | **Obligatorio.** Sección inmediatamente posterior a la señal. |
 | `Pin` | entero | `0` | Pin de entrada a la sección protegida por la señal. |
 | `Bloqueo` | referencia a bloqueo | — | Bloqueo asociado para señales de salida o de trayecto. |
@@ -164,6 +197,7 @@ Cada bloqueo es un objeto de un array.
 | `SentidoPreferente` | `Lado` | — | **Obligatorio** salvo en `BAU` y `BLAU`. Determina el estado inicial de `BAD` y `BLAD`, inhibe el desbloqueo automático en ese sentido. |
 | `CVs` | array de referencias a secciones | — | **Obligatorio.** Secciones del trayecto de bloqueo, empezando por el más cercano a la estación. |
 | `CVsEntrada` | entero | 1 | Número de CVs de entrada/agujas para detectar escapes de material. |
+| `Deslizamiento` | booleano | `ParámetrosPredeterminados.DeslizamientoBloqueo` | Indica si la señal avanzada debe mostrar parada con maniobra de salida. |
 
 ### Destino de ruta (`DestinosRuta`)
 
@@ -186,6 +220,7 @@ Cada entrada es un movimiento (itinerario, rebase o maniobra), definido por su `
 | Campo | Tipo | Por defecto | Descripción |
 | --- | --- | --- | --- |
 | `Tipo` | `"Itinerario"`, `"Maniobra"` o `"Rebase"` | — | **Obligatorio.** Tipo de movimiento. |
+| `ERTMS` | booleano | false | Indica que la ruta es exclusiva para ERTMS. |
 | `Inicio` | id de señal | — | **Obligatorio.** Señal de inicio de ruta. |
 | `Destino` | referencia a destino | — | **Obligatorio.** Clave de `DestinosRuta`. Puede ser una señal, colateral o final especial. |
 | `Bloqueo` | referencia a bloqueo | — | Bloqueo de salida de la ruta. |

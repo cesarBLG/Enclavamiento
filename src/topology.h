@@ -33,7 +33,6 @@ struct punto_negro
     id_elemento seccion_causante;
     std::optional<std::pair<Lado, int>> pin_propio;
     std::optional<std::pair<Lado, int>> pin_ajeno;
-    bool ocupacion = true;
     punto_negro() = default;
     punto_negro(seccion_via *sec, const json &j);
     bool afectado_propio(lados<int> outs)

@@ -428,7 +428,18 @@ void init_items_ordered(const json &j, std::string tipo)
             for (auto &[id, jsec] : jdep["Secciones"].items()) {
                 id_elemento is(estacion,id);
                 if (agujas.find(is) != agujas.end() && jsec.contains("Escape")) {
-                    agujas[is]->set_escape(agujas[id_elemento::from_default_dep(jsec["Escape"], estacion)]);
+                    aguja *a1 = agujas[is];
+                    aguja *a2 = agujas[id_elemento::from_default_dep(jsec["Escape"], estacion)];
+                    a1->set_escape(a2);
+
+                    if (!jsec.contains("PuntosNegros")) {
+                        punto_negro pt;
+                        pt.seccion_afectada = a1;
+                        pt.pin_ajeno = {a2->lado, 1};
+                        pt.pin_propio = {a1->lado, 0};
+                        pt.seccion_causante = a2->id.id;
+                        agujas[is]->puntos_negros.push_back(pt);
+                    }
                 }
             }
         }
@@ -497,7 +508,6 @@ void init_items(const json &j)
     for (auto &[id,sec] : secciones) {
         for (auto &pt : sec->puntos_negros) {
             punto_negro pt2 = pt;
-            pt2.ocupacion = false;
             pt2.pin_ajeno = pt.pin_propio;
             pt2.pin_propio = pt.pin_ajeno;
             pt2.seccion_causante = sec->id;

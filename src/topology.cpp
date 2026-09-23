@@ -152,7 +152,7 @@ bool seccion_via::transitable(int in, Lado dir)
 bool seccion_via::afectada_galibo(lados<int> outs)
 {
     for (auto &pt : puntos_negros) {
-        if (!pt.ocupacion || !pt.afectado_propio(outs)) continue;
+        if (!pt.afectado_propio(outs)) continue;
         auto *sec = secciones[pt.seccion_causante];
         auto *cv = sec->get_cv();
         if (cv != nullptr && cv->get_state() > EstadoCV::Prenormalizado) {
