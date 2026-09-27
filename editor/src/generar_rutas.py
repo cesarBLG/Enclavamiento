@@ -18,9 +18,9 @@ import sys
 from collections import defaultdict, deque
 from pathlib import Path
 try:
-    from .topology import connections_by_side, local_connection_id
-except ImportError:
     from topology import connections_by_side, local_connection_id
+except ImportError:
+    from editor.src.topology import connections_by_side, local_connection_id
 
 
 def parsear_lista(texto, nombre):

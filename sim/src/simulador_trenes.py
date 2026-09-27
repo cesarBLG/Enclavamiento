@@ -4,10 +4,7 @@ import threading
 import paho.mqtt.client as mqtt
 import json
 import sys
-try:
-    from .topology import connections_by_side, normalize_connection
-except ImportError:
-    from topology import connections_by_side, normalize_connection
+from editor.src.topology import connections_by_side, normalize_connection
 
 # MQTT configuration
 BROKER = "127.0.0.1"
