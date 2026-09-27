@@ -4,6 +4,10 @@ import threading
 import paho.mqtt.client as mqtt
 import json
 import sys
+try:
+    from .topology import connections_by_side, normalize_connection
+except ImportError:
+    from topology import connections_by_side, normalize_connection
 
 # MQTT configuration
 BROKER = "127.0.0.1"
@@ -35,20 +39,18 @@ trenes = dict()
 class seccion:
     def __init__(self, id, jsec):
         self.id = id
+        dependency = id.split(":", 1)[0]
         self.trenes = []
         self.señales = dict()
-        self.conexiones = dict()
-        if jsec.get("Tipo") == "Aguja":
-            self.aguja = True
+        self.cv = None
+        self.aguja = jsec.get("Tipo") == "Aguja"
+        self.conexiones = connections_by_side(jsec, dependency)
+        if self.aguja:
             self.lado = jsec["Lado"]
-            self.conexiones[jsec["Lado"]] = jsec["SeccionesTalón"]
-            self.conexiones[opp_lado(jsec["Lado"])] = [jsec["SecciónPunta"]]
-        else:
-            self.aguja = False
-            self.conexiones = jsec["Conexiones"]
-        cv = jsec.get("CV", id)
-        if cv in cvs:
-            self.cv = cvs[cv]
+        cv_ref = normalize_connection(jsec.get("CV", id), dependency)
+        cv_id = cv_ref["Id"] if cv_ref else None
+        if cv_id in cvs:
+            self.cv = cvs[cv_id]
             self.cv.secciones.append(id)
     def ocupar_tren(self, tren):
         print(f'Tren {tren} ocupando {self.id}')
@@ -184,7 +186,10 @@ for dep_id, dependencia in cfg_dependencias.items():
 for dep_id, dependencia in cfg_dependencias.items():
     for id, jsig in dependencia["Señales"].items():
         full_id = f"{dep_id}:{id}"
-        secciones[jsig["Sección"]].set_señal(full_id, jsig["Lado"], jsig.get("Pin", 0))
+        section_ref = normalize_connection(jsig.get("Sección"), dep_id)
+        section_id = section_ref["Id"] if section_ref else None
+        if section_id in secciones:
+            secciones[section_id].set_señal(full_id, jsig["Lado"], jsig.get("Pin", 0))
 
 # Start loop
 client.loop_start()

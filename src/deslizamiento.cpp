@@ -34,16 +34,35 @@ nodo_deslizamiento::nodo_deslizamiento(seccion_via *prev, seccion_via *sec, Lado
 int ruta_deslizamiento::compatible(movimiento *r)
 {
     rutas_afectadas.clear();
-    if (r != nullptr) {
+    if (r != nullptr)
         rutas_afectadas.insert(r);
-        // No comprobar compatibilidad de una ruta con su propio deslizamiento
-        if (r->es_ruta && ((ruta*)r)->get_destino() == fin_movimiento)
-            r = nullptr;
+
+    // Priorizar deslizamientos orientados que coincidan con las rutas afectadas
+    for (int i=deslizamientos_orientados.size()-1; i>=0; i--) {
+        auto &pos = deslizamientos_orientados[i];
+        bool priority = true;
+        for (auto &[sec,outs] : pos) {
+            if (sec->tipo == TipoSeccion::Aguja) {
+                auto *ag = (aguja*)sec;
+                if (ag->is_enclavada_excepto(fin_movimiento->ruta_activa))
+                    continue;
+                if (r != nullptr) {
+                    auto &pos2 = r->get_posicion_aparatos();
+                    auto it = pos2.find(sec);
+                    if (it != pos2.end() && it->second == outs)
+                        continue;
+                }
+                priority = false;
+                break;
+            }
+        }
+        if (!priority) continue;
+        if (root->compatible(r, i))
+            return i;
     }
     for (int i=0; i<deslizamientos_orientados.size(); i++) {
-        if (root->compatible(r, i)) {
+        if (root->compatible(r, i))
             return i;
-        }
     }
     return -1;
 }
@@ -72,8 +91,9 @@ bool nodo_deslizamiento::compatible(movimiento *r, int id_deslizamiento)
 
             if (sec2 == seccion && it != posicion_aparatos.end() && outs[dir] != it->second[dir]) return false;
 
-            // No comprobar rutas de continuación
-            if (r->es_ruta && ((ruta*)r)->get_señal_inicio() == deslizamiento->fin_movimiento->señal_fin) continue;
+            // No comprobar compatibilidad de una ruta con su propio deslizamiento
+            if (deslizamiento->fin_movimiento->señal_fin->ruta_activa == r)
+                continue;
 
             for (auto &pt : seccion->puntos_negros) {
                 if (pt.seccion_causante != sec2->id || !pt.afectado_ajeno(outs))

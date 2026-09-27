@@ -36,11 +36,11 @@ void to_json(json &j, const lados<T> &l)
 template<class T>
 void from_json(const json &j, lados<T> &l)
 {
-    if (j.contains("Impar")) {
-        l.impar = j["Impar"];
-        l.par = j["Par"];
-    } else {
+    if (!j.contains("Impar") && !j.contains("Par")) {
         l = {j[1], j[0]};
+    } else {
+        if (j.contains("Impar")) l.impar = j["Impar"];
+        if (j.contains("Par")) l.par = j["Par"];
     }
 }
 #endif

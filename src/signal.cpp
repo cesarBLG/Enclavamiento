@@ -1,7 +1,7 @@
 #include "signal.h"
 #include "ruta.h"
 #include "items.h"
-señal::señal(const id_elemento &id, const json &j) : id(id), lado(j["Lado"]), tipo(j["Tipo"]), pin(j.value("Pin", 0)), bloqueo_asociado(j.contains("Bloqueo") ? std::optional<id_elemento>(id_elemento(j["Bloqueo"])) : std::nullopt), seccion(secciones[id_elemento(j["Sección"])]), seccion_prev(seccion->get_seccion_in(lado, pin).first), lado_prev(seccion->get_seccion_in(lado, pin).second), señal_virtual(j.value("ERTMS", false))
+señal::señal(const id_elemento &id, const json &j) : id(id), lado(j["Lado"]), tipo(j["Tipo"]), pin(j.value("Pin", 0)), bloqueo_asociado(j.contains("Bloqueo") ? std::optional<id_elemento>(id_elemento(j["Bloqueo"])) : std::nullopt), seccion(secciones[id_elemento::from_default_dep(j["Sección"], id.dependencia)]), seccion_prev(seccion->get_seccion_in(lado, pin).first), lado_prev(seccion->get_seccion_in(lado, pin).second), señal_virtual(j.value("ERTMS", false))
 {
     seccion->vincular_señal(this, lado, pin);
     if (j.contains("AspectoAnteriorSeñal")) {

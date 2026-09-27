@@ -3,8 +3,12 @@
 #include "items.h"
 aguja::aguja(const id_elemento &id, const json &j) : seccion_via(id, j, TipoSeccion::Aguja), lado(j["Lado"]), topic_mando("aguja/"+id_to_mqtt(id.id)+"/mando")
 {
-    if (j.contains("SecciónPunta")) siguientes_secciones[opp_lado(lado)] = std::vector<conexion>({j["SecciónPunta"].get<conexion>()});
-    if (j.contains("SeccionesTalón")) siguientes_secciones[lado] = j["SeccionesTalón"];
+    if (j.contains("SecciónPunta")) siguientes_secciones[opp_lado(lado)] = {conexion(id.dependencia, j["SecciónPunta"])};
+    if (j.contains("SeccionesTalón")) {
+        for (auto &jt : j["SeccionesTalón"]) {
+            siguientes_secciones[lado].push_back(conexion(id.dependencia, jt));
+        }
+    }
     talonable = j.value("Talonable", true);
     if (j.contains("PosiciónMuelle")) talonable_muelle = j["PosiciónMuelle"] == 1 ? PosicionAguja::Invertida : PosicionAguja::Normal;
     all_outs[lado][0] = {0,1};

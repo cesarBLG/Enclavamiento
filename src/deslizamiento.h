@@ -36,7 +36,7 @@ struct ruta_deslizamiento
     int compatible(movimiento *r);
     void activar(int id);
     void liberar();
-    bool is_asegurado(bool id_orig)
+    bool is_asegurado(int id_orig)
     {
         if (deslizamiento_activo < 0)
             return false;

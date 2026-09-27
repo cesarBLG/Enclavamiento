@@ -86,6 +86,7 @@ ruta::ruta(const std::string &estacion, const json &j) : movimiento(estacion, j[
     temporizador_dai1 = j.value("DiferímetroDAI1", tipo == TipoMovimiento::Maniobra ? 0 : parametros.diferimetro_dai1);
     temporizador_dai2 = j.value("DiferímetroDAI2", parametros.diferimetro_dai2);
     temporizador_dei = j.value("DiferímetroDEI", parametros.diferimetro_dei);
+    temporizador_deslizamiento = 30000;
 
     señal_inicio = señal_impls[id_señal];
     lado = señal_inicio->lado;
@@ -101,7 +102,12 @@ ruta::ruta(const std::string &estacion, const json &j) : movimiento(estacion, j[
     maniobra_compatible = j.value("Compatible", CompatibilidadManiobra::IncompatibleBloqueo);
     if (j.contains("PosiciónAparatos")) {
         for (auto &[sec_id, jpos] : j["PosiciónAparatos"].items()) {
-            posicion_aparatos[::secciones[id_elemento::from_default_dep(sec_id, estacion)]] = jpos;
+            auto id_aparato = id_elemento::from_default_dep(sec_id, estacion);
+            if (::secciones.find(id_aparato) == ::secciones.end()) {
+                log(id, "sección de posición de aparato inválida", LOG_ERROR);
+                continue;
+            }
+            posicion_aparatos[::secciones[id_aparato]] = jpos;
         }
     }
     if (j.contains("SecciónFin")) {
@@ -109,7 +115,12 @@ ruta::ruta(const std::string &estacion, const json &j) : movimiento(estacion, j[
         auto *sec = señal_inicio->seccion;
         Lado dir = lado;
         Lado sig_dir = lado;
-        auto *fin = ::secciones[id_elemento(j["SecciónFin"])];
+        auto id_fin = id_elemento::from_default_dep(j["SecciónFin"], estacion);
+        if (::secciones.find(id_fin) == ::secciones.end()) {
+            log(id, "sección de fin inválida", LOG_ERROR);
+            return;
+        }
+        auto *fin = ::secciones[id_fin];
         do
         {
             ocupacion_maxima_secciones[sec] = sec == fin && (tipo == TipoMovimiento::Rebase || tipo == TipoMovimiento::Maniobra) && j.contains("DiferímetroDeslizamiento") ? EstadoCanton::Ocupado : EstadoCanton::Prenormalizado;
@@ -142,17 +153,20 @@ ruta::ruta(const std::string &estacion, const json &j) : movimiento(estacion, j[
             dir = sig_dir;
         }
         while (sec != nullptr && prv != fin);
+
+        if (j.contains("DiferímetroDeslizamiento")) {
+            auto &jdesliz = j["DiferímetroDeslizamiento"];
+            if (jdesliz.contains("InicioTemporizador")) seccion_inicio_temporizador_deslizamiento = ::secciones[id_elemento::from_default_dep(jdesliz["InicioTemporizador"], estacion)];
+            else if (!jdesliz.is_boolean() || jdesliz) seccion_inicio_temporizador_deslizamiento = secciones.back().seccion;
+            if (jdesliz.contains("Valor")) temporizador_deslizamiento = jdesliz["Valor"].get<int64_t>()*1000;
+        } else if (fin->is_estacionamiento()) {
+            seccion_inicio_temporizador_deslizamiento = secciones.back().seccion;
+        }
     }
     if (secciones.empty()) lado_bloqueo = lado;
     else lado_bloqueo = *secciones.back().dir;
     if (!ertms && destino->deslizamientos.find(tipo) != destino->deslizamientos.end()) {
         deslizamiento = destino->deslizamientos[tipo];
-    }
-    if (j.contains("DiferímetroDeslizamiento")) {
-        auto &jdesliz = j["DiferímetroDeslizamiento"];
-        if (jdesliz.contains("InicioTemporizador")) seccion_inicio_temporizador_deslizamiento = ::secciones[id_elemento::from_default_dep(jdesliz["InicioTemporizador"], estacion)];
-        else seccion_inicio_temporizador_deslizamiento = secciones.back().seccion;
-        temporizador_deslizamiento = jdesliz.value("Valor", 30)*1000;
     }
     if (j.contains("SeñalLiberación")) {
         señales.push_back(señal_impls[id_elemento::from_default_dep(j["SeñalLiberación"], estacion)]);

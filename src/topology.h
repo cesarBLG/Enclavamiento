@@ -84,6 +84,7 @@ public:
     {
         id_elemento id;
         bool invertir_paridad;
+        conexion(const std::string &dep, const json &j);
     };
     const id_elemento id;
     const std::optional<id_elemento> bloqueo_asociado;
@@ -96,6 +97,7 @@ public:
 protected:
     lados<std::map<int,señal*>> señales;
     cv *cv_seccion;
+    bool estacionamiento;
     bool trayecto;
     estado_bloqueo bloqueo_act;
 
@@ -166,6 +168,7 @@ public:
     bool is_bloqueo_seccion() { return bloqueo_seccion; }
     bool is_me_pendiente() { return me_pendiente; }
     bool is_trayecto() { return trayecto; }
+    bool is_estacionamiento() { return estacionamiento; }
     virtual void message_cv(const id_elemento &id, estado_cv ev);
     void message_bloqueo(const id_elemento &id, estado_bloqueo eb)
     {
@@ -254,4 +257,3 @@ class cruzamiento : public seccion_via
     cruzamiento(const id_elemento &id, const json &j) : seccion_via(id, j, TipoSeccion::Cruzamiento) {}
     RemotaCVX get_estado_remota();
 };
-void from_json(const json &j, seccion_via::conexion &conex);

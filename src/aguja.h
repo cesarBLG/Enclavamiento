@@ -173,6 +173,11 @@ class aguja : public seccion_via, public estado_aguja
         enclavada.erase(r);
         if (enclavada.empty()) posicion_enclavada = std::nullopt;
     }
+    bool is_enclavada_excepto(movimiento *r=nullptr)
+    {
+        if (enclavada.find(r) != enclavada.end()) return enclavada.size() > 1;
+        else return !enclavada.empty();
+    }
     void set_escape(aguja *ag);
     PosicionAguja get_posicion(lados<int> pos)
     {

@@ -2,7 +2,7 @@
 #include "ruta.h"
 #include "items.h"
 #include "pn_enclavado.h"
-seccion_via::seccion_via(const id_elemento &id, const json &j, TipoSeccion tipo) : id(id), bloqueo_asociado(j.contains("Bloqueo") ? std::optional<id_elemento>(id_elemento(j["Bloqueo"])) : std::nullopt), tipo(tipo), id_cv(j.value("CV", id.id))
+seccion_via::seccion_via(const id_elemento &id, const json &j, TipoSeccion tipo) : id(id), bloqueo_asociado(j.contains("Bloqueo") ? std::optional<id_elemento>(id_elemento::from_default_dep(j["Bloqueo"], id.dependencia)) : std::nullopt), tipo(tipo), id_cv(id_elemento::from_default_dep(j.value("CV", id.id), id.dependencia))
 {
     if (tipo == TipoSeccion::Lineal || tipo == TipoSeccion::Cruzamiento) {
         for (int i=0; i<(tipo == TipoSeccion::Cruzamiento ? 2 : 1); i++) {
@@ -20,7 +20,18 @@ seccion_via::seccion_via(const id_elemento &id, const json &j, TipoSeccion tipo)
         cv_seccion = nullptr;
     }
     if (j.contains("Conexiones")) {
-        siguientes_secciones = j["Conexiones"];
+        lados<json> jconex = j["Conexiones"];
+        for (auto l : {Lado::Impar, Lado::Par}) {
+            auto &jl = jconex[l];
+            if (jl.is_null()) continue;
+            if (jl.is_array()) {
+                for (auto &jsec : jl) {
+                    siguientes_secciones[l].push_back(conexion(id.dependencia, jsec));
+                }
+            } else {
+                siguientes_secciones[l].push_back(conexion(id.dependencia, jl));
+            }
+        }
     }
     if (j.contains("Flanco")) {
         for (auto &jf : j["Flanco"]) {
@@ -34,6 +45,17 @@ seccion_via::seccion_via(const id_elemento &id, const json &j, TipoSeccion tipo)
         }
     }
     trayecto = j.value("Trayecto", bloqueo_asociado.has_value());
+    estacionamiento = j.value("Estacionamiento", false);
+}
+seccion_via::conexion::conexion(const std::string &dep, const json &j)
+{
+    if (j.contains("Id")) {
+        id = id_elemento::from_default_dep(j["Id"], dep);
+        invertir_paridad = j.value("InvertirParidad", false);
+    } else {
+        id = id_elemento::from_default_dep(j.get<std::string>(), dep);
+        invertir_paridad = false;
+    }
 }
 void seccion_via::asegurar(movimiento *ruta, lados<int> outs, std::optional<Lado> dir)
 {
@@ -383,11 +405,6 @@ RemotaCVX cruzamiento::get_estado_remota()
     r.CVX_CEJES_AV = (cv != nullptr && cv->is_averia()) ? 1 : 0;
     r.CVX_CEJES_PREN = cv != nullptr && cv->get_state() == EstadoCV::Prenormalizado ? 1 : 0;
     return r;
-}
-void from_json(const json &j, seccion_via::conexion &conex)
-{
-    if (j.contains("Id")) conex.id = id_elemento(j["Id"]);
-    conex.invertir_paridad = j.value("InvertirParidad", false);
 }
 
 punto_negro::punto_negro(seccion_via *sec, const json &j) : seccion_afectada(sec)

@@ -11,6 +11,10 @@ Devuelve el código de salida 0 si no hay errores y 1 en caso contrario.
 import json
 import sys
 from pathlib import Path
+try:
+    from .topology import connections_by_side, normalize_connection
+except ImportError:
+    from topology import connections_by_side, normalize_connection
 
 
 # --------------------------------------------------------------------------- #
@@ -328,30 +332,46 @@ def validate_cv(errors, path, jcv):
 
 def validate_conexion(errors, path, conex, current_dep):
     """Valida una entrada de Conexiones (string o {Id, InvertirParidad})."""
-    if isinstance(conex, str):
-        check_reference(errors, path, conex, current_dep, "Secciones")
+    normalized = normalize_connection(conex, current_dep)
+    if normalized is None:
+        if isinstance(conex, dict):
+            if conex.get("Id") is None:
+                errors.append(f"{path}/Id: campo obligatorio en la conexión")
+            else:
+                errors.append(f"{path}/Id: referencia vacía o no textual a Secciones")
+        elif not isinstance(conex, str):
+            errors.append(f"{path}: conexión debe ser un texto o un objeto")
+        else:
+            check_reference(errors, path, conex, current_dep, "Secciones")
         return
-    if not isinstance(conex, dict):
+    if not isinstance(conex, (str, dict)):
         errors.append(f"{path}: conexión debe ser un texto o un objeto")
         return
-    ident = conex.get("Id")
-    if ident is None:
-        errors.append(f"{path}/Id: campo obligatorio en la conexión")
-    else:
-        check_reference(errors, f"{path}/Id", ident, current_dep, "Secciones")
-    if "InvertirParidad" in conex and not isinstance(conex["InvertirParidad"], bool):
+    check_reference(errors, f"{path}/Id" if isinstance(conex, dict) else path,
+                    normalized["Id"], current_dep, "Secciones")
+    if isinstance(conex, dict) and "InvertirParidad" in conex and not isinstance(conex["InvertirParidad"], bool):
         errors.append(f"{path}/InvertirParidad: debe ser booleano")
 
 
 def validate_conexiones_lado(errors, path, value, current_dep):
-    """Valida el objeto de lados de 'Conexiones'."""
-    if not isinstance(value, dict):
+    """Valida Conexiones con lados nombrados o el par posicional legado."""
+    if isinstance(value, list):
+        if len(value) != 2:
+            errors.append(f"{path}: debe contener dos lados (Par, Impar)")
+            return
+        lado_values = {"Impar": value[1], "Par": value[0]}
+    elif isinstance(value, dict):
+        check_lados_object(errors, path, value)
+        lado_values = value
+    else:
+        errors.append(f"{path}: debe ser un objeto de lados o un par [Par, Impar]")
         return
-    check_lados_object(errors, path, value)
-    for lado, conexs in value.items():
-        if not isinstance(conexs, list):
-            errors.append(f"{path}/{lado}: debe ser una lista de conexiones")
+
+    for lado, conexs in lado_values.items():
+        if conexs is None:
             continue
+        if not isinstance(conexs, list):
+            conexs = [conexs]
         for i, conex in enumerate(conexs):
             validate_conexion(errors, f"{path}/{lado}[{i}]", conex, current_dep)
 
@@ -884,42 +904,7 @@ def opposite_side(side):
 def virtual_connections(section, registry, current_dep):
     """Devuelve las conexiones efectivas de una sección por lado.
     Para agujas incluye punta (lado opuesto a Lado) y talones (lado de Lado)."""
-    if not isinstance(section, dict):
-        return {}
-    if section.get("Tipo", "").lower() != "aguja":
-        return section.get("Conexiones", {})
-
-    result = {"Par": [], "Impar": []}
-    side = section.get("Lado")
-    if not side or side not in LADO:
-        return result
-
-    punta_side = opposite_side(side)
-    punta = section.get("SecciónPunta")
-    if isinstance(punta, dict):
-        ids = [punta["Id"]]
-        invs = [punta.get("InvertirParidad", False)]
-    elif isinstance(punta, str):
-        ids, invs = [punta], [False]
-    else:
-        ids, invs = [], []
-    for ident, invert in zip(ids, invs):
-        side_eff = opposite_side(punta_side) if invert else punta_side
-        result[side_eff].append(ident)
-
-    talon_side = side
-    for talon in section.get("SeccionesTalón", []):
-        if isinstance(talon, dict):
-            ident = talon["Id"]
-            invert = talon.get("InvertirParidad", False)
-        elif isinstance(talon, str):
-            ident, invert = talon, False
-        else:
-            continue
-        side_eff = opposite_side(talon_side) if invert else talon_side
-        result[side_eff].append(ident)
-
-    return result
+    return connections_by_side(section, current_dep)
 
 
 def has_connection(section, registry, side, dependency, section_id):
@@ -976,7 +961,7 @@ def validate_topology(data):
                         # señala validate_seccion; aquí solo comprobamos el vínculo.
                         continue
 
-                    opp_side = opposite_side(side)
+                    opp_side = side if conexion.get("InvertirParidad", False) else opposite_side(side)
                     if not has_connection(
                         target_section,
                         reg,

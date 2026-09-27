@@ -92,6 +92,10 @@ public:
     {
         return ocupacion_maxima_secciones;
     }
+    const std::map<seccion_via*,lados<int>> &get_posicion_aparatos()
+    {
+        return posicion_aparatos;
+    }
 };
 class ruta : public movimiento
 {
