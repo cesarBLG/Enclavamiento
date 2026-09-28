@@ -13,7 +13,7 @@ from math import cos, pi, sin
 from pathlib import Path
 
 try:
-    from PyQt6.QtCore import QPointF, QSize, Qt
+    from PyQt6.QtCore import QPointF, QRectF, QSize, Qt
     from PyQt6.QtGui import QBrush, QColor, QIcon, QKeySequence, QPainter, QPainterPath, QPen, QPixmap, QPolygonF, QShortcut
     from PyQt6.QtWidgets import (
         QApplication, QComboBox, QDialog, QDialogButtonBox, QFormLayout,
@@ -23,7 +23,7 @@ try:
     )
     LEFT_BUTTON = Qt.MouseButton.LeftButton
 except ImportError:
-    from PyQt5.QtCore import QPointF, QSize, Qt
+    from PyQt5.QtCore import QPointF, QRectF, QSize, Qt
     from PyQt5.QtGui import QBrush, QColor, QIcon, QKeySequence, QPainter, QPainterPath, QPen, QPixmap, QPolygonF
     from PyQt5.QtWidgets import (
         QApplication, QComboBox, QDialog, QDialogButtonBox, QFormLayout,
@@ -35,7 +35,7 @@ except ImportError:
 
 from items import (
     Aguja, CvLineal, Direccion, IdElemento, Lado, Señal, TipoSeñal,
-    deserialize_layout, serialize_layout,
+    deserialize_layout, get_next_position, serialize_layout,
 )
 from export import generar_config_ence
 
@@ -49,7 +49,7 @@ class AddItemCommand:
     def __init__(self, editor, item):
         self.editor = editor
         self.item = item
-        self.previous_selection = editor.selected
+        self.previous_selection = list(editor.selected_items)
         x, y = item.position
         if isinstance(item, CvLineal):
             side = item.lado.name if item.lado else "None"
@@ -64,17 +64,13 @@ class AddItemCommand:
     def execute(self):
         if self.item not in self.editor.items:
             self.editor.items.append(self.item)
-        self.editor.selected = self.item
-        self.editor.draw_items()
+        self.editor.ensure_grid_for_position(self.item.position)
+        self.editor.set_selection([self.item])
 
     def undo(self):
         if self.item in self.editor.items:
             self.editor.items.remove(self.item)
-        self.editor.selected = (
-            self.previous_selection
-            if self.previous_selection in self.editor.items else None
-        )
-        self.editor.draw_items()
+        self.editor.set_selection(self.previous_selection)
 
 
 class RotateCommand:
@@ -82,49 +78,76 @@ class RotateCommand:
         self.editor = editor
         self.item = item
         self.amount = amount
-        self.previous_selection = editor.selected
+        self.linked_signal = None
+        if isinstance(item, (CvLineal, Aguja)):
+            self.linked_signal = next(
+                (other for other in editor.items_by_dependency.get(item.id.dep, [])
+                 if isinstance(other, Señal) and other.position == item.position),
+                None,
+            )
+        self.previous_selection = list(editor.selected_items)
         x, y = item.position
         self.text = f"{'RotCW' if amount > 0 else 'RotCCW'} {x} {y}"
 
     def execute(self):
         self.item.rotate(self.amount)
-        self.editor.selected = self.item
-        self.editor.draw_items()
+        if self.linked_signal is not None:
+            self.linked_signal.rotate(self.amount)
+        self.editor.set_selection([self.item])
 
     def undo(self):
         self.item.rotate(-self.amount)
-        self.editor.selected = (
-            self.previous_selection
-            if self.previous_selection in self.editor.items else None
-        )
-        self.editor.draw_items()
+        if self.linked_signal is not None:
+            self.linked_signal.rotate(-self.amount)
+        self.editor.set_selection(self.previous_selection)
 
 
-class DeleteItemCommand:
-    def __init__(self, editor, item):
+class DeleteItemsCommand:
+    def __init__(self, editor, items):
         self.editor = editor
-        self.item = item
-        self.dependency = item.id.dep
-        self.items = editor.items_by_dependency[self.dependency]
-        self.index = self.items.index(item)
-        x, y = item.position
-        self.text = f"Delete {x} {y} {item.id.id}"
+        self.items = list(items)
+        self.indices = {
+            item: editor.items_by_dependency[item.id.dep].index(item)
+            for item in self.items
+        }
+        self.previous_selection = list(editor.selected_items)
+        self.text = f"Delete {len(self.items)} item(s)"
 
     def execute(self):
-        items = self.editor.items_by_dependency.get(self.dependency, [])
-        if self.item in items:
-            items.remove(self.item)
-        if self.editor.selected is self.item:
-            self.editor.selected = None
-        self.editor.draw_items()
+        for item in self.items:
+            bucket = self.editor.items_by_dependency.get(item.id.dep, [])
+            if item in bucket:
+                bucket.remove(item)
+        self.editor.set_selection([])
 
     def undo(self):
-        items = self.editor.items_by_dependency.setdefault(self.dependency, [])
-        if self.item not in items:
-            items.insert(min(self.index, len(items)), self.item)
-        if self.editor.current_dependency == self.dependency:
-            self.editor.selected = self.item
-        self.editor.draw_items()
+        for item in self.items:
+            bucket = self.editor.items_by_dependency.setdefault(item.id.dep, [])
+            if item not in bucket:
+                bucket.insert(min(self.indices[item], len(bucket)), item)
+        self.editor.set_selection(self.previous_selection)
+
+
+class MoveItemsCommand:
+    def __init__(self, editor, items, before, after):
+        self.editor = editor
+        self.items = list(items)
+        self.before = dict(before)
+        self.after = dict(after)
+        self.previous_selection = list(editor.selected_items)
+        self.text = f"Move {len(self.items)} item(s)"
+
+    def apply(self, positions):
+        for item, position in positions.items():
+            item.position = position
+            self.editor.ensure_grid_for_position(position)
+        self.editor.set_selection(self.items)
+
+    def execute(self):
+        self.apply(self.after)
+
+    def undo(self):
+        self.apply(self.before)
 
 
 class ReplaceLayoutCommand:
@@ -148,7 +171,7 @@ class ReplaceLayoutCommand:
             self.dependency,
             editor.history_by_dependency.get(self.dependency, ([], [])),
         )
-        self.previous_selection = editor.selected
+        self.previous_selection = list(editor.selected_items)
         self.text = f"LoadLayout {description}"
 
     def apply_layout(self, layouts, histories):
@@ -160,19 +183,16 @@ class ReplaceLayoutCommand:
             self.dependency
         ]
         self.editor.items = self.editor.items_by_dependency[self.dependency]
+        self.editor.ensure_grid_for_items()
         self.editor.sync_dependency_choices()
-        self.editor.selected = None
-        self.editor.draw_items()
+        self.editor.set_selection([])
 
     def execute(self):
         self.apply_layout(self.layouts, self.loaded_histories)
 
     def undo(self):
         self.apply_layout(self.previous_layouts, self.previous_histories)
-        self.editor.selected = (
-            self.previous_selection if self.previous_selection in self.editor.items else None
-        )
-        self.editor.draw_items()
+        self.editor.set_selection(self.previous_selection)
 
 
 class EditItemCommand:
@@ -204,8 +224,7 @@ class EditItemCommand:
             self.item.lado = state["lado"]
         elif isinstance(self.item, Señal):
             self.item.tipo_señal = state["tipo_señal"]
-        self.editor.selected = self.item
-        self.editor.draw_items()
+        self.editor.set_selection([self.item])
 
     def execute(self):
         self.apply(self.after)
@@ -263,16 +282,181 @@ class GridView(QGraphicsView):
         super().__init__(scene)
         self.editor = editor
         self.setMouseTracking(True)
-        self.setMinimumSize(COLS * CELL + 4, ROWS * CELL + 4)
+        self.setMinimumSize(400, 300)
+        scroll_policy = getattr(Qt, "ScrollBarPolicy", Qt)
+        self.setHorizontalScrollBarPolicy(scroll_policy.ScrollBarAsNeeded)
+        self.setVerticalScrollBarPolicy(scroll_policy.ScrollBarAsNeeded)
+        self.gesture = None
+        self.press_scene = None
+        self.press_position = None
+        self.drag_items = []
+        self.drag_before = {}
+        self.preview_delta = (0, 0)
+        self.rubber_band = None
+        self.zoom_factor = 1.0
+        self.setTransformationAnchor(
+            getattr(getattr(QGraphicsView, "ViewportAnchor", QGraphicsView), "AnchorUnderMouse")
+        )
+
+    def zoom_by(self, factor):
+        new_zoom = max(0.35, min(3.0, self.zoom_factor * factor))
+        factor = new_zoom / self.zoom_factor
+        if abs(factor - 1.0) > 1e-6:
+            self.scale(factor, factor)
+            self.zoom_factor = new_zoom
+
+    def reset_zoom(self):
+        self.resetTransform()
+        self.zoom_factor = 1.0
+
+    def wheelEvent(self, event):
+        modifiers = event.modifiers()
+        control = getattr(getattr(Qt, "KeyboardModifier", Qt), "ControlModifier")
+        if modifiers & control:
+            self.zoom_by(1.2 if event.angleDelta().y() > 0 else 1 / 1.2)
+            event.accept()
+            return
+        super().wheelEvent(event)
+
+    @staticmethod
+    def event_point(event):
+        return event.position().toPoint() if hasattr(event, "position") else event.pos()
+
+    @staticmethod
+    def cell_at(point):
+        col, row = int(point.x() // CELL), int(point.y() // CELL)
+        if 0 <= col < COLS and 0 <= row < ROWS:
+            return (col, ROWS - row - 1)
+        return None
+
+    @staticmethod
+    def item_at(point, candidates):
+        for item in candidates:
+            if not isinstance(item, Señal):
+                continue
+            x, y = item.position
+            row = ROWS - y - 1
+            center_x, center_y = (x + .5) * CELL, (row + .5) * CELL
+            angle = item.rotation * pi / 4
+            ux, uy = cos(angle), sin(angle)
+            left_x, left_y = uy, -ux
+            dx, dy = point.x() - center_x, point.y() - center_y
+            along = dx * ux + dy * uy
+            left = dx * left_x + dy * left_y
+            text_half_width = len(item.id.id_corto) * 3.5
+            if abs(along) <= max(16, text_half_width) and 3 <= left <= 28:
+                return item
+        return next((item for item in candidates if not isinstance(item, Señal)),
+                    candidates[0] if candidates else None)
 
     def mousePressEvent(self, event):
         if event.button() == LEFT_BUTTON:
-            point = self.mapToScene(event.position().toPoint() if hasattr(event, "position") else event.pos())
-            col, row = int(point.x() // CELL), int(point.y() // CELL)
-            if 0 <= col < COLS and 0 <= row < ROWS:
-                self.editor.cell_clicked((col, ROWS - row - 1))
+            point = self.mapToScene(self.event_point(event))
+            position = self.cell_at(point)
+            if position is None:
                 return
+            if self.editor.mode[0] != "select":
+                self.editor.cell_clicked(position)
+                return
+            self.press_scene = point
+            self.press_position = position
+            self.preview_delta = (0, 0)
+            self.rubber_band = None
+            candidates = [
+                item for items in self.editor.items_by_dependency.values()
+                for item in items if item.position == position
+            ]
+            if candidates:
+                clicked_item = self.item_at(point, candidates)
+                if clicked_item not in self.editor.selected_items:
+                    self.editor.set_selection([clicked_item])
+                self.drag_items = self.editor.movable_selection(self.editor.selected_items)
+                self.drag_before = {item: item.position for item in self.drag_items}
+                self.gesture = "move"
+                self.click_processed = True
+            else:
+                self.gesture = "rubber"
+                self.click_processed = False
+            return
         super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self.gesture is None or self.press_scene is None:
+            super().mouseMoveEvent(event)
+            return
+        point = self.mapToScene(self.event_point(event))
+        distance = ((point.x() - self.press_scene.x()) ** 2
+                    + (point.y() - self.press_scene.y()) ** 2) ** .5
+        if distance < 4:
+            return
+        if self.gesture == "rubber":
+            if self.rubber_band is not None:
+                self.scene().removeItem(self.rubber_band)
+            rect = QRectF(self.press_scene, point).normalized()
+            self.rubber_band = self.scene().addRect(
+                rect, QPen(QColor("#1976d2"), 1), QBrush(QColor(25, 118, 210, 45))
+            )
+            self.rubber_band.setZValue(10)
+            return
+
+        start_col = int(self.press_scene.x() // CELL)
+        start_row = int(self.press_scene.y() // CELL)
+        current_col = int(point.x() // CELL)
+        current_row = int(point.y() // CELL)
+        delta = (current_col - start_col, start_row - current_row)
+        if delta == self.preview_delta:
+            return
+        if self.editor.can_move_items(self.drag_items, self.drag_before, delta):
+            self.preview_delta = delta
+            for item, (x, y) in self.drag_before.items():
+                item.position = (x + delta[0], y + delta[1])
+            self.editor.draw_items()
+        else:
+            self.preview_delta = (0, 0)
+            for item, position in self.drag_before.items():
+                item.position = position
+            self.editor.draw_items()
+
+    def mouseReleaseEvent(self, event):
+        if event.button() != LEFT_BUTTON or self.gesture is None:
+            super().mouseReleaseEvent(event)
+            return
+        point = self.mapToScene(self.event_point(event))
+        if self.gesture == "move":
+            if self.preview_delta != (0, 0):
+                after = {item: item.position for item in self.drag_items}
+                for item, position in self.drag_before.items():
+                    item.position = position
+                self.editor.run_command(
+                    MoveItemsCommand(self.editor, self.drag_items, self.drag_before, after)
+                )
+            elif not self.click_processed:
+                self.editor.cell_clicked(self.press_position)
+        else:
+            distance = ((point.x() - self.press_scene.x()) ** 2
+                        + (point.y() - self.press_scene.y()) ** 2) ** .5
+            if distance >= 4:
+                rect = QRectF(self.press_scene, point).normalized()
+                selected = []
+                for items in self.editor.items_by_dependency.values():
+                    for item in items:
+                        x, y = item.position
+                        row = ROWS - y - 1
+                        cell_rect = QRectF(x * CELL, row * CELL, CELL, CELL)
+                        if rect.intersects(cell_rect):
+                            selected.append(item)
+                self.editor.set_selection(selected)
+            elif not self.click_processed:
+                self.editor.cell_clicked(self.press_position)
+        if self.rubber_band is not None:
+            self.scene().removeItem(self.rubber_band)
+        self.rubber_band = None
+        self.gesture = None
+        self.press_scene = None
+        self.press_position = None
+        self.drag_items = []
+        self.drag_before = {}
+        self.preview_delta = (0, 0)
 
     def mouseDoubleClickEvent(self, event):
         if event.button() == LEFT_BUTTON:
@@ -282,16 +466,15 @@ class GridView(QGraphicsView):
             col, row = int(point.x() // CELL), int(point.y() // CELL)
             if 0 <= col < COLS and 0 <= row < ROWS:
                 position = (col, ROWS - row - 1)
-                item = next(
-                    (item for items in self.editor.items_by_dependency.values()
-                     for item in items if item.position == position),
-                    None,
-                )
+                candidates = [
+                    item for items in self.editor.items_by_dependency.values()
+                    for item in items if item.position == position
+                ]
+                item = self.item_at(point, candidates)
                 if item is not None:
                     self.editor.dependency.setCurrentText(item.id.dep)
                     self.editor.switch_dependency()
-                    self.editor.selected = item
-                    self.editor.draw_items()
+                    self.editor.set_selection([item])
                     self.editor.configure_button.setEnabled(True)
                     self.editor.configure_selected()
                     return
@@ -305,6 +488,7 @@ class TrackEditor(QMainWindow):
         self.resize(1450, 920)
         self.items = []
         self.selected = None
+        self.selected_items = []
         self.mode = ("select", None)
         self.undo_stack = []
         self.redo_stack = []
@@ -317,6 +501,7 @@ class TrackEditor(QMainWindow):
         self.is_dirty = False
         self.scene = QGraphicsScene(self)
         self.scene.setSceneRect(0, 0, COLS * CELL, ROWS * CELL)
+        self.grid_graphics = []
         self.view = GridView(self.scene, self)
 
         central = QWidget(self)
@@ -411,6 +596,24 @@ class TrackEditor(QMainWindow):
         self.rotate_right.clicked.connect(lambda: self.rotate_selected(1))
         tools.addWidget(self.rotate_left)
         tools.addWidget(self.rotate_right)
+        zoom_out = QToolButton(self)
+        zoom_out.setText("−")
+        zoom_out.setToolTip("Alejar")
+        zoom_out.setFixedSize(38, 42)
+        zoom_out.clicked.connect(lambda: self.view.zoom_by(1 / 1.2))
+        zoom_in = QToolButton(self)
+        zoom_in.setText("+")
+        zoom_in.setToolTip("Acercar")
+        zoom_in.setFixedSize(38, 42)
+        zoom_in.clicked.connect(lambda: self.view.zoom_by(1.2))
+        zoom_reset = QToolButton(self)
+        zoom_reset.setText("100%")
+        zoom_reset.setToolTip("Restablecer zoom")
+        zoom_reset.setFixedSize(54, 42)
+        zoom_reset.clicked.connect(self.view.reset_zoom)
+        tools.addWidget(zoom_out)
+        tools.addWidget(zoom_in)
+        tools.addWidget(zoom_reset)
         tools.addStretch(1)
         root.addLayout(tools)
         root.addWidget(self.view, 1)
@@ -578,39 +781,151 @@ class TrackEditor(QMainWindow):
             button.setChecked((button_kind, button_value) == self.mode)
         self.statusBar().showMessage("Modo selección" if kind == "select" else "Pulsa una celda para añadir el elemento.")
 
+    def set_selection(self, items):
+        selection = []
+        for item in items:
+            if item not in selection:
+                selection.append(item)
+        if selection and all(item.id.dep == selection[0].id.dep for item in selection):
+            dependency = selection[0].id.dep
+            if dependency != self.current_dependency:
+                self.dependency.setCurrentText(dependency)
+                self.switch_dependency()
+        self.selected_items = selection
+        self.selected = selection[0] if len(selection) == 1 else None
+        if hasattr(self, "configure_button"):
+            self.configure_button.setEnabled(len(selection) == 1)
+        if hasattr(self, "delete_button"):
+            self.delete_button.setEnabled(bool(selection))
+        self.draw_items()
+
+    def movable_selection(self, items):
+        result = list(items)
+        index = 0
+        while index < len(result):
+            item = result[index]
+            if isinstance(item, Señal):
+                related_types = (CvLineal, Aguja)
+            elif isinstance(item, (CvLineal, Aguja)):
+                related_types = (Señal,)
+            else:
+                related_types = ()
+            for candidate in self.items_by_dependency.get(item.id.dep, []):
+                if (isinstance(candidate, related_types)
+                        and candidate.position == item.position
+                        and candidate not in result):
+                    result.append(candidate)
+            index += 1
+        return result
+
+    def can_move_items(self, items, before, delta):
+        target_positions = {
+            item: (before[item][0] + delta[0], before[item][1] + delta[1])
+            for item in items
+        }
+        if any(not (0 <= x < COLS and 0 <= y < ROWS)
+               for x, y in target_positions.values()):
+            return False
+        cells = {}
+        for dependency_items in self.items_by_dependency.values():
+            for item in dependency_items:
+                position = target_positions.get(item, item.position)
+                cells.setdefault(position, []).append(item)
+        for cell_items in cells.values():
+            if len(cell_items) <= 1:
+                continue
+            if len(cell_items) != 2:
+                return False
+            first, second = cell_items
+            if first.id.dep != second.id.dep:
+                return False
+            if isinstance(first, Señal) and isinstance(second, (CvLineal, Aguja)):
+                signal, track = first, second
+            elif isinstance(second, Señal) and isinstance(first, (CvLineal, Aguja)):
+                signal, track = second, first
+            else:
+                return False
+            if signal.get_directions()[0] not in track.get_directions():
+                return False
+        return True
+
+    def ensure_grid_for_position(self, position):
+        global COLS, ROWS
+        x, y = position
+        needed_cols = max(COLS, x + 5)
+        needed_rows = max(ROWS, y + 5)
+        while COLS < needed_cols:
+            COLS += 4
+        while ROWS < needed_rows:
+            ROWS += 4
+        if self.scene.sceneRect().width() != COLS * CELL or self.scene.sceneRect().height() != ROWS * CELL:
+            self.scene.setSceneRect(0, 0, COLS * CELL, ROWS * CELL)
+            self.draw_grid()
+
+    def ensure_grid_for_items(self):
+        positions = [
+            item.position
+            for items in self.items_by_dependency.values()
+            for item in items
+        ]
+        if positions:
+            self.ensure_grid_for_position(
+                (max(position[0] for position in positions),
+                 max(position[1] for position in positions))
+            )
+
     def cell_clicked(self, position):
-        existing = next((item for item in self.items if item.position == position), None)
         kind, value = self.mode
         if kind == "select":
-            existing = next(
-                (item for items in self.items_by_dependency.values() for item in items
-                 if item.position == position),
-                None,
-            )
+            candidates = [
+                item for items in self.items_by_dependency.values() for item in items
+                if item.position == position
+            ]
+            existing = None
+            if candidates:
+                selected_index = next(
+                    (index for index, item in enumerate(candidates)
+                     if item in self.selected_items),
+                    -1,
+                )
+                existing = candidates[(selected_index + 1) % len(candidates)]
             if existing is not None:
                 self.dependency.setCurrentText(existing.id.dep)
-                self.switch_dependency()
-            self.selected = existing
-            self.draw_items()
-            self.configure_button.setEnabled(existing is not None)
+            self.set_selection([existing] if existing is not None else [])
             if existing:
                 self.statusBar().showMessage(f"Seleccionado: {existing.id.id}")
             return
-        occupant = next(
-            (item for items in self.items_by_dependency.values() for item in items
-             if item.position == position),
-            None,
-        )
-        if occupant:
+        cell_items = [
+            item for items in self.items_by_dependency.values() for item in items
+            if item.position == position
+        ]
+        if kind == "signal":
+            tracks = [item for item in cell_items if isinstance(item, (CvLineal, Aguja))]
+            signals = [item for item in cell_items if isinstance(item, Señal)]
+            if len(tracks) != 1 or signals or len(cell_items) != 1:
+                QMessageBox.warning(
+                    self, "Vía necesaria",
+                    "Coloca la señal en la misma celda que una vía sin señal.",
+                )
+                return
+            if tracks[0].id.dep != self.current_dependency:
+                self.dependency.setCurrentText(tracks[0].id.dep)
+                self.switch_dependency()
+        elif cell_items:
             QMessageBox.warning(
                 self, "Celda ocupada",
-                f"La celda ya está ocupada por {occupant.id.id}.",
+                f"La celda ya está ocupada por {cell_items[0].id.id}.",
             )
             return
         dependency = self.dependency.currentText().strip()
         if not dependency:
             QMessageBox.warning(self, "Falta la dependencia", "Indica el nombre de la estación antes de añadir elementos.")
             self.dependency.setFocus()
+            return
+        if kind == "track":
+            item = CvLineal(IdElemento("", dependency), position, angle=value)
+            self.auto_rotate_for_connections(item)
+            self.run_command(AddItemCommand(self, item))
             return
         kind_name = {"track": "Tramo de vía", "switch": "Cambio de agujas", "signal": "Señal"}[kind]
         dialog = ElementDialog(kind_name, dependency, self)
@@ -640,20 +955,84 @@ class TrackEditor(QMainWindow):
                 f"Ya existe un elemento de este tipo con id {ident.id}.",
             )
             return
-        if kind == "track":
-            item = CvLineal(ident, position, angle=value)
-            item.lado = side
-        elif kind == "switch":
+        if kind == "switch":
             item = Aguja(ident, position, angle=value)
             item.cv = IdElemento(cv_name, dependency)
             item.lado = side
         else:
             item = Señal(ident, position, signal_type)
+        self.auto_rotate_for_connections(item)
         self.run_command(AddItemCommand(self, item))
+
+    def auto_rotate_for_connections(self, item):
+        occupants = {}
+        for items in self.items_by_dependency.values():
+            for other in items:
+                if other.position not in occupants or isinstance(other, (CvLineal, Aguja)):
+                    occupants[other.position] = other
+        original_rotation = item.rotation
+        if isinstance(item, Señal):
+            track = next(
+                (other for other in self.items_by_dependency.get(item.id.dep, [])
+                 if isinstance(other, (CvLineal, Aguja)) and other.position == item.position),
+                None,
+            )
+            if track is not None:
+                directions = track.get_directions()
+                item.rotation = (
+                    Direccion.E.value
+                    if Direccion.E in directions else directions[0].value
+                )
+            return
+        best_rotation = original_rotation
+        best_score = -1
+        found_compatible_rotation = False
+
+        for rotation in range(8):
+            item.rotation = rotation
+            score = 0
+            compatible = True
+
+            directions = set(item.get_directions())
+            connections = set()
+
+            # Cada salida del elemento nuevo que mira a una celda ocupada
+            # debe encontrar allí la dirección opuesta.
+            for direction in directions:
+                neighbor_position = get_next_position(item.position, direction)
+                neighbor = occupants.get(neighbor_position)
+                if neighbor is None:
+                    continue
+                opposite = Direccion((direction.value + 4) % 8)
+                if opposite in neighbor.get_directions():
+                    connections.add(direction)
+                else:
+                    compatible = False
+
+            # También se comprueba el sentido inverso: una vía vecina no
+            # debe apuntar a esta celda si el elemento nuevo no la recibe.
+            for neighbor_position, neighbor in occupants.items():
+                for neighbor_direction in neighbor.get_directions():
+                    if get_next_position(neighbor_position, neighbor_direction) != item.position:
+                        continue
+                    toward_neighbor = Direccion((neighbor_direction.value + 4) % 8)
+                    if toward_neighbor in directions:
+                        connections.add(toward_neighbor)
+                    else:
+                        compatible = False
+            score = len(connections)
+
+            if compatible:
+                found_compatible_rotation = True
+                if score > best_score:
+                    best_score = score
+                    best_rotation = rotation
+
+        item.rotation = best_rotation if found_compatible_rotation else original_rotation
 
     def configure_selected(self):
         item = self.selected
-        if item is None:
+        if item is None or len(self.selected_items) != 1:
             self.statusBar().showMessage("Selecciona primero un elemento de la rejilla.")
             return
         if isinstance(item, CvLineal):
@@ -708,16 +1087,55 @@ class TrackEditor(QMainWindow):
         self.run_command(EditItemCommand(self, item, new_state, f"Configurar {item.id.id}"))
 
     def rotate_selected(self, amount):
-        if self.selected is None:
+        if self.selected is None or len(self.selected_items) != 1:
             self.statusBar().showMessage("Selecciona primero un elemento de la rejilla.")
             return
+        if isinstance(self.selected, Señal):
+            track = next(
+                (item for item in self.items_by_dependency.get(self.selected.id.dep, [])
+                 if isinstance(item, (CvLineal, Aguja))
+                 and item.position == self.selected.position),
+                None,
+            )
+            if track is None:
+                self.statusBar().showMessage("La señal debe compartir celda con una vía.")
+                return
+            directions = track.get_directions()
+            target = None
+            for steps in range(1, 8):
+                candidate = (self.selected.rotation + amount * steps) % 8
+                if Direccion(candidate) in directions:
+                    target = candidate
+                    break
+            if target is None:
+                self.statusBar().showMessage("La vía no tiene otra dirección disponible para la señal.")
+                return
+            if amount > 0:
+                amount = (target - self.selected.rotation) % 8
+            else:
+                amount = -((self.selected.rotation - target) % 8)
         self.run_command(RotateCommand(self, self.selected, amount))
 
     def delete_selected(self):
-        if self.selected is None:
+        items = list(self.selected_items)
+        if not items and self.selected is not None:
+            items = [self.selected]
+        if not items:
             self.statusBar().showMessage("Selecciona primero un elemento de la rejilla.")
             return
-        self.run_command(DeleteItemCommand(self, self.selected))
+        selected_set = set(items)
+        for item in items:
+            if isinstance(item, (CvLineal, Aguja)) and any(
+                isinstance(other, Señal) and other.position == item.position
+                and other not in selected_set
+                for other in self.items_by_dependency.get(item.id.dep, [])
+            ):
+                QMessageBox.warning(
+                    self, "La vía tiene una señal",
+                    "Incluye o elimina primero la señal asociada a esta vía.",
+                )
+                return
+        self.run_command(DeleteItemsCommand(self, items))
 
     def run_command(self, command):
         command.execute()
@@ -879,6 +1297,7 @@ class TrackEditor(QMainWindow):
             dependency, ([], [])
         )
         self.selected = None
+        self.selected_items = []
         self.configure_button.setEnabled(False)
         self.draw_items()
         self.update_history_buttons()
@@ -895,11 +1314,18 @@ class TrackEditor(QMainWindow):
         self.dependency.blockSignals(was_blocked)
 
     def draw_grid(self):
+        for graphic in getattr(self, "grid_graphics", []):
+            self.scene.removeItem(graphic)
+        self.grid_graphics = []
         pen = QPen(QColor("#d7dee7"), 1)
         for col in range(COLS + 1):
-            self.scene.addLine(col * CELL, 0, col * CELL, ROWS * CELL, pen)
+            self.grid_graphics.append(
+                self.scene.addLine(col * CELL, 0, col * CELL, ROWS * CELL, pen)
+            )
         for row in range(ROWS + 1):
-            self.scene.addLine(0, row * CELL, COLS * CELL, row * CELL, pen)
+            self.grid_graphics.append(
+                self.scene.addLine(0, row * CELL, COLS * CELL, row * CELL, pen)
+            )
         self.draw_items()
 
     @staticmethod
@@ -943,7 +1369,7 @@ class TrackEditor(QMainWindow):
         if hasattr(self, "configure_button"):
             self.configure_button.setEnabled(self.selected is not None)
         if hasattr(self, "delete_button"):
-            self.delete_button.setEnabled(self.selected is not None)
+            self.delete_button.setEnabled(bool(self.selected_items))
         for graphic in getattr(self, "item_graphics", []):
             self.scene.removeItem(graphic)
         self.item_graphics = []
@@ -957,7 +1383,7 @@ class TrackEditor(QMainWindow):
             x, model_y = item.position
             row = ROWS - model_y - 1
             center = ((x + .5) * CELL, (row + .5) * CELL)
-            if item is self.selected:
+            if item in self.selected_items:
                 color = QColor("#e53935")
             elif item.id.dep == self.current_dependency:
                 color = QColor("#fdd835")
@@ -967,6 +1393,7 @@ class TrackEditor(QMainWindow):
             pen.setCapStyle(Qt.PenCapStyle.FlatCap if hasattr(Qt, "PenCapStyle") else Qt.FlatCap)
             pen.setJoinStyle(Qt.PenJoinStyle.MiterJoin if hasattr(Qt, "PenJoinStyle") else Qt.MiterJoin)
             directions = item.get_directions()
+            label_center = center
             if isinstance(item, CvLineal):
                 pairs = [(directions[0], directions[1])]
             elif isinstance(item, Aguja):
@@ -994,14 +1421,26 @@ class TrackEditor(QMainWindow):
             if isinstance(item, Señal):
                 angle = item.rotation * pi / 4
                 ux, uy = cos(angle), sin(angle)
+                left_x, left_y = uy, -ux
+                signal_center = (center[0] + left_x * 9, center[1] + left_y * 9)
+                housing_start = (signal_center[0] - ux * 15, signal_center[1] - uy * 15)
+                housing_end = (signal_center[0] + ux * 15, signal_center[1] + uy * 15)
+                housing = self.scene.addLine(
+                    housing_start[0], housing_start[1],
+                    housing_end[0], housing_end[1], pen,
+                )
+                self.item_graphics.append(housing)
                 for offset, light_color in (
                     (-11, QColor("#fdd835")),
                     (0, QColor("#e53935")),
                     (11, QColor("#2ecc71")),
                 ):
-                    light_center = (center[0] + ux * offset, center[1] + uy * offset)
+                    light_center = (
+                        signal_center[0] + ux * offset,
+                        signal_center[1] + uy * offset,
+                    )
                     radius = 4.5
-                    light_pen = QPen(QColor("#9e9e9e"), 1.5)
+                    light_pen = QPen(color, 1.5)
                     lamp = self.scene.addEllipse(
                         light_center[0] - radius,
                         light_center[1] - radius,
@@ -1011,6 +1450,7 @@ class TrackEditor(QMainWindow):
                         QBrush(light_color),
                     )
                     self.item_graphics.append(lamp)
+                label_center = (center[0] + left_x * 22, center[1] + left_y * 22)
             if isinstance(item, CvLineal) and item.lado is not None:
                 arrow_direction = directions[0] if item.lado == Lado.Impar else directions[1]
                 self.item_graphics.extend(
@@ -1027,8 +1467,16 @@ class TrackEditor(QMainWindow):
                 )
             label = self.scene.addText(item.id.id_corto)
             label.setDefaultTextColor(color)
-            label_offset = CELL * (.32 if isinstance(item, Señal) else .17)
-            label.setPos(center[0] - label.boundingRect().width() / 2, center[1] + label_offset)
+            if isinstance(item, Señal):
+                label.setPos(
+                    label_center[0] - label.boundingRect().width() / 2,
+                    label_center[1] - label.boundingRect().height() / 2,
+                )
+            else:
+                label.setPos(
+                    center[0] - label.boundingRect().width() / 2,
+                    center[1] + CELL * .17,
+                )
             label.setZValue(2)
             self.item_graphics.append(label)
 

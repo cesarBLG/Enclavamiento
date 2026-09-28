@@ -18,12 +18,13 @@ def get_seccion_pin_lado(seccion_by_coords: Dict[Tuple[int,int], Item], pos: Tup
         else:
             return id, 0, sec.lado
     elif isinstance(sec, CvLineal):
+        if id.id_corto != "":
+            return id, 0, sec.lado if dirs[1] == odir else sec.lado.opp_lado()
         newdir = dirs[1] if dirs[0] == odir else dirs[0]
         newpos = get_next_position(pos, newdir)
         sec2 = seccion_by_coords.get(newpos)
-        if sec2 is None or sec2.get_cv() != id:
-            return id, 0, sec.lado if dirs[1] == odir else sec.lado.opp_lado()
-        return get_seccion_pin_lado(seccion_by_coords, newpos, newdir)
+        if sec2 is not None:
+            return get_seccion_pin_lado(seccion_by_coords, newpos, newdir)
     return None, None, None
 
 def get_siguientes_secciones(seccion_by_coords: Dict[Tuple[int,int], Item], pos: Tuple[int,int], lado: Lado) -> List[Tuple[IdElemento, bool]]:
@@ -45,7 +46,7 @@ def get_siguientes_secciones(seccion_by_coords: Dict[Tuple[int,int], Item], pos:
             invert = lado != newlado
             while len(lst) < i:
                 lst.append(None)
-            if isinstance(sec2, CvLineal) and sec2.get_cv() == sec.get_cv():
+            if isinstance(sec2, CvLineal) and sec2.id.id_corto == "":
                 lst.extend(
                     (ident, invert ^ child_invert)
                     for ident, child_invert in get_siguientes_secciones(
@@ -65,7 +66,7 @@ def get_siguientes_secciones(seccion_by_coords: Dict[Tuple[int,int], Item], pos:
             return []
         newlado = lado_siguiente(sec2, newdir)
         invert = lado != newlado
-        if sec2.get_cv() == sec.get_cv():
+        if isinstance(sec2, CvLineal) and sec2.id.id_corto == "":
             return [
                 (ident, invert ^ child_invert)
                 for ident, child_invert in get_siguientes_secciones(
@@ -74,26 +75,6 @@ def get_siguientes_secciones(seccion_by_coords: Dict[Tuple[int,int], Item], pos:
             ]
         return [(sec2.id, invert)]
     return None
-
-def is_dummy_cv(seccion_by_coords: Dict[Tuple[int,int], Item], pos: Tuple[int,int], dir: Direccion = None) -> bool:
-    if not pos in seccion_by_coords:
-        return False
-    sec = seccion_by_coords[pos]
-    if not isinstance(sec, CvLineal):
-        return False
-    dirs = sec.get_directions()
-    if dir is not None:
-        odir = Direccion((dir.value + 4) % 8)
-        dirs = [dirs[1] if odir == dirs[0] else dirs[0]]
-    for newdir in sec.get_directions():
-        newpos = get_next_position(pos, newdir)
-        sec2 = seccion_by_coords.get(newpos)
-        if sec2 is None or sec2.get_cv() != sec.get_cv():
-            continue
-        if not isinstance(sec2, CvLineal):
-            return True
-        return is_dummy_cv(seccion_by_coords, newpos, newdir)
-    return False
 
 def lado_siguiente(section: Item, dir_entrada: Direccion) -> Lado:
     """Lado desde el que continuar tras entrar por el puerto indicado."""
@@ -128,12 +109,16 @@ def serialize_connection(connection):
 def serialize_connections(connections):
     return [serialize_connection(connection) for connection in connections]
 
-def asignar_lado(seccion_by_coords: Dict[Tuple[int,int], Item], pos: Tuple[int,int], lado: Lado, first: bool = False):
+def asignar_lado(seccion_by_coords: Dict[Tuple[int,int], Item], pos: Tuple[int,int], lado: Lado, dir: Direccion = None):
     if not pos in seccion_by_coords:
         return
     sec = seccion_by_coords[pos]
-    if not first and sec.lado is not None:
-        return
+    if dir is not None:
+        if sec.lado is not None:
+            return
+        odir = Direccion((dir.value + 4) % 8)
+        if (isinstance(sec, Aguja) and odir != sec.get_directions()[2]) or (isinstance(sec, CvLineal) and odir != sec.get_directions()[1]):
+            lado = lado.opp_lado()
     sec.lado = lado
     dirs = sec.get_directions()
     for l in [Lado.Impar, Lado.Par]:
@@ -141,11 +126,11 @@ def asignar_lado(seccion_by_coords: Dict[Tuple[int,int], Item], pos: Tuple[int,i
             for i in range(2 if l == sec.lado else 1):
                 newdir = dirs[i] if l == sec.lado else dirs[2]
                 newpos = get_next_position(pos, newdir)
-                asignar_lado(seccion_by_coords, newpos, l)
+                asignar_lado(seccion_by_coords, newpos, l, newdir)
         elif isinstance(sec, CvLineal):
             newdir = dirs[0] if l == sec.lado else dirs[1]
             newpos = get_next_position(pos, newdir)
-            asignar_lado(seccion_by_coords, newpos, l)
+            asignar_lado(seccion_by_coords, newpos, l, newdir)
 
 def generar_config_ence(itemlist: List[Item]):
     seccion_by_coords: Dict[Tuple[int,int], Item] = dict()
@@ -157,7 +142,7 @@ def generar_config_ence(itemlist: List[Item]):
                 secciones_paridad.append(item)
 
     for item in secciones_paridad:
-        asignar_lado(seccion_by_coords, item.position, item.lado, first=True)
+        asignar_lado(seccion_by_coords, item.position, item.lado)
 
     config = dict()
     def get_config(dep, tipo):
@@ -168,7 +153,7 @@ def generar_config_ence(itemlist: List[Item]):
         return config[dep][tipo]
     for item in itemlist:
         if isinstance(item, Señal):
-            sec, pin, lado = get_seccion_pin_lado(seccion_by_coords, item.get_posicion_vinculada(), item.get_directions()[0])
+            sec, pin, lado = get_seccion_pin_lado(seccion_by_coords, item.position, item.get_directions()[0])
             if sec is None:
                 continue
             sig = dict()
@@ -180,11 +165,9 @@ def generar_config_ence(itemlist: List[Item]):
         elif isinstance(item, CvLineal):
             if not item.lado:
                 continue
-            if is_dummy_cv(seccion_by_coords, item.position):
+            if item.id.id_corto == "":
                 continue
             secciones = get_config(item.id.dep, "Secciones")
-            if item.id.id_corto in secciones:
-                continue
             sec = secciones.setdefault(
                 item.id.id_corto,
                 {"Conexiones": {"Impar": [], "Par": []}},

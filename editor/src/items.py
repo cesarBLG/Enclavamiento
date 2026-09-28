@@ -205,37 +205,53 @@ class Señal(Item):
         item = cls(id, position, tipo)
         item.rotation = rotation
         return item
-    def get_posicion_vinculada(self) -> Tuple[int,int]:
-        dir = Direccion(self.rotation)
-        if dir == Direccion.E:
-            return (self.position[0], self.position[1]-1)
-        elif dir == Direccion.SE:
-            return (self.position[0]-1, self.position[1]-1)
-        elif dir == Direccion.S:
-            return (self.position[0]-1, self.position[1])
-        elif dir == Direccion.SW:
-            return (self.position[0]-1, self.position[1]+1)
-        elif dir == Direccion.W:
-            return (self.position[0], self.position[1]+1)
-        elif dir == Direccion.NW:
-            return (self.position[0]+1, self.position[1]+1)
-        elif dir == Direccion.N:
-            return (self.position[0]+1, self.position[1])
-        elif dir == Direccion.NE:
-            return (self.position[0]+1, self.position[1]-1)
 
 
-def serialize_layout(dependencies: Dict[str, List[Item]]) -> dict:
+def _valid_cell_overlap(first: Item, first_dependency: str,
+                        second: Item, second_dependency: str) -> bool:
+    track_types = (CvLineal, Aguja)
+    if first_dependency != second_dependency:
+        return False
+    if isinstance(first, Señal) and isinstance(second, track_types):
+        return first.get_directions()[0] in second.get_directions()
+    if isinstance(second, Señal) and isinstance(first, track_types):
+        return second.get_directions()[0] in first.get_directions()
+    return False
+
+
+def _validate_layout_cells(dependencies: Dict[str, List[Item]]) -> None:
     positions = {}
     for dependency, items in dependencies.items():
         for item in items:
-            if item.position in positions:
-                other_dependency, other_id = positions[item.position]
-                raise ValueError(
-                    f"La celda {item.position} está ocupada por {other_id} "
-                    f"({other_dependency}) y {item.id.id} ({dependency})."
-                )
-            positions[item.position] = (dependency, item.id.id)
+            cell_items = positions.setdefault(item.position, [])
+            if cell_items:
+                other_dependency, other_item = cell_items[0]
+                if len(cell_items) != 1 or not _valid_cell_overlap(
+                    other_item, other_dependency, item, dependency
+                ):
+                    raise ValueError(
+                        f"La celda {item.position} está ocupada por {other_item.id.id} "
+                        f"({other_dependency}) y {item.id.id} ({dependency})."
+                    )
+            cell_items.append((dependency, item))
+
+    for position, cell_items in positions.items():
+        signals = [item for _, item in cell_items if isinstance(item, Señal)]
+        if not signals:
+            continue
+        tracks = [item for _, item in cell_items if isinstance(item, (CvLineal, Aguja))]
+        if len(cell_items) != 2 or len(signals) != 1 or len(tracks) != 1:
+            raise ValueError(f"La señal de la celda {position} debe compartirla con una única vía.")
+        signal, track = signals[0], tracks[0]
+        if signal.get_directions()[0] not in track.get_directions():
+            raise ValueError(
+                f"La dirección de la señal {signal.id.id} no coincide con una dirección "
+                f"de la vía {track.id.id}."
+            )
+
+
+def serialize_layout(dependencies: Dict[str, List[Item]]) -> dict:
+    _validate_layout_cells(dependencies)
     return {
         "version": 2,
         "dependencias": {
@@ -269,14 +285,5 @@ def deserialize_layout(data: dict) -> Dict[str, List[Item]]:
             raise ValueError(f"La lista de elementos de {dependency} no es válida.")
         items = [Item.deserialize(record, dependency) for record in records]
         result[dependency] = items
-    positions = {}
-    for dependency, items in result.items():
-        for item in items:
-            if item.position in positions:
-                other_dependency, other_id = positions[item.position]
-                raise ValueError(
-                    f"La celda {item.position} está ocupada por {other_id} "
-                    f"({other_dependency}) y {item.id.id} ({dependency})."
-                )
-            positions[item.position] = (dependency, item.id.id)
+    _validate_layout_cells(result)
     return result
