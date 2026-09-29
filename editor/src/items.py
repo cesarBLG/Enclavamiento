@@ -1,7 +1,15 @@
-from typing import Dict, List, Tuple
+"""Modelo geométrico de los elementos de vía.
+
+Las posiciones y los puntos se expresan en las mismas unidades continuas. Los
+puntos guardados en cada sección son locales respecto a su posición.
+"""
+
 from enum import Enum
 import json
+import math
 from pathlib import Path
+from typing import Dict, List, Tuple
+
 
 class TipoElemento(Enum):
     CV_LINEAL = 1
@@ -10,11 +18,14 @@ class TipoElemento(Enum):
     TOPERA = 4
     SEÑAL = 5
 
+
 class Lado(Enum):
     Par = 0
     Impar = 1
+
     def opp_lado(self):
         return Lado.Par if self == Lado.Impar else Lado.Impar
+
 
 class Direccion(Enum):
     E = 0
@@ -26,23 +37,106 @@ class Direccion(Enum):
     N = 6
     NE = 7
 
-def get_next_position(pos: Tuple[int,int], dir: Direccion):
-    if dir == Direccion.E:
-        return (pos[0]+1, pos[1])
-    elif dir == Direccion.SE:
-        return (pos[0]+1, pos[1]-1)
-    elif dir == Direccion.S:
-        return (pos[0], pos[1]-1)
-    elif dir == Direccion.SW:
-        return (pos[0]-1, pos[1]-1)
-    elif dir == Direccion.W:
-        return (pos[0]-1, pos[1])
-    elif dir == Direccion.NW:
-        return (pos[0]-1, pos[1]+1)
-    elif dir == Direccion.N:
-        return (pos[0], pos[1]+1)
-    elif dir == Direccion.NE:
-        return (pos[0]+1, pos[1]+1)
+
+def get_next_position(pos, direction):
+    """Ayuda heredada para las herramientas del editor basadas en celdas."""
+    offsets = ((1, 0), (1, -1), (0, -1), (-1, -1),
+               (-1, 0), (-1, 1), (0, 1), (1, 1))
+    dx, dy = offsets[direction.value if isinstance(direction, Direccion) else int(direction)]
+    return (pos[0] + dx, pos[1] + dy)
+
+
+class Point:
+    __slots__ = ("x", "y")
+
+    def __init__(self, x=0.0, y=0.0):
+        self.x, self.y = float(x), float(y)
+
+    def __add__(self, other):
+        return Point(self.x + other.x, self.y + other.y)
+
+    def __sub__(self, other):
+        return Point(self.x - other.x, self.y - other.y)
+
+    def __mul__(self, scalar):
+        return Point(self.x * scalar, self.y * scalar)
+
+    __rmul__ = __mul__
+
+    def __truediv__(self, scalar):
+        return Point(self.x / scalar, self.y / scalar)
+
+    def __iter__(self):
+        yield self.x
+        yield self.y
+
+    def __getitem__(self, index):
+        return (self.x, self.y)[index]
+
+    def __hash__(self):
+        return hash((self.x, self.y))
+
+    def __eq__(self, other):
+        return isinstance(other, Point) and self.close_to(other)
+
+    def close_to(self, other: "Point", tol=1e-6):
+        return abs(self.x - other.x) <= tol and abs(self.y - other.y) <= tol
+
+    def serialize(self):
+        return [self.x, self.y]
+
+    def get_rotated(self, angle):
+        if isinstance(angle, Angle):
+            angle = angle.angle
+        c, s = math.cos(angle), math.sin(angle)
+        return Point(self.x * c - self.y * s, self.x * s + self.y * c)
+
+    @classmethod
+    def deserialize(cls, data):
+        if not isinstance(data, (list, tuple)) or len(data) != 2:
+            raise ValueError("Un punto debe contener dos coordenadas.")
+        if any(not isinstance(value, (int, float)) or not math.isfinite(value) for value in data):
+            raise ValueError("Las coordenadas deben ser números finitos.")
+        return cls(*data)
+
+
+class Angle:
+    __slots__ = ("angle",)
+
+    def __init__(self, angle=0.0):
+        self.angle = float(angle) % (2 * math.pi)
+
+    def __add__(self, other):
+        return Angle(self.angle + (other.angle if isinstance(other, Angle) else other))
+
+    def __radd__(self, other):
+        return self + other
+
+    def __sub__(self, other):
+        return Angle(self.angle - (other.angle if isinstance(other, Angle) else other))
+
+    def __mul__(self, scalar):
+        return Angle(self.angle * scalar)
+
+    __rmul__ = __mul__
+
+    def __float__(self):
+        return self.angle
+
+    def opposite(self) -> Angle:
+        return Angle(self.angle+math.pi)
+
+    def close_to(self, other: "Angle", tol=1e-6):
+        diff = abs(self.angle - other.angle) % (2 * math.pi)
+        return min(diff, 2 * math.pi - diff) <= tol
+
+    def serialize(self):
+        return self.angle
+
+
+def get_angle(point1: Point, point2: Point) -> Angle:
+    return Angle(math.atan2(point2.y - point1.y, point2.x - point1.x))
+
 
 class TipoSeñal(Enum):
     Entrada = 0
@@ -52,238 +146,278 @@ class TipoSeñal(Enum):
     Maniobra = 4
     Retroceso = 5
 
+
 class IdElemento:
     def __init__(self, id: str, dep: str = None):
-        idx = id.find(':')
+        idx = id.find(":")
         if idx != -1:
-            self.id = id
-            self.dep = id[:idx]
-            self.id_corto = id[idx+1:]
+            self.id, self.dep, self.id_corto = id, id[:idx], id[idx + 1:]
         elif dep is not None:
-            self.id = dep+':'+id
-            self.dep = dep
-            self.id_corto = id
+            self.id, self.dep, self.id_corto = dep + ":" + id, dep, id
         else:
             raise ValueError(f"Dependencia desconocida para {id}")
+
     def __eq__(self, other):
-        if isinstance(other, IdElemento):
-            return self.id == other.id
-        return False
+        return isinstance(other, IdElemento) and self.id == other.id
+
+    def __hash__(self):
+        return hash(self.id)
 
 class Item:
-    def __init__(self, id: IdElemento, tipo: TipoElemento, position: Tuple[int,int]):
+    def __init__(self, id: IdElemento, tipo: TipoElemento, position: Point,
+                 rotation: Angle = None):
         self.id = id
         self.tipo = tipo
-        self.position = position
-        self.rotation = 0
-    def rotate(self, rot: int):
-        self.rotation = (self.rotation + rot) % 8
+        self.posicion = position if isinstance(position, Point) else Point(*position)
+        self.rotacion = rotation if isinstance(rotation, Angle) else Angle(rotation or 0)
 
-    def serialize(self) -> dict:
-        return {
-            "id": self.id.id,
-            "posicion": list(self.position),
-            "rotacion": self.rotation,
-        }
+    @property
+    def position(self):
+        return self.posicion
+
+    @position.setter
+    def position(self, value):
+        self.posicion = value if isinstance(value, Point) else Point(*value)
+
+    @property
+    def rotation(self):
+        return self.rotacion
+
+    @rotation.setter
+    def rotation(self, value):
+        self.rotacion = value if isinstance(value, Angle) else Angle(value)
+
+    def rotate(self, amount):
+        # amount se expresa en radianes en el nuevo modelo.
+        delta = amount if isinstance(amount, Angle) else Angle(
+            amount * math.pi / 4 if isinstance(amount, int) else amount
+        )
+        self.rotacion = self.rotacion + delta
+
+    def serialize(self):
+        return {"id": self.id.id, "posicion": self.position.serialize(),
+                "rotacion": self.rotation.serialize()}
 
     @staticmethod
-    def _deserialize_base(data: dict, dependency: str):
+    def deserialize(data, dependency):
         if not isinstance(data, dict):
             raise ValueError("Cada elemento debe ser un objeto JSON.")
-        position = tuple(data["posicion"])
-        if len(position) != 2 or any(not isinstance(value, int) for value in position):
-            raise ValueError("La posición debe contener dos coordenadas enteras.")
+        constructors = {"CvLineal": CvLineal.deserialize,
+                        "Aguja": Aguja.deserialize,
+                        "Señal": Señal.deserialize}
+        kind = data.get("tipo")
+        if kind not in constructors:
+            raise ValueError(f"Tipo de elemento desconocido: {kind!r}.")
+        return constructors[kind](data, dependency)
+
+    @staticmethod
+    def _base(data, dependency):
+        if not isinstance(data.get("id"), str):
+            raise ValueError("Falta el identificador del elemento.")
         ident = IdElemento(data["id"], dependency)
-        rotation = data.get("rotacion", 0)
-        if not isinstance(rotation, int) or not 0 <= rotation < 8:
+        position = Point.deserialize(data.get("posicion"))
+        rotation = data.get("rotacion", 0.0)
+        if not isinstance(rotation, (int, float)) or not math.isfinite(rotation):
             raise ValueError(f"Rotación inválida para {ident.id}.")
-        return ident, position, rotation
+        return ident, position, Angle(rotation)
+
+
+class SeccionVia(Item):
+    def matches(self, pos: Point, direction: Angle) -> bool:
+        return any(p.close_to(pos) and a.close_to(direction) for p, a in self.get_outs())
+
+    def get_directions(self):
+        # Compatibilidad temporal con utilidades antiguas; la geometría nueva y
+        # el exportador trabajan con get_outs().
+        return tuple(Direccion(round(angle.angle / (math.pi / 4)) % 8)
+                     for _, angle in self.get_outs())
+
+
+class CvLineal(SeccionVia):
+    def __init__(self, id: IdElemento, position: Point,
+                 points: List[Point] = None, rotation: Angle = None):
+        super().__init__(id, TipoElemento.CV_LINEAL, position, rotation)
+        self.angle = 4
+        if isinstance(points, int):  # firma anterior del editor: ángulo en octavos
+            self.angle, points = points, None
+        self.points = [Point(0, 0)] + [p if isinstance(p, Point) else Point(*p)
+                                      for p in (points or [Point(30, 0)])]
+        self.lado = None
 
     @staticmethod
-    def deserialize(data: dict, dependency: str) -> "Item":
-        if not isinstance(data, dict):
-            raise ValueError("Cada elemento debe ser un objeto JSON.")
-        deserializers = {
-            "CvLineal": CvLineal.deserialize,
-            "Aguja": Aguja.deserialize,
-            "Señal": Señal.deserialize,
-        }
-        tipo = data.get("tipo")
-        if tipo not in deserializers:
-            raise ValueError(f"Tipo de elemento desconocido: {tipo!r}.")
-        return deserializers[tipo](data, dependency)
+    def get_connections():
+        return [(0, 1)]
 
-class CvLineal(Item):
-    def __init__(self, id: IdElemento, position: Tuple[int,int], angle: int = 4):
-        super().__init__(id, TipoElemento.CV_LINEAL, position)
-        self.angle = angle
-        self.lado = None
-    def get_directions(self) -> Tuple[Direccion, Direccion]:
-        return (Direccion(self.rotation), Direccion((self.rotation+self.angle)%8))
-    def get_cv(self) -> IdElemento:
+    def get_oriented_connections(self, reverse):
+        if reverse:
+            return [1]
+        else:
+            return [0]
+
+    def get_outs(self):
+        points = [point.get_rotated(self.rotation) for point in self.points]
+        return [
+            (self.position + points[0], get_angle(points[1], points[0])),
+            (self.position + points[-1], get_angle(points[-2], points[-1])),
+        ]
+
+    def get_cv(self):
         return self.id
-    def serialize(self) -> dict:
-        return {
-            **super().serialize(),
-            "tipo": "CvLineal",
-            "angulo": self.angle,
-            "lado": self.lado.name if self.lado else None,
-        }
+
+    def serialize(self):
+        return {**super().serialize(), "tipo": "CvLineal",
+                "points": [p.serialize() for p in self.points[1:]],
+                "lado": self.lado.name if self.lado else None}
+
     @classmethod
-    def deserialize(cls, data: dict, dependency: str) -> "CvLineal":
-        id, position, rotation = Item._deserialize_base(data, dependency)
-        angle = data["angulo"]
-        if angle not in (2, 3, 4):
-            raise ValueError(f"Ángulo inválido para {id.id}.")
-        item = cls(id, position, angle)
+    def deserialize(cls, data, dependency):
+        ident, position, rotation = Item._base(data, dependency)
+        item = cls(ident, position, [Point.deserialize(p) for p in data.get("points", [])], rotation)
         side = data.get("lado")
         if side is not None:
             try:
                 item.lado = Lado[side]
             except (KeyError, TypeError):
-                raise ValueError(f"Lado inválido para {id.id}.") from None
-        item.rotation = rotation
+                raise ValueError(f"Lado inválido para {ident.id}.") from None
         return item
 
-class Aguja(Item):
-    def __init__(self, id: IdElemento, position: Tuple[int,int], angle: int = 1):
-        super().__init__(id, TipoElemento.AGUJA, position)
-        self.angle = angle
-        self.lado: Lado = None
+
+class Aguja(SeccionVia):
+    def __init__(self, id: IdElemento, position: Point, rotation: Angle = None,
+                 punta: List[Point] = None, normal: List[Point] = None,
+                 invertida: List[Point] = None):
+        super().__init__(id, TipoElemento.AGUJA, position, rotation)
+        self.angle = 1
+        self.points_punta = self._path(punta or [Point(-15, 0)])
+        self.points_normal = self._path(normal or [Point(15, 0)])
+        self.points_invertida = self._path(invertida or [Point(15, 15)])
+        self.lado = None
         self.cv = None
-    def get_directions(self) -> Tuple[Direccion, Direccion, Direccion]:
-        return (Direccion(self.rotation), Direccion((self.rotation+self.angle)%8), Direccion((self.rotation+4)%8))
-    def get_cv(self) -> IdElemento:
+
+    @staticmethod
+    def _path(points):
+        values = [p if isinstance(p, Point) else Point(*p) for p in points]
+        if not values or not values[0].close_to(Point(0, 0)):
+            values.insert(0, Point(0, 0))
+        return values
+
+    @staticmethod
+    def get_connections():
+        return [(0, 2), (1, 2)]
+
+    def get_oriented_connections(self, reverse):
+        if reverse:
+            return [2]
+        else:
+            return [0,1]
+
+    def get_outs(self):
+        outs = []
+        for path in (self.points_normal, self.points_invertida, self.points_punta):
+            points = [point.get_rotated(self.rotation) for point in path]
+            outs.append((self.position + points[-1],
+                         get_angle(points[-2], points[-1])))
+        return outs
+
+    def get_cv(self):
         return self.cv
-    def serialize(self) -> dict:
-        return {
-            **super().serialize(),
-            "tipo": "Aguja",
-            "angulo": self.angle,
-            "cv": self.cv.id if self.cv else None,
-            "lado": self.lado.name if self.lado else None,
-        }
+
+    def serialize(self):
+        return {**super().serialize(), "tipo": "Aguja",
+                "points_normal": [p.serialize() for p in self.points_normal[1:]],
+                "points_invertida": [p.serialize() for p in self.points_invertida[1:]],
+                "points_punta": [p.serialize() for p in self.points_punta[1:]],
+                "cv": self.cv.id if self.cv else None,
+                "lado": self.lado.name if self.lado else None}
+
     @classmethod
-    def deserialize(cls, data: dict, dependency: str) -> "Aguja":
-        id, position, rotation = Item._deserialize_base(data, dependency)
-        angle = data["angulo"]
-        if angle not in (1, -1):
-            raise ValueError(f"Ángulo inválido para {id.id}.")
+    def deserialize(cls, data, dependency):
+        ident, position, rotation = Item._base(data, dependency)
+        item = cls(ident, position, rotation,
+                   [Point.deserialize(p) for p in data.get("points_punta", [])],
+                   [Point.deserialize(p) for p in data.get("points_normal", [])],
+                   [Point.deserialize(p) for p in data.get("points_invertida", [])])
         cv = data.get("cv")
-        if not isinstance(cv, str) or not cv:
-            raise ValueError(f"Falta el circuito de vía de {id.id}.")
-        item = cls(id, position, angle)
-        item.cv = IdElemento(cv, dependency)
+        if cv:
+            item.cv = IdElemento(cv, dependency)
         side = data.get("lado")
         if side is not None:
             try:
                 item.lado = Lado[side]
             except (KeyError, TypeError):
-                raise ValueError(f"Lado inválido para {id.id}.") from None
-        item.rotation = rotation
+                raise ValueError(f"Lado inválido para {ident.id}.") from None
         return item
+
 
 class Señal(Item):
-    def __init__(self, id: IdElemento, position: Tuple[int,int], tipo: TipoSeñal):
-        super().__init__(id, TipoElemento.SEÑAL, position)
+    def __init__(self, id: IdElemento, position: Point, tipo: TipoSeñal,
+                 offset_pie: float = 10.0, rotation: Angle = None):
+        super().__init__(id, TipoElemento.SEÑAL, position, rotation)
         self.tipo_señal = tipo
-    def get_directions(self) -> Tuple[Direccion]:
-        return (Direccion(self.rotation),)
-    def serialize(self) -> dict:
-        return {
-            **super().serialize(),
-            "tipo": "Señal",
-            "tipo_señal": self.tipo_señal.name,
-        }
+        self.offset_pie = float(offset_pie)
+
+    def get_outs(self):
+        return [(self.position, self.rotation)]
+
+    def get_directions(self):
+        return (Direccion(round(self.rotation.angle / (math.pi / 4)) % 8),)
+
+    def serialize(self):
+        return {**super().serialize(), "tipo": "Señal",
+                "tipo_señal": self.tipo_señal.name,
+                "offset_pie": self.offset_pie}
+
     @classmethod
-    def deserialize(cls, data: dict, dependency: str) -> "Señal":
-        id, position, rotation = Item._deserialize_base(data, dependency)
+    def deserialize(cls, data, dependency):
+        ident, position, rotation = Item._base(data, dependency)
         try:
-            tipo = TipoSeñal[data["tipo_señal"]]
+            signal_type = TipoSeñal[data["tipo_señal"]]
         except (KeyError, TypeError):
-            raise ValueError(f"Tipo de señal inválido para {id.id}.") from None
-        item = cls(id, position, tipo)
-        item.rotation = rotation
-        return item
+            raise ValueError(f"Tipo de señal inválido para {ident.id}.") from None
+        offset = data.get("offset_pie", 10.0)
+        if not isinstance(offset, (int, float)) or not math.isfinite(offset):
+            raise ValueError(f"Desplazamiento del pie inválido para {ident.id}.")
+        return cls(ident, position, signal_type, offset, rotation)
 
 
-def _valid_cell_overlap(first: Item, first_dependency: str,
-                        second: Item, second_dependency: str) -> bool:
-    track_types = (CvLineal, Aguja)
-    if first_dependency != second_dependency:
-        return False
-    if isinstance(first, Señal) and isinstance(second, track_types):
-        return first.get_directions()[0] in second.get_directions()
-    if isinstance(second, Señal) and isinstance(first, track_types):
-        return second.get_directions()[0] in first.get_directions()
-    return False
-
-
-def _validate_layout_cells(dependencies: Dict[str, List[Item]]) -> None:
-    positions = {}
+def _validate_layout(dependencies):
+    # Los elementos pueden compartir coordenadas o cruzarse; las relaciones de
+    # conexión se determinan por puertos geométricos y no por ocupación de celdas.
     for dependency, items in dependencies.items():
         for item in items:
-            cell_items = positions.setdefault(item.position, [])
-            if cell_items:
-                other_dependency, other_item = cell_items[0]
-                if len(cell_items) != 1 or not _valid_cell_overlap(
-                    other_item, other_dependency, item, dependency
-                ):
-                    raise ValueError(
-                        f"La celda {item.position} está ocupada por {other_item.id.id} "
-                        f"({other_dependency}) y {item.id.id} ({dependency})."
-                    )
-            cell_items.append((dependency, item))
-
-    for position, cell_items in positions.items():
-        signals = [item for _, item in cell_items if isinstance(item, Señal)]
-        if not signals:
-            continue
-        tracks = [item for _, item in cell_items if isinstance(item, (CvLineal, Aguja))]
-        if len(cell_items) != 2 or len(signals) != 1 or len(tracks) != 1:
-            raise ValueError(f"La señal de la celda {position} debe compartirla con una única vía.")
-        signal, track = signals[0], tracks[0]
-        if signal.get_directions()[0] not in track.get_directions():
-            raise ValueError(
-                f"La dirección de la señal {signal.id.id} no coincide con una dirección "
-                f"de la vía {track.id.id}."
-            )
+            if item.id.dep != dependency:
+                raise ValueError(f"El elemento {item.id.id} está en la dependencia incorrecta.")
+            if isinstance(item, Señal):
+                associated = [track for track in dependencies[dependency]
+                              if isinstance(track, SeccionVia)
+                              and any(p.close_to(item.position)
+                                      and a.close_to(item.rotation + Angle(math.pi))
+                                      for p, a in track.get_outs())]
+                if not associated:
+                    raise ValueError(f"La señal {item.id.id} no coincide con una salida de vía.")
 
 
 def serialize_layout(dependencies: Dict[str, List[Item]]) -> dict:
-    _validate_layout_cells(dependencies)
-    return {
-        "version": 2,
-        "dependencias": {
-            dependency: {"elementos": [item.serialize() for item in items]}
-            for dependency, items in dependencies.items()
-        },
-    }
+    _validate_layout(dependencies)
+    return {"version": 3, "dependencias": {
+        dep: {"elementos": [item.serialize() for item in items]}
+        for dep, items in dependencies.items()
+    }}
 
 
 def deserialize_layout(data: dict) -> Dict[str, List[Item]]:
-    if not isinstance(data, dict):
-        raise ValueError("El layout debe ser un objeto JSON.")
-    version = data.get("version")
-    if version == 1:
-        dependency = data.get("dependencia")
-        records = data.get("elementos")
-        dependencies = {dependency: records}
-    elif version == 2:
-        dependencies = data.get("dependencias")
-    else:
-        raise ValueError("El archivo no es un layout compatible (versión 1 o 2).")
+    if not isinstance(data, dict) or data.get("version") != 3:
+        raise ValueError("El archivo no es un layout geométrico compatible (versión 3).")
+    dependencies = data.get("dependencias")
     if not isinstance(dependencies, dict):
         raise ValueError("El mapa de dependencias no es válido.")
-
-    result: Dict[str, List[Item]] = {}
+    result = {}
     for dependency, value in dependencies.items():
         if not isinstance(dependency, str) or not dependency.strip():
             raise ValueError("Hay un nombre de dependencia no válido.")
-        records = value.get("elementos") if isinstance(value, dict) else value
+        records = value.get("elementos") if isinstance(value, dict) else None
         if not isinstance(records, list):
             raise ValueError(f"La lista de elementos de {dependency} no es válida.")
-        items = [Item.deserialize(record, dependency) for record in records]
-        result[dependency] = items
-    _validate_layout_cells(result)
+        result[dependency] = [Item.deserialize(record, dependency) for record in records]
+    _validate_layout(result)
     return result

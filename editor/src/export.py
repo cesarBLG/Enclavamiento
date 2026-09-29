@@ -1,202 +1,170 @@
-from typing import List, Dict
-from items import *
-import json
-def get_seccion_pin_lado(seccion_by_coords: Dict[Tuple[int,int], Item], pos: Tuple[int,int], dir: Direccion) -> Tuple[str, int, Lado]:
-    if not pos in seccion_by_coords:
-        return None, None, None
-    sec = seccion_by_coords[pos]
-    if sec.lado is None:
-        return None, None, None
-    odir = Direccion((dir.value + 4) % 8)
-    dirs = sec.get_directions()
-    id = sec.id
-    if isinstance(sec, Aguja):
-        if dirs[0] == odir:
-            return id, 0, sec.lado.opp_lado()
-        elif dirs[1] == odir:
-            return id, 1, sec.lado.opp_lado()
-        else:
-            return id, 0, sec.lado
-    elif isinstance(sec, CvLineal):
-        if id.id_corto != "":
-            return id, 0, sec.lado if dirs[1] == odir else sec.lado.opp_lado()
-        newdir = dirs[1] if dirs[0] == odir else dirs[0]
-        newpos = get_next_position(pos, newdir)
-        sec2 = seccion_by_coords.get(newpos)
-        if sec2 is not None:
-            return get_seccion_pin_lado(seccion_by_coords, newpos, newdir)
-    return None, None, None
+"""Exporta el grafo geométrico de vías al formato de enclavamiento."""
 
-def get_siguientes_secciones(seccion_by_coords: Dict[Tuple[int,int], Item], pos: Tuple[int,int], lado: Lado) -> List[Tuple[IdElemento, bool]]:
-    if not pos in seccion_by_coords:
-        return []
-    sec = seccion_by_coords[pos]
-    if sec.lado is None:
-        return []
-    dirs = sec.get_directions()
-    if isinstance(sec, Aguja):
-        lst = []
-        for i in range(2 if lado == sec.lado else 1):
-            newdir = dirs[i] if lado == sec.lado else dirs[2]
-            newpos = get_next_position(pos, newdir)
-            sec2 = seccion_by_coords.get(newpos)
-            if sec2 is None or sec2.lado is None:
+from typing import List
+from items import Aguja, CvLineal, Lado, Señal, SeccionVia
+
+def conectados(first, second):
+    p1, a1 = first
+    p2, a2 = second
+    return p1.close_to(p2) and a1.close_to(a2.opposite())
+
+def get_conexiones(sec, secciones):
+    """Devuelve las parejas (sección vecina, puerto vecino) de cada puerto."""
+    conex = []
+    for out, pos in enumerate(sec.get_outs()):
+        for sec2 in secciones:
+            if sec2 is sec:
                 continue
-            newlado = lado_siguiente(sec2, newdir)
-            invert = lado != newlado
-            while len(lst) < i:
-                lst.append(None)
-            if isinstance(sec2, CvLineal) and sec2.id.id_corto == "":
-                lst.extend(
-                    (ident, invert ^ child_invert)
-                    for ident, child_invert in get_siguientes_secciones(
-                        seccion_by_coords, newpos, newlado
-                    )
-                )
+            for out2, pos2 in enumerate(sec2.get_outs()):
+                if conectados(pos, pos2):
+                    conex.append((sec2, out2))
+                    break
             else:
-                lst.append((sec2.id, invert))
-        return lst
-    elif isinstance(sec, CvLineal):
-        newdir = dirs[0] if lado == sec.lado else dirs[1]
-        newpos = get_next_position(pos, newdir)
-        sec2 = seccion_by_coords.get(newpos)
-        if sec2 is None:
-            return []
-        if sec2.lado is None:
-            return []
-        newlado = lado_siguiente(sec2, newdir)
-        invert = lado != newlado
-        if isinstance(sec2, CvLineal) and sec2.id.id_corto == "":
-            return [
-                (ident, invert ^ child_invert)
-                for ident, child_invert in get_siguientes_secciones(
-                    seccion_by_coords, newpos, newlado
-                )
-            ]
-        return [(sec2.id, invert)]
-    return None
+                continue
+            break
+        else:
+            conex.append((None,None))
+    return conex
 
-def lado_siguiente(section: Item, dir_entrada: Direccion) -> Lado:
-    """Lado desde el que continuar tras entrar por el puerto indicado."""
-    odir = Direccion((dir_entrada.value + 4) % 8)
-    directions = section.get_directions()
-    if isinstance(section, Aguja):
-        if odir in directions[:2]:  # entrada por cualquiera de los talones
-            return section.lado.opp_lado()
-        if odir == directions[2]:  # entrada por la punta
-            return section.lado
-    elif isinstance(section, CvLineal):
-        if odir == directions[1]:
-            return section.lado
-        if odir == directions[0]:
-            return section.lado.opp_lado()
-    return section.lado
+def lado_out(item, out):
+    if item.lado is None:
+        return None
+    if out in item.get_oriented_connections(False):
+        return item.lado
+    else:
+        return item.lado.opp_lado()
+
+def lado_in(item, out):
+    if item.lado is None:
+        return None
+    return lado_out(item, out).opp_lado()
+
+
+def asignar_lado(secciones, conexiones):
+    roots = [sec for sec in secciones if sec.lado is not None]
+
+    def visit(sec):
+        for lado in (Lado.Impar, Lado.Par):
+            outs = sec.get_oriented_connections(lado != sec.lado)
+
+            for out in outs:
+                sec2, out2 = conexiones[sec][out]
+                if sec2 is None or sec2.lado is not None:
+                    continue
+                if out2 in sec2.get_oriented_connections(False):
+                    sec2.lado = lado.opp_lado()
+                else:
+                    sec2.lado = lado
+                visit(sec2)
+
+    for root in roots:
+        visit(root)
+
+
+def get_siguientes_secciones(sec, lado, secciones, conexiones):
+    """Obtiene las secciones siguientes desde el lado solicitado.
+
+    Los CV sin identificador se tratan como tramos auxiliares y se atraviesan.
+    """
+    outs = sec.get_oriented_connections(lado != sec.lado)
+    sigs = []
+    for i, out in enumerate(outs):
+        sec2, out2 = conexiones[sec][out]
+        if sec2 is None or sec2.lado is None:
+            continue
+        lado2 = lado_in(sec2, out2)
+        while len(sigs) < i:
+            sigs.append(None)
+        if isinstance(sec2, CvLineal) and not sec2.id.id_corto:
+            tmp = get_siguientes_secciones(sec2, lado2, secciones, conexiones)
+            if len(tmp) > 0 and tmp[0] is not None:
+                sigs.append((tmp[0][0], tmp[0][1] ^ (lado != lado2)))
+        else:
+            sigs.append((sec2.id, lado != lado2))
+    return sigs
 
 
 def serialize_connection(connection):
-    """Convierte (IdElemento, invertir) en el formato JSON de conexiones."""
+    if connection is None:
+        return None
     if isinstance(connection, tuple):
         ident, invert = connection
     else:
         ident, invert = connection, False
     if ident is None:
         return None
-    if invert:
-        return {"Id": ident.id, "InvertirParidad": True}
-    return ident.id
+    return {"Id": ident.id, "InvertirParidad": True} if invert else ident.id
 
 
 def serialize_connections(connections):
     return [serialize_connection(connection) for connection in connections]
 
-def asignar_lado(seccion_by_coords: Dict[Tuple[int,int], Item], pos: Tuple[int,int], lado: Lado, dir: Direccion = None):
-    if not pos in seccion_by_coords:
-        return
-    sec = seccion_by_coords[pos]
-    if dir is not None:
-        if sec.lado is not None:
-            return
-        odir = Direccion((dir.value + 4) % 8)
-        if (isinstance(sec, Aguja) and odir != sec.get_directions()[2]) or (isinstance(sec, CvLineal) and odir != sec.get_directions()[1]):
-            lado = lado.opp_lado()
-    sec.lado = lado
-    dirs = sec.get_directions()
-    for l in [Lado.Impar, Lado.Par]:
-        if isinstance(sec, Aguja):
-            for i in range(2 if l == sec.lado else 1):
-                newdir = dirs[i] if l == sec.lado else dirs[2]
-                newpos = get_next_position(pos, newdir)
-                asignar_lado(seccion_by_coords, newpos, l, newdir)
-        elif isinstance(sec, CvLineal):
-            newdir = dirs[0] if l == sec.lado else dirs[1]
-            newpos = get_next_position(pos, newdir)
-            asignar_lado(seccion_by_coords, newpos, l, newdir)
+def get_seccion_pin_lado(out, sec, conexiones):
+    for rev in (False, True):
+        outs = sec.get_oriented_connections(rev)
+        if out not in outs:
+            continue
+        idx = outs.index(out)
+        if isinstance(sec, CvLineal) and not sec.id.id_corto:
+            out_opp = sec.get_oriented_connections(not rev)[0]
+            sec2, out2 = conexiones[sec][out_opp]
+            if not sec2:
+                return None, None, None
+            return get_seccion_pin_lado(out2, sec2, conexiones)
+        else:
+            return sec, idx, sec.lado if rev else sec.lado.opp_lado()
+    return None, None, None
 
-def generar_config_ence(itemlist: List[Item]):
-    seccion_by_coords: Dict[Tuple[int,int], Item] = dict()
-    secciones_paridad: List[Item] = []
-    for item in itemlist:
-        if isinstance(item, CvLineal) or isinstance(item, Aguja):
-            seccion_by_coords[item.position] = item
-            if item.lado is not None:
-                secciones_paridad.append(item)
 
-    for item in secciones_paridad:
-        asignar_lado(seccion_by_coords, item.position, item.lado)
+def generar_config_ence(itemlist: List[SeccionVia]):
+    secciones = [item for item in itemlist if isinstance(item, SeccionVia)]
+    conexiones = {item: get_conexiones(item, secciones) for item in secciones}
+    asignar_lado(secciones, conexiones)
 
-    config = dict()
-    def get_config(dep, tipo):
-        if dep not in config:
-            config[dep] = dict()
-        if tipo not in config[dep]:
-            config[dep][tipo] = dict()
-        return config[dep][tipo]
+    config = {}
+
+    def get_config(dep, kind):
+        return config.setdefault(dep, {}).setdefault(kind, {})
+
     for item in itemlist:
         if isinstance(item, Señal):
-            sec, pin, lado = get_seccion_pin_lado(seccion_by_coords, item.position, item.get_directions()[0])
-            if sec is None:
-                continue
-            sig = dict()
-            sig["Tipo"] = item.tipo_señal.name
-            sig["Sección"] = sec.id
-            sig["Pin"] = pin
-            sig["Lado"] = lado.name
-            get_config(item.id.dep, "Señales")[item.id.id_corto] = sig
+            for sec in secciones:
+                for out, pos in enumerate(sec.get_outs()):
+                    if conectados(item.get_outs()[0], pos):
+                        section, pin, lado = get_seccion_pin_lado(out, sec, conexiones)
+                        if section is None or lado is None:
+                            continue
+                        get_config(item.id.dep, "Señales")[item.id.id_corto] = {
+                            "Tipo": item.tipo_señal.name,
+                            "Sección": section.id.id,
+                            "Pin": pin,
+                            "Lado": lado.name,
+                        }
+                        break
+                else:
+                    continue
+                break
         elif isinstance(item, CvLineal):
-            if not item.lado:
+            if item.lado is None or not item.id.id_corto:
                 continue
-            if item.id.id_corto == "":
-                continue
-            secciones = get_config(item.id.dep, "Secciones")
-            sec = secciones.setdefault(
-                item.id.id_corto,
-                {"Conexiones": {"Impar": [], "Par": []}},
-            )
-            for lado in [Lado.Impar, Lado.Par]:
-                connections = serialize_connections(
-                    get_siguientes_secciones(seccion_by_coords, item.position, lado)
-                )
-                current = sec["Conexiones"][lado.name]
-                current.extend(connection for connection in connections if connection not in current)
-            if item.get_cv() is not None:
-                get_config(item.id.dep, "CVs")[item.get_cv().id_corto] = dict()
+            sec = {"Conexiones": {}}
+            for lado in (Lado.Impar, Lado.Par):
+                sec["Conexiones"][lado.name] = serialize_connections(get_siguientes_secciones(item, lado, secciones, conexiones))
+            get_config(item.id.dep, "Secciones")[item.id.id_corto] = sec
+            get_config(item.id.dep, "CVs")[item.get_cv().id_corto] = {}
         elif isinstance(item, Aguja):
-            if not item.lado:
+            if item.lado is None:
                 continue
-            aguja = dict()
-            aguja["Tipo"] = "Aguja"
-            aguja["Lado"] = item.lado.name
+            sec = {"Tipo": "Aguja", "Lado": item.lado.name}
             if item.get_cv() is not None:
-                aguja["CV"] = item.get_cv().id
-            punta = get_siguientes_secciones(
-                seccion_by_coords, item.position, item.lado.opp_lado()
+                sec["CV"] = item.get_cv().id
+            tip = get_siguientes_secciones(item, item.lado.opp_lado(), secciones, conexiones)
+            if tip and tip[0] is not None:
+                sec["SecciónPunta"] = serialize_connection(tip[0])
+            sec["SeccionesTalón"] = serialize_connections(
+                get_siguientes_secciones(item, item.lado, secciones, conexiones)
             )
-            if punta:
-                aguja["SecciónPunta"] = serialize_connection(punta[0])
-            aguja["SeccionesTalón"] = serialize_connections(
-                get_siguientes_secciones(seccion_by_coords, item.position, item.lado)
-            )
-            get_config(item.id.dep, "Secciones")[item.id.id_corto] = aguja
+            get_config(item.id.dep, "Secciones")[item.id.id_corto] = sec
             if item.get_cv() is not None:
-                get_config(item.id.dep, "CVs")[item.get_cv().id_corto] = dict()
+                get_config(item.id.dep, "CVs")[item.get_cv().id_corto] = {}
     return config
