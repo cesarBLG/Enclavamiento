@@ -10,27 +10,29 @@ import sys
 import json
 import traceback
 from copy import deepcopy
-from math import cos, pi, sin
+from math import cos, pi, sin, sqrt
 from pathlib import Path
 
 try:
     from PyQt6.QtCore import QPointF, QRectF, QSize, Qt
     from PyQt6.QtGui import QBrush, QColor, QIcon, QKeySequence, QPainter, QPainterPath, QPen, QPixmap, QPolygonF, QShortcut
+    from PyQt6.QtSvg import QSvgRenderer
     from PyQt6.QtWidgets import (
         QApplication, QComboBox, QDialog, QDialogButtonBox, QFormLayout,
         QFileDialog, QGraphicsScene, QGraphicsView, QHBoxLayout,
         QLabel, QLineEdit, QMainWindow, QMessageBox,
-        QToolButton, QVBoxLayout, QWidget,
+        QPushButton, QSplitter, QToolButton, QVBoxLayout, QWidget,
     )
     LEFT_BUTTON = Qt.MouseButton.LeftButton
 except ImportError:
     from PyQt5.QtCore import QPointF, QRectF, QSize, Qt
     from PyQt5.QtGui import QBrush, QColor, QIcon, QKeySequence, QPainter, QPainterPath, QPen, QPixmap, QPolygonF
+    from PyQt5.QtSvg import QSvgRenderer
     from PyQt5.QtWidgets import (
         QApplication, QComboBox, QDialog, QDialogButtonBox, QFormLayout,
         QFileDialog, QGraphicsScene, QGraphicsView, QHBoxLayout,
         QLabel, QLineEdit, QMainWindow, QMessageBox,
-        QShortcut, QToolButton, QVBoxLayout, QWidget,
+        QPushButton, QShortcut, QSplitter, QToolButton, QVBoxLayout, QWidget,
     )
     LEFT_BUTTON = Qt.LeftButton
 
@@ -39,17 +41,54 @@ from items import (
     deserialize_layout, get_next_position, serialize_layout,
 )
 from export import generar_config_ence
+from svg.svg_export import export_svg
 
 
-CELL = 52
+CELL = 85
 COLS = 24
 ROWS = 16
+SIGNAL_ICON_PATH = Path(__file__).resolve().parent.parent / "symbols" / "señal.svg"
+
+
+class SignalIcon:
+    def __init__(self, path):
+        self.renderer = QSvgRenderer(str(path))
+        self.size = self.renderer.defaultSize()
+
+    @property
+    def width(self):
+        return self.size.width()
+
+    @property
+    def height(self):
+        return self.size.height()
+
+    def pixmap(self):
+        pixmap = QPixmap(self.size)
+        pixmap.fill(Qt.GlobalColor.transparent if hasattr(Qt, "GlobalColor") else Qt.transparent)
+        painter = QPainter(pixmap)
+        self.renderer.render(painter, QRectF(0, 0, pixmap.width(), pixmap.height()))
+        painter.end()
+        return pixmap
+
+
+SIGNAL_ICON = SignalIcon(SIGNAL_ICON_PATH)
+
+
+def item_kind_name(item):
+    if isinstance(item, CvLineal):
+        return "Tramo de vía"
+    if isinstance(item, Aguja):
+        return "Cambio de agujas"
+    if isinstance(item, Señal):
+        return "Señal"
+    return None
 
 
 def direction_vector(direction, length=CELL / 2):
     """Vector local de una dirección antigua en coordenadas cartesianas."""
-    vectors = ((1, 0), (1, -1), (0, -1), (-1, -1),
-               (-1, 0), (-1, 1), (0, 1), (1, 1))
+    vectors = ((1, 0), (1, 1), (0, 1), (-1, 1),
+               (-1, 0), (-1, -1), (0, -1), (1, -1))
     index = direction.value if isinstance(direction, Direccion) else int(direction)
     dx, dy = vectors[index % 8]
     return Point(dx * length, dy * length)
@@ -89,12 +128,12 @@ def item_cell_model(item):
 
 
 def item_screen_point(point):
-    return point.x, ROWS * CELL - point.y
+    return point.x, point.y
 
 
 def signal_foot_position(item):
-    normal_x = -sin(item.rotation.angle)
-    normal_y = cos(item.rotation.angle)
+    normal_x = sin(item.rotation.angle)
+    normal_y = -cos(item.rotation.angle)
     return Point(item.position.x + normal_x * item.offset_pie,
                  item.position.y + normal_y * item.offset_pie)
 
@@ -325,6 +364,119 @@ class ElementDialog(QDialog):
         return self.name_edit.text().strip(), cv_name, signal_type, side
 
 
+class ItemConfigPanel(QWidget):
+    def __init__(self, editor, parent=None):
+        super().__init__(parent)
+        self.editor = editor
+        self.current_item = None
+        self.current_kind = None
+        self.name_edit = None
+        self.cv_edit = None
+        self.signal_type = None
+        self.side_combo = None
+
+        layout = QVBoxLayout(self)
+        self.title_label = QLabel("Configuración del elemento", self)
+        self.title_label.setStyleSheet("font-weight: 600;")
+        self.summary_label = QLabel(self)
+        self.summary_label.setWordWrap(True)
+        self.summary_label.setText("Selecciona un único elemento configurable para editarlo aquí.")
+
+        self.form_widget = QWidget(self)
+        self.form_layout = QFormLayout(self.form_widget)
+
+        self.apply_button = QPushButton("Aplicar cambios", self)
+        self.apply_button.clicked.connect(self.apply_changes)
+
+        layout.addWidget(self.title_label)
+        layout.addWidget(self.summary_label)
+        layout.addWidget(self.form_widget)
+        layout.addStretch(1)
+        layout.addWidget(self.apply_button)
+
+        self.setMinimumWidth(320)
+        self.set_item(None)
+
+    def clear_form(self):
+        while self.form_layout.count():
+            item = self.form_layout.takeAt(0)
+            widget = item.widget() if item is not None else None
+            if widget is not None:
+                widget.deleteLater()
+        self.name_edit = None
+        self.cv_edit = None
+        self.signal_type = None
+        self.side_combo = None
+        self.current_kind = None
+
+    def build_form(self, kind):
+        self.clear_form()
+        self.current_kind = kind
+
+        self.name_edit = QLineEdit(self)
+        if kind == "Tramo de vía":
+            self.form_layout.addRow("Nombre del CV:", self.name_edit)
+        else:
+            self.form_layout.addRow("Nombre:", self.name_edit)
+
+        if kind == "Cambio de agujas":
+            self.cv_edit = QLineEdit(self)
+            self.form_layout.addRow("Circuito de vía:", self.cv_edit)
+
+        if kind in ("Tramo de vía", "Cambio de agujas"):
+            self.side_combo = QComboBox(self)
+            self.side_combo.addItem("", "")
+            self.side_combo.addItem("Par", "Par")
+            self.side_combo.addItem("Impar", "Impar")
+            self.form_layout.addRow("Lado:", self.side_combo)
+
+        if kind == "Señal":
+            self.signal_type = QComboBox(self)
+            for signal_type in TipoSeñal:
+                self.signal_type.addItem(signal_type.name, signal_type)
+            self.form_layout.addRow("Tipo de señal:", self.signal_type)
+
+    def set_item(self, item):
+        self.current_item = item
+        kind = item_kind_name(item) if item is not None else None
+        if item is None or kind is None:
+            self.clear_form()
+            self.summary_label.setText("Selecciona un único elemento configurable para editarlo aquí.")
+            self.apply_button.setEnabled(False)
+            return
+
+        if kind != self.current_kind:
+            self.build_form(kind)
+
+        self.summary_label.setText(f"Editando {kind.lower()} {item.id.id} en {item.id.dep}.")
+        self.apply_button.setEnabled(True)
+        self.name_edit.setText(item.id.id_corto)
+
+        if isinstance(item, (CvLineal, Aguja)) and self.side_combo is not None:
+            index = self.side_combo.findData(item.lado.name if item.lado else "")
+            if index >= 0:
+                self.side_combo.setCurrentIndex(index)
+
+        if isinstance(item, Aguja) and self.cv_edit is not None:
+            self.cv_edit.setText(item.get_cv().id_corto if item.get_cv() else "")
+
+        if isinstance(item, Señal) and self.signal_type is not None:
+            index = self.signal_type.findData(item.tipo_señal)
+            if index >= 0:
+                self.signal_type.setCurrentIndex(index)
+
+    def apply_changes(self):
+        item = self.current_item
+        if item is None:
+            return
+        short_id = self.name_edit.text().strip() if self.name_edit else ""
+        cv_name = self.cv_edit.text().strip() if self.cv_edit else ""
+        signal_type = self.signal_type.currentData() if self.signal_type is not None else None
+        side_value = self.side_combo.currentData() if self.side_combo is not None else ""
+        side = Lado[side_value] if side_value else None
+        self.editor.apply_item_configuration(item, short_id, cv_name, signal_type, side)
+
+
 class GridView(QGraphicsView):
     def __init__(self, scene, editor):
         super().__init__(scene)
@@ -374,7 +526,7 @@ class GridView(QGraphicsView):
     def cell_at(point):
         col, row = int(point.x() // CELL), int(point.y() // CELL)
         if 0 <= col < COLS and 0 <= row < ROWS:
-            return (col, ROWS - row - 1)
+            return (col, row)
         return None
 
     @staticmethod
@@ -382,19 +534,21 @@ class GridView(QGraphicsView):
         for item in candidates:
             if not isinstance(item, Señal):
                 continue
-            signal_pos = signal_foot_position(item)
-            angle = -item.rotation.angle
+            angle = item.rotation.angle
             ux, uy = cos(angle), sin(angle)
-            center_x = signal_pos.x + ux * (4.5 + 11)
-            center_y = ROWS * CELL - signal_pos.y + uy * (4.5 + 11)
-            left_x, left_y = -uy, ux
-            dx, dy = point.x() - center_x, point.y() - center_y
-            along = dx * ux + dy * uy
-            left = dx * left_x + dy * left_y
+            anchor_x, anchor_y = item_screen_point(signal_foot_position(item))
+            dx, dy = point.x() - anchor_x, point.y() - anchor_y
+            local_x = dx * ux + dy * uy
+            local_y = -dx * uy + dy * ux
             text_half_width = len(item.id.id_corto) * 3.5
-            if (abs(along) <= 18 and abs(left) <= 9) or (
-                abs(along) <= text_half_width and 8 <= left <= 32
-            ):
+            if (0 <= local_x <= SIGNAL_ICON.width
+                    and -SIGNAL_ICON.height <= local_y <= 0):
+                return item
+            center_x = anchor_x + ux * SIGNAL_ICON.width / 2 + uy * SIGNAL_ICON.height / 2
+            center_y = anchor_y + uy * SIGNAL_ICON.width / 2 - ux * SIGNAL_ICON.height / 2
+            left_x, left_y = -uy, ux
+            label_dx, label_dy = point.x() - (center_x + left_x * 12), point.y() - (center_y + left_y * 12)
+            if abs(label_dx) <= text_half_width and abs(label_dy) <= 8:
                 return item
         return next((item for item in candidates if not isinstance(item, Señal)), None)
 
@@ -452,7 +606,7 @@ class GridView(QGraphicsView):
         start_row = int(self.press_scene.y() // CELL)
         current_col = int(point.x() // CELL)
         current_row = int(point.y() // CELL)
-        delta = (current_col - start_col, start_row - current_row)
+        delta = (current_col - start_col, current_row - start_row)
         signal_only_drag = self.drag_items and all(
             isinstance(item, Señal) for item in self.drag_items
         )
@@ -471,7 +625,7 @@ class GridView(QGraphicsView):
             for item, state in self.drag_before.items():
                 move_port = item in signals_moving_with_track
                 fine_delta = (point.x() - self.press_scene.x(),
-                              self.press_scene.y() - point.y())
+                              point.y() - self.press_scene.y())
                 self.editor.preview_move(item, state, delta, move_port, fine_delta)
             self.editor.draw_items()
         else:
@@ -504,7 +658,7 @@ class GridView(QGraphicsView):
                 for items in self.editor.items_by_dependency.values():
                     for item in items:
                         x, y = item_cell(item)
-                        row = ROWS - y - 1
+                        row = y
                         cell_rect = QRectF(x * CELL, row * CELL, CELL, CELL)
                         if rect.intersects(cell_rect):
                             selected.append(item)
@@ -528,7 +682,7 @@ class GridView(QGraphicsView):
             )
             col, row = int(point.x() // CELL), int(point.y() // CELL)
             if 0 <= col < COLS and 0 <= row < ROWS:
-                position = (col, ROWS - row - 1)
+                position = (col, row)
                 candidates = [
                     item for items in self.editor.items_by_dependency.values()
                     for item in items if item_cell(item) == position or isinstance(item, Señal)
@@ -538,8 +692,6 @@ class GridView(QGraphicsView):
                     self.editor.dependency.setCurrentText(item.id.dep)
                     self.editor.switch_dependency()
                     self.editor.set_selection([item])
-                    self.editor.configure_button.setEnabled(True)
-                    self.editor.configure_selected()
                     return
         super().mouseDoubleClickEvent(event)
 
@@ -566,9 +718,14 @@ class TrackEditor(QMainWindow):
         self.scene.setSceneRect(0, 0, COLS * CELL, ROWS * CELL)
         self.grid_graphics = []
         self.view = GridView(self.scene, self)
+        self.config_panel = ItemConfigPanel(self, self)
 
         central = QWidget(self)
-        root = QVBoxLayout(central)
+        root = QHBoxLayout(central)
+        root.setContentsMargins(0, 0, 0, 0)
+
+        left_panel = QWidget(self)
+        left_layout = QVBoxLayout(left_panel)
         dep_row = QHBoxLayout()
         dep_row.addWidget(QLabel("Dependencia de trabajo:"))
         self.dependency = QComboBox(self)
@@ -578,7 +735,7 @@ class TrackEditor(QMainWindow):
         self.dependency.activated.connect(lambda *_: self.switch_dependency())
         self.dependency.lineEdit().editingFinished.connect(self.switch_dependency)
         dep_row.addWidget(self.dependency, 1)
-        root.addLayout(dep_row)
+        left_layout.addLayout(dep_row)
 
         tools = QHBoxLayout()
         self.tool_buttons = []
@@ -589,13 +746,6 @@ class TrackEditor(QMainWindow):
         self.add_tool(tools, "Aguja +1", "switch", 1)
         self.add_tool(tools, "Aguja −1", "switch", -1)
         self.add_tool(tools, "Señal", "signal", None)
-        self.configure_button = QToolButton(self)
-        self.configure_button.setIcon(self.make_icon("settings"))
-        self.configure_button.setIconSize(QSize(36, 36))
-        self.configure_button.setFixedSize(46, 42)
-        self.configure_button.setToolTip("Configurar elemento seleccionado")
-        self.configure_button.clicked.connect(self.configure_selected)
-        tools.addWidget(self.configure_button)
         self.delete_button = QToolButton(self)
         self.delete_button.setIcon(self.make_icon("delete"))
         self.delete_button.setIconSize(QSize(36, 36))
@@ -631,6 +781,13 @@ class TrackEditor(QMainWindow):
         self.export_button.setToolTip("Exportar JSON del enclavamiento")
         self.export_button.clicked.connect(self.exportar_config_ence)
         tools.addWidget(self.export_button)
+        self.export_svg_button = QToolButton(self)
+        self.export_svg_button.setIcon(self.make_icon("export"))
+        self.export_svg_button.setIconSize(QSize(36, 36))
+        self.export_svg_button.setFixedSize(46, 42)
+        self.export_svg_button.setToolTip("Exportar layout a SVG")
+        self.export_svg_button.clicked.connect(self.exportar_svg)
+        tools.addWidget(self.export_svg_button)
         self.undo_button = QToolButton(self)
         self.undo_button.setIcon(self.make_icon("undo"))
         self.undo_button.setIconSize(QSize(36, 36))
@@ -678,15 +835,23 @@ class TrackEditor(QMainWindow):
         tools.addWidget(zoom_in)
         tools.addWidget(zoom_reset)
         tools.addStretch(1)
-        root.addLayout(tools)
-        root.addWidget(self.view, 1)
+        left_layout.addLayout(tools)
+        left_layout.addWidget(self.view, 1)
+
+        splitter = QSplitter(Qt.Orientation.Horizontal if hasattr(Qt, "Orientation") else Qt.Horizontal, self)
+        splitter.addWidget(left_panel)
+        splitter.addWidget(self.config_panel)
+        splitter.setStretchFactor(0, 1)
+        splitter.setStretchFactor(1, 0)
+        splitter.setSizes([1100, 350])
+
+        root.addWidget(splitter)
         self.setCentralWidget(central)
         QShortcut(QKeySequence("Ctrl+Z"), self).activated.connect(self.undo)
         QShortcut(QKeySequence("Ctrl+Y"), self).activated.connect(self.redo)
         QShortcut(QKeySequence("Ctrl+Shift+Z"), self).activated.connect(self.redo)
         QShortcut(QKeySequence("Delete"), self).activated.connect(self.delete_selected)
         self.statusBar().showMessage("Selecciona una herramienta y pulsa una celda de la rejilla.")
-        self.configure_button.setEnabled(False)
         self.delete_button.setEnabled(False)
         self.update_history_buttons()
         self.draw_grid()
@@ -707,6 +872,8 @@ class TrackEditor(QMainWindow):
     @staticmethod
     def make_icon(kind, value=None):
         """Crea iconos vectoriales Qt para las herramientas del editor."""
+        if kind == "signal":
+            return QIcon(str(SIGNAL_ICON_PATH))
         size = QSize(48, 48)
         pixmap = QPixmap(size)
         pixmap.fill(Qt.GlobalColor.transparent if hasattr(Qt, "GlobalColor") else Qt.transparent)
@@ -751,17 +918,6 @@ class TrackEditor(QMainWindow):
                 segment(endpoint(dirs[0]), center)
                 segment(endpoint(dirs[1]), center)
                 segment(endpoint(tip), center)
-        elif kind == "signal":
-            painter.setBrush(QColor("#26384a"))
-            painter.drawRoundedRect(13, 3, 22, 39, 5, 5)
-            for y, light_color in (
-                (11, "#2ecc71"),
-                (23, "#e53935"),
-                (35, "#fdd835"),
-            ):
-                painter.setBrush(QColor(light_color))
-                painter.drawEllipse(18, y - 5, 12, 10)
-            painter.drawLine(QPointF(24, 42), QPointF(24, 47))
         elif kind in ("rotate-left", "rotate-right"):
             path = QPainterPath()
             if kind == "rotate-right":
@@ -856,10 +1012,10 @@ class TrackEditor(QMainWindow):
                 self.switch_dependency()
         self.selected_items = selection
         self.selected = selection[0] if len(selection) == 1 else None
-        if hasattr(self, "configure_button"):
-            self.configure_button.setEnabled(len(selection) == 1)
         if hasattr(self, "delete_button"):
             self.delete_button.setEnabled(bool(selection))
+        if hasattr(self, "config_panel"):
+            self.config_panel.set_item(self.selected if len(selection) == 1 else None)
         self.draw_items()
 
     def movable_selection(self, items):
@@ -911,8 +1067,8 @@ class TrackEditor(QMainWindow):
             else:
                 if fine_delta is None:
                     fine_delta = (dx, dy)
-                normal_x = -sin(item.rotation.angle)
-                normal_y = cos(item.rotation.angle)
+                normal_x = sin(item.rotation.angle)
+                normal_y = -cos(item.rotation.angle)
                 offset_delta = fine_delta[0] * normal_x + fine_delta[1] * normal_y
                 item.offset_pie = max(-CELL, min(CELL, old_offset + offset_delta))
         else:
@@ -942,6 +1098,21 @@ class TrackEditor(QMainWindow):
             item.position, item.rotation = geometry
         if signal is not None:
             signal.position, signal.rotation = signal_state
+
+    @staticmethod
+    def set_aguja_rotation(item, rotation):
+        current_octant = round(item.rotation.angle / (pi / 4))
+        target_octant = round(rotation.angle / (pi / 4))
+        for attr in ("points_normal", "points_invertida", "points_punta"):
+            path = getattr(item, attr)
+            local_octant = direction_for_offset(path[-1])
+            current_diagonal = (local_octant + current_octant) % 2
+            target_diagonal = (local_octant + target_octant) % 2
+            if current_diagonal != target_diagonal:
+                scale = sqrt(2) if target_diagonal else 1 / sqrt(2)
+                path = getattr(item, attr)
+                setattr(item, attr, [point * scale for point in path])
+        item.rotation = rotation
 
     def rotate_geometry(self, item, steps, signal=None):
         if isinstance(item, Señal):
@@ -986,11 +1157,7 @@ class TrackEditor(QMainWindow):
             item.points = [Point(0, 0), middle - start, end - start]
             item.rotation = Angle(0)
         elif isinstance(item, Aguja):
-            for attr in ("points_normal", "points_invertida", "points_punta"):
-                path = getattr(item, attr)
-                direction = direction_for_offset(path[-1])
-                setattr(item, attr, [Point(0, 0), direction_vector(direction + steps)])
-            item.rotation = Angle(0)
+            self.set_aguja_rotation(item, item.rotation + Angle(steps * pi / 4))
         if signal is not None:
             if signal_port_index is not None:
                 new_port = item.get_outs()[signal_port_index]
@@ -1146,7 +1313,7 @@ class TrackEditor(QMainWindow):
             if scene_point is None:
                 click_model = cell_origin(position) + Point(CELL / 2, CELL / 2)
             else:
-                click_model = Point(scene_point.x(), ROWS * CELL - scene_point.y())
+                click_model = Point(scene_point.x(), scene_point.y())
             port_index = min(
                 range(len(track.get_outs())),
                 key=lambda i: (track.get_outs()[i][0].x - click_model.x) ** 2
@@ -1154,7 +1321,7 @@ class TrackEditor(QMainWindow):
             )
             port, direction = track.get_outs()[port_index]
             item = Señal(ident, port, signal_type,
-                         10.0, direction - Angle(pi))
+                         6.0, direction - Angle(pi))
         self.auto_rotate_for_connections(item)
         self.run_command(AddItemCommand(self, item))
 
@@ -1175,12 +1342,8 @@ class TrackEditor(QMainWindow):
                 item.points = [Point(0, 0), center - start, end - start]
                 item.rotation = Angle(0)
             else:
-                d0, d1, d2 = rotation, (rotation + item.angle) % 8, (rotation + 4) % 8
                 item.position = center
-                item.points_normal = [Point(0, 0), direction_vector(d0)]
-                item.points_invertida = [Point(0, 0), direction_vector(d1)]
-                item.points_punta = [Point(0, 0), direction_vector(d2)]
-                item.rotation = Angle(0)
+                self.set_aguja_rotation(item, Angle(rotation * pi / 4))
             score = sum(
                 1 for point, angle in item.get_outs()
                 for other in others if other is not item
@@ -1197,57 +1360,35 @@ class TrackEditor(QMainWindow):
             item.points = [Point(0, 0), center - start, end - start]
         else:
             item.position = center
-            item.points_normal = [Point(0, 0), direction_vector(best_rotation)]
-            item.points_invertida = [Point(0, 0), direction_vector((best_rotation + item.angle) % 8)]
-            item.points_punta = [Point(0, 0), direction_vector((best_rotation + 4) % 8)]
-        item.rotation = Angle(0)
+            self.set_aguja_rotation(item, Angle(best_rotation * pi / 4))
 
-    def configure_selected(self):
-        item = self.selected
-        if item is None or len(self.selected_items) != 1:
-            self.statusBar().showMessage("Selecciona primero un elemento de la rejilla.")
-            return
-        if isinstance(item, CvLineal):
-            kind = "Tramo de vía"
-        elif isinstance(item, Aguja):
-            kind = "Cambio de agujas"
-        else:
-            kind = "Señal"
+    def apply_item_configuration(self, item, short_id, cv_name, signal_type, side):
+        if item is None:
+            return False
         item_dependency = item.id.dep
-        dialog = ElementDialog(kind, item_dependency, self, edit=True)
-        dialog.name_edit.setText(item.id.id_corto)
-        if isinstance(item, (CvLineal, Aguja)):
-            index = dialog.side_combo.findData(item.lado.name if item.lado else "")
-            if index >= 0:
-                dialog.side_combo.setCurrentIndex(index)
-        if isinstance(item, Aguja):
-            dialog.cv_edit.setText(item.get_cv().id_corto if item.get_cv() else "")
-        elif isinstance(item, Señal):
-            index = dialog.signal_type.findData(item.tipo_señal)
-            if index >= 0:
-                dialog.signal_type.setCurrentIndex(index)
-        if hasattr(dialog, "exec"):
-            accepted = dialog.exec() == QDialog.DialogCode.Accepted
-        else:
-            accepted = dialog.exec_() == QDialog.Accepted
-        if not accepted:
-            return
-        short_id, cv_name, signal_type, side = dialog.values()
         if not short_id or (isinstance(item, Aguja) and not cv_name):
-            QMessageBox.warning(self, "Datos incompletos", "Indica el nombre del elemento y el circuito de vía cuando corresponda.")
-            return
+            QMessageBox.warning(
+                self,
+                "Datos incompletos",
+                "Indica el nombre del elemento y el circuito de vía cuando corresponda.",
+            )
+            return False
         try:
             new_id = IdElemento(short_id, item_dependency)
             new_cv = IdElemento(cv_name, item_dependency) if isinstance(item, Aguja) else None
         except ValueError as exc:
             QMessageBox.warning(self, "Identificador inválido", str(exc))
-            return
+            return False
         if isinstance(item, (Aguja, Señal)) and any(
             other is not item and isinstance(other, type(item)) and other.id.id == new_id.id
             for other in self.items_by_dependency.get(item_dependency, [])
         ):
-            QMessageBox.warning(self, "Identificador duplicado", f"Ya existe un elemento de este tipo con id {new_id.id}.")
-            return
+            QMessageBox.warning(
+                self,
+                "Identificador duplicado",
+                f"Ya existe un elemento de este tipo con id {new_id.id}.",
+            )
+            return False
         new_state = {"id": new_id}
         if isinstance(item, CvLineal):
             new_state["lado"] = side
@@ -1257,6 +1398,7 @@ class TrackEditor(QMainWindow):
         elif isinstance(item, Señal):
             new_state["tipo_señal"] = signal_type
         self.run_command(EditItemCommand(self, item, new_state, f"Configurar {item.id.id}"))
+        return True
 
     def rotate_selected(self, amount):
         if self.selected is None or len(self.selected_items) != 1:
@@ -1408,6 +1550,27 @@ class TrackEditor(QMainWindow):
             return
         self.statusBar().showMessage(f"Configuración exportada: {path}")
 
+    def exportar_svg(self):
+        self.switch_dependency()
+        dependency = self.current_dependency
+        initial_path = f"{dependency}.svg"
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Exportar layout a SVG", initial_path, "Imágenes SVG (*.svg)"
+        )
+        if not path:
+            return
+        if not Path(path).suffix:
+            path += ".svg"
+        items = [item for dependency_items in self.items_by_dependency.values()
+                 for item in dependency_items]
+        try:
+            with Path(path).open("w", encoding="utf-8") as destination:
+                destination.write(export_svg(items))
+        except (OSError, UnicodeError, ValueError, KeyError, TypeError, AttributeError) as exc:
+            QMessageBox.critical(self, "Error al exportar", str(exc))
+            return
+        self.statusBar().showMessage(f"Layout SVG exportado: {path}")
+
     def load_layout(self):
         self.switch_dependency()
         path, _ = QFileDialog.getOpenFileName(
@@ -1473,7 +1636,8 @@ class TrackEditor(QMainWindow):
         )
         self.selected = None
         self.selected_items = []
-        self.configure_button.setEnabled(False)
+        if hasattr(self, "config_panel"):
+            self.config_panel.set_item(None)
         self.draw_items()
         self.update_history_buttons()
         self.statusBar().showMessage(f"Dependencia activa: {dependency}")
@@ -1541,8 +1705,6 @@ class TrackEditor(QMainWindow):
 
     def draw_items(self):
         # Preserve the grid graphics; replace only item graphics on each redraw.
-        if hasattr(self, "configure_button"):
-            self.configure_button.setEnabled(self.selected is not None)
         if hasattr(self, "delete_button"):
             self.delete_button.setEnabled(bool(self.selected_items))
         for graphic in getattr(self, "item_graphics", []):
@@ -1561,7 +1723,7 @@ class TrackEditor(QMainWindow):
                 color = QColor("#fdd835")
             else:
                 color = QColor("#9e9e9e")
-            pen = QPen(color, 4, Qt.PenStyle.SolidLine if hasattr(Qt, "PenStyle") else Qt.SolidLine)
+            pen = QPen(color, 5, Qt.PenStyle.SolidLine if hasattr(Qt, "PenStyle") else Qt.SolidLine)
             pen.setCapStyle(Qt.PenCapStyle.FlatCap if hasattr(Qt, "PenCapStyle") else Qt.FlatCap)
             pen.setJoinStyle(Qt.PenJoinStyle.MiterJoin if hasattr(Qt, "PenJoinStyle") else Qt.MiterJoin)
             if isinstance(item, CvLineal):
@@ -1597,39 +1759,19 @@ class TrackEditor(QMainWindow):
                     arrow_dir = (branch_ends[0][0] - center[0], branch_ends[0][1] - center[1]) if item.lado == Lado.Impar else (branch_ends[2][0] - center[0], branch_ends[2][1] - center[1])
                     self.item_graphics.extend(self.add_arrow_vector(branch_ends[2], arrow_dir, color))
             elif isinstance(item, Señal):
-                angle = -item.rotation.angle
+                angle = item.rotation.angle
                 ux, uy = cos(angle), sin(angle)
-                left_x, left_y = -uy, ux
                 bottom = item_screen_point(signal_foot_position(item))
-                lamps = [
-                    (bottom[0] + ux * offset, bottom[1] + uy * offset)
-                    for offset in (4.5, 15.5, 26.5)
-                ]
-                signal_center = lamps[1]
-                housing_start = bottom
-                housing_end = (bottom[0] + ux * 31, bottom[1] + uy * 31)
-                housing = self.scene.addLine(
-                    housing_start[0], housing_start[1],
-                    housing_end[0], housing_end[1], pen,
-                )
-                self.item_graphics.append(housing)
-                for light_center, light_color in zip(
-                    lamps,
-                    (QColor("#fdd835"), QColor("#e53935"), QColor("#2ecc71")),
-                ):
-                    radius = 4.5
-                    light_pen = QPen(color, 1.5)
-                    lamp = self.scene.addEllipse(
-                        light_center[0] - radius,
-                        light_center[1] - radius,
-                        radius * 2,
-                        radius * 2,
-                        light_pen,
-                        QBrush(light_color),
-                    )
-                    self.item_graphics.append(lamp)
-                center = signal_center
-                label_center = (center[0] + left_x * 22, center[1] + left_y * 22)
+                center_x = bottom[0] + ux * SIGNAL_ICON.width / 2 + uy * SIGNAL_ICON.height / 2
+                center_y = bottom[1] + uy * SIGNAL_ICON.width / 2 - ux * SIGNAL_ICON.height / 2
+                label_center = (center_x - uy * 12, center_y + ux * 12)
+                pixmap = SIGNAL_ICON.pixmap()
+                graphic = self.scene.addPixmap(pixmap)
+                graphic.setOffset(0, -pixmap.height())
+                graphic.setPos(*bottom)
+                graphic.setRotation(item.rotation.angle * 180 / pi)
+                graphic.setZValue(1)
+                self.item_graphics.append(graphic)
             label = self.scene.addText(item.id.id_corto)
             label.setDefaultTextColor(color)
             if isinstance(item, Señal):

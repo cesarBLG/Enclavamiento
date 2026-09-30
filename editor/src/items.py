@@ -40,8 +40,8 @@ class Direccion(Enum):
 
 def get_next_position(pos, direction):
     """Ayuda heredada para las herramientas del editor basadas en celdas."""
-    offsets = ((1, 0), (1, -1), (0, -1), (-1, -1),
-               (-1, 0), (-1, 1), (0, 1), (1, 1))
+    offsets = ((1, 0), (1, 1), (0, 1), (-1, 1),
+               (-1, 0), (-1, -1), (0, -1), (1, -1))
     dx, dy = offsets[direction.value if isinstance(direction, Direccion) else int(direction)]
     return (pos[0] + dx, pos[1] + dy)
 
@@ -351,7 +351,7 @@ class Aguja(SeccionVia):
 
 class Señal(Item):
     def __init__(self, id: IdElemento, position: Point, tipo: TipoSeñal,
-                 offset_pie: float = 10.0, rotation: Angle = None):
+                 offset_pie: float = 6.0, rotation: Angle = None):
         super().__init__(id, TipoElemento.SEÑAL, position, rotation)
         self.tipo_señal = tipo
         self.offset_pie = float(offset_pie)
@@ -374,7 +374,7 @@ class Señal(Item):
             signal_type = TipoSeñal[data["tipo_señal"]]
         except (KeyError, TypeError):
             raise ValueError(f"Tipo de señal inválido para {ident.id}.") from None
-        offset = data.get("offset_pie", 10.0)
+        offset = data.get("offset_pie", 6.0)
         if not isinstance(offset, (int, float)) or not math.isfinite(offset):
             raise ValueError(f"Desplazamiento del pie inválido para {ident.id}.")
         return cls(ident, position, signal_type, offset, rotation)
