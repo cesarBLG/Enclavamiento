@@ -237,9 +237,8 @@ class CvLineal(SeccionVia):
     def __init__(self, id: IdElemento, position: Point,
                  points: List[Point] = None, rotation: Angle = None):
         super().__init__(id, TipoElemento.CV_LINEAL, position, rotation)
-        self.angle = 4
         if isinstance(points, int):  # firma anterior del editor: ángulo en octavos
-            self.angle, points = points, None
+            points = None
         self.points = [Point(0, 0)] + [p if isinstance(p, Point) else Point(*p)
                                       for p in (points or [Point(30, 0)])]
         self.lado = None
@@ -285,9 +284,11 @@ class CvLineal(SeccionVia):
 class Aguja(SeccionVia):
     def __init__(self, id: IdElemento, position: Point, rotation: Angle = None,
                  punta: List[Point] = None, normal: List[Point] = None,
-                 invertida: List[Point] = None):
+                 invertida: List[Point] = None, angulo: float = None):
         super().__init__(id, TipoElemento.AGUJA, position, rotation)
-        self.angle = 1
+        if angulo is None or not isinstance(angulo, (int, float)) or not math.isfinite(angulo):
+            raise ValueError(f"Falta el ángulo de la aguja {id.id}.")
+        self.angulo = float(angulo)
         self.points_punta = self._path(punta or [Point(-15, 0)])
         self.points_normal = self._path(normal or [Point(15, 0)])
         self.points_invertida = self._path(invertida or [Point(15, 15)])
@@ -327,6 +328,7 @@ class Aguja(SeccionVia):
                 "points_normal": [p.serialize() for p in self.points_normal[1:]],
                 "points_invertida": [p.serialize() for p in self.points_invertida[1:]],
                 "points_punta": [p.serialize() for p in self.points_punta[1:]],
+                    "angulo": self.angulo,
                 "cv": self.cv.id if self.cv else None,
                 "lado": self.lado.name if self.lado else None}
 
@@ -336,7 +338,8 @@ class Aguja(SeccionVia):
         item = cls(ident, position, rotation,
                    [Point.deserialize(p) for p in data.get("points_punta", [])],
                    [Point.deserialize(p) for p in data.get("points_normal", [])],
-                   [Point.deserialize(p) for p in data.get("points_invertida", [])])
+                   [Point.deserialize(p) for p in data.get("points_invertida", [])],
+                   data["angulo"] if "angulo" in data else None)
         cv = data.get("cv")
         if cv:
             item.cv = IdElemento(cv, dependency)

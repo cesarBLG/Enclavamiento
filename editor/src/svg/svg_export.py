@@ -1,6 +1,6 @@
 """Exportación del modelo geométrico del editor a SVG."""
 
-from math import cos, degrees, pi, sin
+from math import cos, degrees, pi, radians, sin
 from pathlib import Path
 import sys
 from typing import Iterable
@@ -54,7 +54,7 @@ def _junction_group(item: Aguja):
 	group.set("{http://www.inkscape.org/namespaces/inkscape}label", item.id.id)
 	group.set("transform", f"translate({item.position.x:g} {item.position.y:g}) "
 	            f"rotate({degrees(item.rotation.angle):g})")
-	for child in generate_junction(pi / 4):
+	for child in generate_junction(max(radians(item.angulo), 1e-6)):
 		group.append(child)
 	for points, label in ((item.points_punta, "t1a"),
 						 (item.points_normal, "t3ra"),
