@@ -37,18 +37,18 @@ def create_group(label=None):
         group.set(f"{{{INKSCAPE_NAMESPACE}}}label", label)
     return group
 
-def generate_junction(angle, av=False):
-    # Define constants as before
-    lock_width = 8.0
-    track_width = 5.0
-    desliz_width = 1.0
-    desliz_pos = 4.0
-    t3L_height = 9.0
-    t2R_width = 8.0
-    t3R_width = 9.0
-    gap_horiz = 1.0
-    cut_height = 6.0
 
+lock_width = 8.0
+track_width = 5.0
+desliz_width = 1.0
+desliz_pos = 4.0
+t3L_height = 9.0
+t2R_width = 8.0
+t3R_width = 9.0
+gap_horiz = 1.0
+cut_height = 6.0
+
+def generate_junction(angle, av=False, transform=None):
     # Using tuples instead of numpy arrays
     vec = (math.cos(angle), math.sin(angle))
     bisec = ((vec[0] + 1) / 2, vec[1] / 2)
@@ -65,7 +65,7 @@ def generate_junction(angle, av=False):
     t2R_width = track_width / 2 * math.tan(angle / 2) + (desliz_pos+desliz_width/2) * (1 / math.tan(angle) + 1 / math.sin(angle))
 
     def gen_path(points, gen, name=None, color='#ff0', *, inicio_recto=True, fin_recto=True, vec_inicio=None, vec_fin=None):
-        return generate_track.create_path(track_utils.generate_path_from_coords(track_utils.generate_track_points(points, gen, inicio_recto=inicio_recto, fin_recto=fin_recto, vec_inicio=vec_inicio, vec_fin=vec_fin))[0], name, color)
+        return generate_track.create_path(track_utils.generate_path_from_coords(track_utils.generate_track_points(points, gen, inicio_recto=inicio_recto, fin_recto=fin_recto, vec_inicio=vec_inicio, vec_fin=vec_fin))[0], name, color, transform)
 
     paths = []
 
@@ -93,23 +93,23 @@ def generate_junction(angle, av=False):
         (lock_width + 2 * gap_horiz + track_width / math.sin(angle), track_width / 2), 
         (lock_width + 2 * gap_horiz, track_width / 2)]
 
-    paths.append(generate_track.create_path(track_utils.generate_path_from_coords([[t2[0], t2[3]], [t2[1], t2[2]]])[0], 't2'))
+    paths.append(generate_track.create_path(track_utils.generate_path_from_coords([[t2[0], t2[3]], [t2[1], t2[2]]])[0], 't2', transform=transform))
 
     paths.append(gen_path([(lock_width + 2 * gap_horiz + track_width / 2 / math.sin(angle), track_width / 2), cut2],
                             [-track_width / 2, track_width / 2], 't2L'))
 
     paths.append(generate_track.generate_track_svg([cut2, 
-                            (cut2[0] + t3L_height / math.tan(angle), cut2[1] + t3L_height)], name='t3L', av=av))
+                            (cut2[0] + t3L_height / math.tan(angle), cut2[1] + t3L_height)], name='t3L', av=av, transform=transform))
 
     t2R = [(cut1[0] - track_width / 2 * normal[0] / cosang, cut1[1] - track_width / 2 * normal[1] / cosang), 
         (lock_width + 2 * gap_horiz + track_width / math.sin(angle), track_width / 2), 
         (lock_width + 2 * gap_horiz + t2R_width, track_width / 2), 
         (lock_width + 2 * gap_horiz + t2R_width, -track_width / 2)]
 
-    paths.append(generate_track.create_path(track_utils.generate_path_from_coords([[t2R[0], t2R[3]], [t2R[1], t2R[2]]])[0], 't2R'))
+    paths.append(generate_track.create_path(track_utils.generate_path_from_coords([[t2R[0], t2R[3]], [t2R[1], t2R[2]]])[0], 't2R', transform=transform))
 
     paths.append(generate_track.generate_track_svg([(lock_width + 2 * gap_horiz + t2R_width, 0), 
-                            (lock_width + 2 * gap_horiz + t2R_width + t3R_width, 0)], name='t3R', av=av))
+                            (lock_width + 2 * gap_horiz + t2R_width + t3R_width, 0)], name='t3R', av=av, transform=transform))
 
     if av:
         group = create_group("bv")
@@ -150,3 +150,11 @@ def generate_junction(angle, av=False):
                                     [-desliz_width / 2, desliz_width / 2], 'deslizLneg2'))
 
     return paths
+
+def get_junction_bounds(angle):
+    cut1 = (lock_width + 2 * gap_horiz + track_width / 2 * math.tan(angle / 2), 0)
+    cut2 = (cut1[0] + cut_height / math.tan(angle), cut1[1] + cut_height)
+
+    t2R_width = track_width / 2 * math.tan(angle / 2) + (desliz_pos+desliz_width/2) * (1 / math.tan(angle) + 1 / math.sin(angle))
+
+    return cut1, [(lock_width + 2 * gap_horiz + t2R_width + t3R_width, 0), (cut2[0] + t3L_height / math.tan(angle), cut2[1] + t3L_height),(0,0)]

@@ -1,10 +1,14 @@
 """Exportación del modelo geométrico del editor a SVG."""
 
 from math import cos, degrees, pi, radians, sin
+from operator import invert
 from pathlib import Path
 import sys
 from typing import Iterable
 from xml.etree import ElementTree
+
+from rich_click import group
+from tomlkit import item
 
 from items import Aguja, CvLineal, Item, Point, Señal
 
@@ -45,22 +49,24 @@ def _absolute_points(item: CvLineal) -> list[Point]:
 
 
 def _track_group(item: CvLineal):
-	points = [(point.x, point.y) for point in _absolute_points(item)]
-	return generate_track_svg(points, name=item.id.id)
+	return generate_track_svg([point.get_rotated(item.rotation) for point in item.points], name=item.id.id, transform=f"translate({item.position.x:g} {item.position.y:g})")
 
 
 def _junction_group(item: Aguja):
 	group = ElementTree.Element("{http://www.w3.org/2000/svg}g")
 	group.set("{http://www.inkscape.org/namespaces/inkscape}label", item.id.id)
-	group.set("transform", f"translate({item.position.x:g} {item.position.y:g}) "
-	            f"rotate({degrees(item.rotation.angle):g})")
-	for child in generate_junction(max(radians(item.angulo), 1e-6)):
+	invert = item.points_invertida[-1][1] < 0
+	center = item.points_punta[0]
+	group.set("transform", f"translate({(item.position.x):g} {item.position.y:g})")
+	transform = f"rotate({degrees(item.rotation.angle):g}) translate({(center.x):g} {(center.y):g})"
+	if invert:
+		transform += " scale(1,-1)"
+	for child in generate_junction(radians(item.angulo), transform=transform):
 		group.append(child)
 	for points, label in ((item.points_punta, "t1a"),
 						 (item.points_normal, "t3ra"),
 						 (item.points_invertida, "t3la")):
-		local_points = [(point.x, point.y) for point in points]
-		group.append(generate_track_svg(local_points, inicio_recto=label=="t3la", name=label))
+		group.append(generate_track_svg([point.get_rotated(item.rotation) for point in points], inicio_recto=label=="t3la", name=label))
 	return group
 
 

@@ -10,7 +10,7 @@ import sys
 import json
 import traceback
 from copy import deepcopy
-from math import cos, degrees, pi, sin, sqrt, tan
+from math import cos, degrees, pi, sin, sqrt, tan, radians
 from pathlib import Path
 
 try:
@@ -38,16 +38,18 @@ except ImportError:
 
 from items import (
     Aguja, Angle, CvLineal, Direccion, IdElemento, Lado, Point, Señal, TipoSeñal,
-    deserialize_layout, get_next_position, serialize_layout,
+    deserialize_layout, serialize_layout,
 )
 from export import generar_config_ence
 from svg.svg_export import export_svg
+from svg.generate_junction import get_junction_bounds
 
 
-CELL = 85
+GRID_WIDTH = 170
+GRID_HEIGHT = 85
 COLS = 24
 ROWS = 16
-SNAP_DISTANCE = CELL / 2
+SNAP_DISTANCE = 10
 PICK_TOLERANCE = 5.0
 SIGNAL_ICON_PATH = Path(__file__).resolve().parent.parent / "symbols" / "señal.svg"
 
@@ -87,66 +89,13 @@ def item_kind_name(item):
     return None
 
 
-def section_display_name(item):
-    if isinstance(item, Aguja):
-        return "Aguja a derechas" if item.points_invertida[-1].y >= 0 else "Aguja a izquierdas"
-    if len(item.points) <= 2:
-        return "Sección recta"
-    first_angle, second_angle = (angle.angle for _, angle in item.get_outs())
-    turn = abs((second_angle - first_angle + pi) % (2 * pi) - pi)
-    rounded_turn = round(degrees(turn))
-    if abs(rounded_turn - 90) <= 1:
-        return "Sección 90º"
-    if abs(rounded_turn - 135) <= 1:
-        return "Sección 135º"
-    return f"Sección {rounded_turn}º"
-
-
-def direction_vector(direction, length=CELL / 2):
+def direction_vector(direction, length):
     """Vector local de una dirección antigua en coordenadas cartesianas."""
     vectors = ((1, 0), (1, 1), (0, 1), (-1, 1),
                (-1, 0), (-1, -1), (0, -1), (1, -1))
     index = direction.value if isinstance(direction, Direccion) else int(direction)
     dx, dy = vectors[index % 8]
     return Point(dx * length, dy * length)
-
-
-def angle_vector(angle_degrees, length=CELL / 2):
-    radians = angle_degrees * pi / 180
-    return Point(cos(radians) * length, sin(radians) * length)
-
-
-def direction_for_offset(offset):
-    """Recupera la dirección discreta de un extremo en el borde de celda."""
-    return min(range(8), key=lambda direction: (
-        (offset.x - direction_vector(direction).x) ** 2
-        + (offset.y - direction_vector(direction).y) ** 2
-    ))
-
-def cell_origin(cell):
-    return Point(cell[0] * CELL, cell[1] * CELL)
-
-
-def item_cell(item):
-    """Celda de referencia para las herramientas de selección de la rejilla."""
-    if isinstance(item, (CvLineal, Aguja)):
-        if isinstance(item, CvLineal):
-            pts = [item.position + p.get_rotated(item.rotation.angle) for p in item.points]
-            anchor = Point(sum(p.x for p in pts) / len(pts), sum(p.y for p in pts) / len(pts))
-        else:
-            anchor = item.position
-        return int(anchor.x // CELL), int(anchor.y // CELL)
-    if isinstance(item, Señal):
-        toward_track = item.rotation.angle
-        anchor = Point(item.position.x + cos(toward_track),
-                       item.position.y + sin(toward_track))
-        return int(anchor.x // CELL), int(anchor.y // CELL)
-    return (0, 0)
-
-
-def item_cell_model(item):
-    x, y = item_cell(item)
-    return x, y
 
 
 def item_screen_point(point):
@@ -165,21 +114,19 @@ class AddItemCommand:
         self.editor = editor
         self.item = item
         self.previous_selection = list(editor.selected_items)
-        x, y = item_cell(item)
         if isinstance(item, CvLineal):
             side = item.lado.name if item.lado else "None"
-            self.text = f"{section_display_name(item)} {x} {y} {item.id.id} {side}"
+            self.text = f"CV {item.id.id} {side}"
         elif isinstance(item, Aguja):
             cv = item.get_cv().id if item.get_cv() else ""
             side = item.lado.name if item.lado else "None"
-            self.text = f"{section_display_name(item)} {x} {y} {item.id.id} {cv} {side}"
+            self.text = f"Aguja {item.id.id} {cv} {side}"
         else:
-            self.text = f"Señal {item.tipo_señal.name} {x} {y} {item.id.id}"
+            self.text = f"Señal {item.tipo_señal.name} {item.id.id}"
 
     def execute(self):
         if self.item not in self.editor.items:
             self.editor.items.append(self.item)
-        self.editor.ensure_grid_for_position(item_cell(self.item))
         self.editor.set_selection([self.item])
 
     def undo(self):
@@ -310,7 +257,6 @@ class MoveItemsCommand:
     def apply(self, positions):
         for item, state in positions.items():
             self.editor.restore_move_state(item, state)
-            self.editor.ensure_grid_for_position(item_cell(item))
         self.editor.set_selection(self.items)
 
     def execute(self):
@@ -353,7 +299,6 @@ class ReplaceLayoutCommand:
             self.dependency
         ]
         self.editor.items = self.editor.items_by_dependency[self.dependency]
-        self.editor.ensure_grid_for_items()
         self.editor.sync_dependency_choices()
         self.editor.set_selection([])
 
@@ -566,13 +511,6 @@ class GridView(QGraphicsView):
         return event.position().toPoint() if hasattr(event, "position") else event.pos()
 
     @staticmethod
-    def cell_at(point):
-        col, row = int(point.x() // CELL), int(point.y() // CELL)
-        if 0 <= col < COLS and 0 <= row < ROWS:
-            return (col, row)
-        return None
-
-    @staticmethod
     def item_at(point, candidates):
         def segment_distance(px, py, first, second):
             dx, dy = second[0] - first[0], second[1] - first[1]
@@ -640,14 +578,13 @@ class GridView(QGraphicsView):
                 self.press_scene = point
                 self.gesture = "extend"
                 return
-            position = self.cell_at(point)
-            if position is None:
+            if not self.scene().sceneRect().contains(point):
                 return
             if self.editor.mode[0] != "select":
-                self.editor.cell_clicked(position, point)
+                self.editor.point_clicked(point)
                 return
             self.press_scene = point
-            self.press_position = position
+            self.press_position = None
             self.preview_delta = (0, 0)
             self.rubber_band = None
             control = getattr(getattr(Qt, "KeyboardModifier", Qt), "ControlModifier")
@@ -699,16 +636,14 @@ class GridView(QGraphicsView):
             self.rubber_band.setZValue(10)
             return
 
-        start_col = int(self.press_scene.x() // CELL)
-        start_row = int(self.press_scene.y() // CELL)
-        current_col = int(point.x() // CELL)
-        current_row = int(point.y() // CELL)
+        start_col = int(self.press_scene.x() // GRID_WIDTH)
+        start_row = int(self.press_scene.y() // GRID_HEIGHT)
+        current_col = int(point.x() // GRID_WIDTH)
+        current_row = int(point.y() // GRID_HEIGHT)
         delta = (current_col - start_col, current_row - start_row)
         signal_only_drag = self.drag_items and all(
             isinstance(item, Señal) for item in self.drag_items
         )
-        if delta == self.preview_delta and not signal_only_drag:
-            return
         if self.editor.can_move_items(self.drag_items, self.drag_before, delta):
             self.preview_delta = delta
             self.editor._moving_sections = {
@@ -762,71 +697,89 @@ class GridView(QGraphicsView):
         if event.button() != LEFT_BUTTON or self.gesture is None:
             super().mouseReleaseEvent(event)
             return
-        point = self.mapToScene(self.event_point(event))
-        if self.gesture == "extend":
-            after = self.editor.capture_geometry_state(self.extend_item)
-            self.editor.restore_geometry_state(self.extend_item, self.extend_before)
-            if after != self.extend_before:
-                self.editor.run_command(
-                    ResizeSectionCommand(
-                        self.editor, self.extend_item, self.extend_before, after
+        else:
+            point = self.mapToScene(self.event_point(event))
+            if self.gesture == "extend":
+                after = self.editor.capture_geometry_state(self.extend_item)
+                self.editor.restore_geometry_state(self.extend_item, self.extend_before)
+                if after != self.extend_before:
+                    self.editor.run_command(
+                        ResizeSectionCommand(
+                            self.editor, self.extend_item, self.extend_before, after
+                        )
                     )
-                )
-            self.extend_item = None
-            self.extend_port = None
-            self.extend_before = None
+                self.extend_item = None
+                self.extend_port = None
+                self.extend_before = None
+                self.gesture = None
+                self.press_scene = None
+                return
+            if self.gesture == "move":
+                after = {item: self.editor.capture_move_state(item) for item in self.drag_items}
+                if any(after[item] != self.drag_before[item] for item in self.drag_items):
+                    for item, state in self.drag_before.items():
+                        self.editor.restore_move_state(item, state)
+                    self.editor.run_command(
+                        MoveItemsCommand(self.editor, self.drag_items, self.drag_before, after)
+                    )
+                elif not self.click_processed and not self.additive_selection:
+                    self.editor.point_clicked(point)
+            else:
+                distance = ((point.x() - self.press_scene.x()) ** 2
+                            + (point.y() - self.press_scene.y()) ** 2) ** .5
+                if distance >= 4:
+                    rect = QRectF(self.press_scene, point).normalized()
+                    selected = []
+                    for items in self.editor.items_by_dependency.values():
+                        for item in items:
+                            if isinstance(item, Señal):
+                                visible_points = [item.position]
+                            elif isinstance(item, CvLineal):
+                                visible_points = [
+                                    item.position + path_point.get_rotated(item.rotation)
+                                    for path_point in item.points
+                                ]
+                            else:
+                                visible_points = [
+                                    item.position + path_point.get_rotated(item.rotation)
+                                    for path in (item.points_normal, item.points_invertida,
+                                                 item.points_punta)
+                                    for path_point in path
+                                ]
+                            bounds = QRectF(
+                                min(point.x for point in visible_points),
+                                min(point.y for point in visible_points),
+                                max(point.x for point in visible_points)
+                                - min(point.x for point in visible_points),
+                                max(point.y for point in visible_points)
+                                - min(point.y for point in visible_points),
+                            )
+                            if rect.intersects(bounds):
+                                selected.append(item)
+                    if self.additive_selection:
+                        selected = list(self.editor.selected_items) + [
+                            item for item in selected if item not in self.editor.selected_items
+                        ]
+                    self.editor.set_selection(selected)
+                elif not self.click_processed and not self.additive_selection:
+                    self.editor.point_clicked(point)
+            if self.rubber_band is not None:
+                self.scene().removeItem(self.rubber_band)
+            self.rubber_band = None
             self.gesture = None
             self.press_scene = None
-            return
-        if self.gesture == "move":
-            after = {item: self.editor.capture_move_state(item) for item in self.drag_items}
-            if any(after[item] != self.drag_before[item] for item in self.drag_items):
-                for item, state in self.drag_before.items():
-                    self.editor.restore_move_state(item, state)
-                self.editor.run_command(
-                    MoveItemsCommand(self.editor, self.drag_items, self.drag_before, after)
-                )
-            elif not self.click_processed and not self.additive_selection:
-                self.editor.cell_clicked(self.press_position, point)
-        else:
-            distance = ((point.x() - self.press_scene.x()) ** 2
-                        + (point.y() - self.press_scene.y()) ** 2) ** .5
-            if distance >= 4:
-                rect = QRectF(self.press_scene, point).normalized()
-                selected = []
-                for items in self.editor.items_by_dependency.values():
-                    for item in items:
-                        x, y = item_cell(item)
-                        row = y
-                        cell_rect = QRectF(x * CELL, row * CELL, CELL, CELL)
-                        if rect.intersects(cell_rect):
-                            selected.append(item)
-                if self.additive_selection:
-                    selected = list(self.editor.selected_items) + [
-                        item for item in selected if item not in self.editor.selected_items
-                    ]
-                self.editor.set_selection(selected)
-            elif not self.click_processed and not self.additive_selection:
-                self.editor.cell_clicked(self.press_position, point)
-        if self.rubber_band is not None:
-            self.scene().removeItem(self.rubber_band)
-        self.rubber_band = None
-        self.gesture = None
-        self.press_scene = None
-        self.press_position = None
-        self.drag_items = []
-        self.drag_before = {}
-        self.preview_delta = (0, 0)
-        self.additive_selection = False
+            self.press_position = None
+            self.drag_items = []
+            self.drag_before = {}
+            self.preview_delta = (0, 0)
+            self.additive_selection = False
 
     def mouseDoubleClickEvent(self, event):
         if event.button() == LEFT_BUTTON:
             point = self.mapToScene(
                 event.position().toPoint() if hasattr(event, "position") else event.pos()
             )
-            col, row = int(point.x() // CELL), int(point.y() // CELL)
-            if 0 <= col < COLS and 0 <= row < ROWS:
-                position = (col, row)
+            if self.scene().sceneRect().contains(point):
                 candidates = [item for items in self.editor.items_by_dependency.values() for item in items]
                 item = self.item_at(point, candidates)
                 if item is not None:
@@ -856,7 +809,7 @@ class TrackEditor(QMainWindow):
         self.layout_path = None
         self.is_dirty = False
         self.scene = QGraphicsScene(self)
-        self.scene.setSceneRect(0, 0, COLS * CELL, ROWS * CELL)
+        self.scene.setSceneRect(0, 0, COLS * GRID_WIDTH, ROWS * GRID_HEIGHT)
         self.grid_graphics = []
         self.view = GridView(self.scene, self)
         self.config_panel = ItemConfigPanel(self, self)
@@ -891,8 +844,8 @@ class TrackEditor(QMainWindow):
         tools.addWidget(self.angle_edit)
         self.add_tool(tools, "Sección angular", "track", 3)
         self.add_tool(tools, "Recta 180°", "track", 4)
-        self.add_tool(tools, "Aguja +1", "switch", 1)
-        self.add_tool(tools, "Aguja −1", "switch", -1)
+        self.add_tool(tools, "Aguja a izquierdas", "switch", 1)
+        self.add_tool(tools, "Aguja a derechas", "switch", -1)
         self.add_tool(tools, "Alargar vía", "extend", None)
         self.add_tool(tools, "Señal", "signal", None)
         self.merge_button = QToolButton(self)
@@ -1008,7 +961,7 @@ class TrackEditor(QMainWindow):
         QShortcut(QKeySequence("Ctrl+Y"), self).activated.connect(self.redo)
         QShortcut(QKeySequence("Ctrl+Shift+Z"), self).activated.connect(self.redo)
         QShortcut(QKeySequence("Delete"), self).activated.connect(self.delete_selected)
-        self.statusBar().showMessage("Selecciona una herramienta y pulsa una celda de la rejilla.")
+        self.statusBar().showMessage("Selecciona una herramienta y pulsa en el plano.")
         self.delete_button.setEnabled(False)
         self.update_history_buttons()
         self.draw_grid()
@@ -1168,7 +1121,7 @@ class TrackEditor(QMainWindow):
         self.mode = (kind, value)
         for button, button_kind, button_value in self.tool_buttons:
             button.setChecked((button_kind, button_value) == self.mode)
-        self.statusBar().showMessage("Modo selección" if kind == "select" else "Pulsa una celda para añadir el elemento.")
+        self.statusBar().showMessage("Modo selección" if kind == "select" else "Pulsa en el plano para añadir el elemento.")
 
     def update_work_angle(self):
         try:
@@ -1243,7 +1196,7 @@ class TrackEditor(QMainWindow):
             item.position = state
 
     def preview_move(self, item, state, delta, move_port=False, fine_delta=None):
-        dx, dy = delta[0] * CELL, delta[1] * CELL
+        dx, dy = delta[0] * GRID_WIDTH, delta[1] * GRID_HEIGHT
         if isinstance(item, Señal):
             item.position, old_offset = state
             if move_port:
@@ -1255,9 +1208,15 @@ class TrackEditor(QMainWindow):
                 normal_x = sin(item.rotation.angle)
                 normal_y = -cos(item.rotation.angle)
                 offset_delta = fine_delta[0] * normal_x + fine_delta[1] * normal_y
-                item.offset_pie = max(-CELL, min(CELL, old_offset + offset_delta))
+                item.offset_pie = max(-GRID_HEIGHT, min(GRID_HEIGHT, old_offset + offset_delta))
         else:
-            item.position = Point(state.x + dx, state.y + dy)
+            if fine_delta is not None:
+                item.position = Point(
+                    state.x + fine_delta[0], state.y + fine_delta[1]
+                )
+            else:
+                item.position = Point(state.x + dx, state.y + dy)
+            self.snap_section_to_grid_corners(item)
             self.snap_section_to_connection(
                 item,
                 exclude=getattr(self, "_moving_sections", set()) | {item},
@@ -1293,6 +1252,29 @@ class TrackEditor(QMainWindow):
     def set_aguja_rotation(item, rotation):
         item.rotation = rotation
 
+    def allowed_rotations(self):
+        angle = self.work_angle
+        degrees = (0, angle, 90 - angle, 90, 90 + angle, 180 - angle,
+               180, 180 + angle, 270 - angle, 270, 270 + angle,
+               360 - angle)
+        rotations = []
+        for value in degrees:
+            rotation = Angle(radians(value))
+            if not any(rotation.close_to(previous) for previous in rotations):
+                rotations.append(rotation)
+        return rotations
+
+    def next_allowed_rotation(self, item, direction):
+        rotations = self.allowed_rotations()
+        current = min(
+            range(len(rotations)),
+            key=lambda index: min(
+                (item.rotation.angle - rotations[index].angle) % (2 * pi),
+                (rotations[index].angle - item.rotation.angle) % (2 * pi),
+            ),
+        )
+        return rotations[(current + (1 if direction > 0 else -1)) % len(rotations)]
+
     def rotate_geometry(self, item, steps, signal=None):
         if isinstance(item, Señal):
             track = next((candidate for candidate in self.items_by_dependency.get(item.id.dep, [])
@@ -1303,6 +1285,9 @@ class TrackEditor(QMainWindow):
             options = []
             for position, port_angle in track.get_outs():
                 candidate_rotation = port_angle - Angle(pi)
+                if not any(candidate_rotation.close_to(rotation)
+                           for rotation in self.allowed_rotations()):
+                    continue
                 if candidate_rotation.close_to(item.rotation):
                     continue
                 if steps > 0:
@@ -1323,7 +1308,8 @@ class TrackEditor(QMainWindow):
                 None,
             )
         if isinstance(item, CvLineal):
-            delta = Angle(steps * pi / 4)
+            new_rotation = self.next_allowed_rotation(item, steps)
+            delta = new_rotation - item.rotation
             old_points = [item.position + point.get_rotated(item.rotation)
                           for point in item.points]
             center = (old_points[0] + old_points[-1]) / 2
@@ -1337,7 +1323,7 @@ class TrackEditor(QMainWindow):
             ]
             item.rotation = new_rotation
         elif isinstance(item, Aguja):
-            self.set_aguja_rotation(item, item.rotation + Angle(steps * pi / 4))
+            self.set_aguja_rotation(item, self.next_allowed_rotation(item, steps))
         if isinstance(item, (CvLineal, Aguja)):
             self.snap_section_to_connection(item, rotate=False)
         if signal is not None:
@@ -1347,59 +1333,9 @@ class TrackEditor(QMainWindow):
                 signal.rotation = new_port[1] - Angle(pi)
 
     def can_move_items(self, items, before, delta):
-        if items and all(isinstance(item, Señal) for item in items):
-            return True
-        target_cells = {}
-        for item in items:
-            cell = item_cell(item)
-            target_cells[item] = (cell[0] + delta[0], cell[1] + delta[1])
-        if any(not (0 <= x < COLS and 0 <= y < ROWS)
-               for x, y in target_cells.values()):
-            return False
-        cells = {}
-        for dependency_items in self.items_by_dependency.values():
-            for item in dependency_items:
-                cell = target_cells.get(item, item_cell(item))
-                cells.setdefault(cell, []).append(item)
-        for cell_items in cells.values():
-            if len(cell_items) <= 1:
-                continue
-            if len(cell_items) != 2:
-                return False
-            first, second = cell_items
-            if first.id.dep != second.id.dep:
-                return False
-            if isinstance(first, Señal) and isinstance(second, (CvLineal, Aguja)):
-                signal, track = first, second
-            elif isinstance(second, Señal) and isinstance(first, (CvLineal, Aguja)):
-                signal, track = second, first
-            else:
-                return False
-            if not self.signal_matches_section(signal, track):
-                return False
         return True
 
-    def ensure_grid_for_position(self, position):
-        global COLS, ROWS
-        x, y = position
-        needed_cols = max(COLS, x + 5)
-        needed_rows = max(ROWS, y + 5)
-        while COLS < needed_cols:
-            COLS += 4
-        while ROWS < needed_rows:
-            ROWS += 4
-        if self.scene.sceneRect().width() != COLS * CELL or self.scene.sceneRect().height() != ROWS * CELL:
-            self.scene.setSceneRect(0, 0, COLS * CELL, ROWS * CELL)
-            self.draw_grid()
-
-    def ensure_grid_for_items(self):
-        positions = [item_cell(item) for items in self.items_by_dependency.values()
-                     for item in items]
-        if positions:
-            self.ensure_grid_for_position((max(p[0] for p in positions),
-                                           max(p[1] for p in positions)))
-
-    def cell_clicked(self, position, scene_point=None):
+    def point_clicked(self, scene_point):
         kind, value = self.mode
         if kind == "select":
             candidates = [item for items in self.items_by_dependency.values() for item in items]
@@ -1410,87 +1346,85 @@ class TrackEditor(QMainWindow):
             if existing:
                 self.statusBar().showMessage(f"Seleccionado: {existing.id.id}")
             return
-        cell_items = [
-            item for items in self.items_by_dependency.values() for item in items
-            if item_cell(item) == position
-        ]
         if kind == "extend":
-            sections = [item for item in cell_items if isinstance(item, (CvLineal, Aguja))]
+            sections = [
+                item for item in self._section_items()
+                if self.view.item_at(scene_point, [item]) is item
+            ]
             if len(sections) != 1:
                 QMessageBox.warning(
                     self, "Vía necesaria",
-                    "Pulsa una celda que contenga una única sección de vía.",
+                    "Pulsa una única sección de vía.",
                 )
                 return
             self.run_command(ExtendSectionCommand(self, sections[0]))
             return
         if kind == "signal":
-            tracks = [item for item in cell_items if isinstance(item, (CvLineal, Aguja))]
-            signals = [item for item in cell_items if isinstance(item, Señal)]
-            if len(tracks) != 1 or signals or len(cell_items) != 1:
+            tracks = [
+                item for item in self._section_items()
+                if self.view.item_at(scene_point, [item]) is item
+            ]
+            if len(tracks) != 1:
                 QMessageBox.warning(
                     self, "Vía necesaria",
-                    "Coloca la señal en la misma celda que una vía sin señal.",
+                    "Coloca la señal sobre una única vía sin señal.",
                 )
                 return
             if tracks[0].id.dep != self.current_dependency:
                 self.dependency.setCurrentText(tracks[0].id.dep)
                 self.switch_dependency()
-        elif cell_items and not (
-            kind in ("track", "switch")
-            and self.has_nearby_connection(scene_point, cell_items)
-        ):
-            QMessageBox.warning(
-                self, "Celda ocupada",
-                f"La celda ya está ocupada por {cell_items[0].id.id}.",
-            )
-            return
         dependency = self.dependency.currentText().strip()
         if not dependency:
             QMessageBox.warning(self, "Falta la dependencia", "Indica el nombre de la estación antes de añadir elementos.")
             self.dependency.setFocus()
             return
         if kind == "track":
-            center = cell_origin(position) + Point(CELL / 2, CELL / 2)
-            start = center + direction_vector(0)
-            end = center + (
-                direction_vector(4)
-                if value == 4 else angle_vector(180 - self.work_angle)
-            )
-            points = []
-            if value != 4:
-                points.append(center - start)
-            points.append(end - start)
+            center = Point(scene_point.x(), scene_point.y())
+            if value == 4:
+                start = center + direction_vector(4, GRID_WIDTH / 2)
+                end = center + direction_vector(0, GRID_WIDTH / 2)
+                points = [end - start]
+            else:
+                length = GRID_HEIGHT / 2 / sin(radians(self.work_angle))
+                start = center + direction_vector(4, length)
+                end = center + Point(length * cos(radians(self.work_angle)), length * sin(radians(self.work_angle)))
+                points = [center - start, end - start]
             item = CvLineal(IdElemento("", dependency), start, points, Angle(0))
             self.auto_rotate_for_connections(item, center=center)
             self.orient_section_for_connection(item, scene_point)
+            self.snap_section_to_grid_corners(item, scene_point)
             self.snap_section_to_connection(item, anchor=scene_point)
             self.run_command(AddItemCommand(self, item))
             return
-        prefix = {"switch": "nueva_aguja", "signal": "nueva_señal"}[kind]
+        prefix = {"switch": "A", "signal": ""}[kind]
         suffix = 1
         while any(
-            item.id.id == f"{dependency}:{prefix}_{suffix}"
+            item.id.id == f"{dependency}:{prefix}{suffix}"
             for item in self.items_by_dependency.get(dependency, [])
         ):
             suffix += 1
-        short_id = f"{prefix}_{suffix}"
+        short_id = f"{prefix}{suffix}"
         try:
             ident = IdElemento(short_id, dependency)
         except ValueError as exc:
             QMessageBox.warning(self, "Identificador inválido", str(exc))
             return
         if kind == "switch":
-            center = cell_origin(position) + Point(CELL / 2, CELL / 2)
+            center = Point(scene_point.x(), scene_point.y())
             branch_side = value if value in (-1, 1) else 1
-            branch_offset = Point(
-                CELL / 2,
-                branch_side * tan(self.work_angle * pi / 180) * CELL / 2,
-            )
-            item = Aguja(ident, center, Angle(0),
-                         [Point(-CELL / 2, 0)], [Point(CELL / 2, 0)],
-                         [branch_offset], self.work_angle)
+
+            radan = radians(self.work_angle)
+            cut1, bounds = get_junction_bounds(radan)
+            cut1 = Point(*cut1)
+            bounds = [Point(*p)-cut1 for p in bounds]
+            punta = [bounds[2], bounds[2]+Point(-8, 0)]
+            normal = [bounds[0], bounds[0]+Point(8, 0)]
+            diff = GRID_HEIGHT / 2 - bounds[1][1]
+            invertida = [Point(bounds[1][0], bounds[1][1]*branch_side), Point(bounds[1][0]+diff/tan(radan), GRID_HEIGHT / 2 * branch_side)]
+
+            item = Aguja(ident, center, Angle(0), punta, normal, invertida, self.work_angle)
             self.orient_section_for_connection(item, scene_point)
+            self.snap_section_to_grid_corners(item, scene_point)
             if not self.snap_section_to_connection(item, anchor=scene_point):
                 QMessageBox.warning(
                     self, "Vía necesaria",
@@ -1499,10 +1433,7 @@ class TrackEditor(QMainWindow):
                 return
         else:
             track = tracks[0]
-            if scene_point is None:
-                click_model = cell_origin(position) + Point(CELL / 2, CELL / 2)
-            else:
-                click_model = Point(scene_point.x(), scene_point.y())
+            click_model = Point(scene_point.x(), scene_point.y())
             port_index = min(
                 range(len(track.get_outs())),
                 key=lambda i: (track.get_outs()[i][0].x - click_model.x) ** 2
@@ -1721,6 +1652,7 @@ class TrackEditor(QMainWindow):
             output_position.x + cos(output_angle.angle) * distance,
             output_position.y + sin(output_angle.angle) * distance,
         )
+        target = self.snap_point_to_grid_corner(target)
         target = self.magnet_target(item, output_position, output_angle, target)
         if isinstance(item, CvLineal):
             world_points = [
@@ -1745,6 +1677,43 @@ class TrackEditor(QMainWindow):
         path = list(getattr(item, attributes[port_index]))
         path[-1] = (target - item.position).get_rotated(-item.rotation.angle)
         setattr(item, attributes[port_index], path)
+
+    def snap_section_to_grid_corners(self, item, anchor=None):
+        if not isinstance(item, (CvLineal, Aguja)):
+            return False
+        if anchor is not None:
+            anchor = Point(
+                anchor.x() if callable(anchor.x) else anchor.x,
+                anchor.y() if callable(anchor.y) else anchor.y,
+            )
+        candidates = []
+        for port, (position, _) in enumerate(item.get_outs()):
+            if anchor is None:
+                column = round(position.x / GRID_WIDTH)
+                row = round(position.y / GRID_HEIGHT)
+            else:
+                column = round(anchor.x / GRID_WIDTH)
+                row = round(anchor.y / GRID_HEIGHT)
+            corner = Point(column * GRID_WIDTH, row * GRID_HEIGHT)
+            distance = sqrt((position.x - corner.x) ** 2 + (position.y - corner.y) ** 2)
+            if anchor is not None:
+                distance = sqrt((anchor.x - corner.x) ** 2 + (anchor.y - corner.y) ** 2)
+            if distance <= SNAP_DISTANCE:
+                candidates.append((distance, port, corner))
+        if not candidates:
+            return False
+        _, port, corner = min(candidates, key=lambda candidate: candidate[0])
+        output = item.get_outs()[port][0]
+        item.position = item.position + corner - output
+        return True
+
+    @staticmethod
+    def snap_point_to_grid_corner(point):
+        column = round(point.x / GRID_WIDTH)
+        row = round(point.y / GRID_HEIGHT)
+        corner = Point(column * GRID_WIDTH, row * GRID_HEIGHT)
+        distance = sqrt((point.x - corner.x) ** 2 + (point.y - corner.y) ** 2)
+        return corner if distance <= SNAP_DISTANCE else point
 
     def magnet_target(self, item, output_position, output_angle, target):
         normal_x, normal_y = -sin(output_angle.angle), cos(output_angle.angle)
@@ -1776,7 +1745,7 @@ class TrackEditor(QMainWindow):
             return path
         return path + [endpoint + direction * (length / magnitude)]
 
-    def extend_section(self, item, length=CELL):
+    def extend_section(self, item):
         if isinstance(item, CvLineal):
             first, last = item.points[0], item.points[-1]
             axis = last - first
@@ -1794,19 +1763,6 @@ class TrackEditor(QMainWindow):
             item.points_normal = self._extend_path(item.points_normal, length)
             item.points_invertida = self._extend_path(item.points_invertida, length)
             item.points_punta = self._extend_path(item.points_punta, length)
-
-    def has_nearby_connection(self, anchor, cell_items=()):
-        if anchor is None:
-            return False
-        anchor = Point(
-            anchor.x() if callable(anchor.x) else anchor.x,
-            anchor.y() if callable(anchor.y) else anchor.y,
-        )
-        return any(
-            (port.x - anchor.x) ** 2 + (port.y - anchor.y) ** 2 <= SNAP_DISTANCE ** 2
-            for other in self._section_items()
-            for port, _ in other.get_outs()
-        )
 
     def snap_section_to_connection(self, item, anchor=None, exclude=(), rotate=True):
         if not isinstance(item, (CvLineal, Aguja)):
@@ -1880,21 +1836,25 @@ class TrackEditor(QMainWindow):
         if isinstance(item, Señal):
             return
         if center is None:
-            cell = item_cell(item)
-            center = cell_origin(cell) + Point(CELL / 2, CELL / 2)
+            if isinstance(item, CvLineal):
+                points = [item.position + point.get_rotated(item.rotation)
+                          for point in item.points]
+                center = (points[0] + points[-1]) / 2
+            else:
+                center = item.position
         others = [other for values in self.items_by_dependency.values() for other in values
                   if isinstance(other, (CvLineal, Aguja))]
         best_rotation, best_score = 0, -1
         if isinstance(item, CvLineal):
             local_midpoint = (item.points[0] + item.points[-1]) / 2
-        for rotation in range(8):
+        rotations = self.allowed_rotations()
+        for candidate_rotation in rotations:
             if isinstance(item, CvLineal):
-                candidate_rotation = Angle(rotation * pi / 4)
                 item.position = center - local_midpoint.get_rotated(candidate_rotation)
                 item.rotation = candidate_rotation
             else:
                 item.position = center
-                self.set_aguja_rotation(item, Angle(rotation * pi / 4))
+                self.set_aguja_rotation(item, candidate_rotation)
             score = sum(
                 1 for point, angle in item.get_outs()
                 for other in others if other is not item
@@ -1903,14 +1863,13 @@ class TrackEditor(QMainWindow):
                 and angle.close_to(other_angle + Angle(pi))
             )
             if score > best_score:
-                best_rotation, best_score = rotation, score
+                best_rotation, best_score = candidate_rotation, score
         if isinstance(item, CvLineal):
-            candidate_rotation = Angle(best_rotation * pi / 4)
-            item.position = center - local_midpoint.get_rotated(candidate_rotation)
-            item.rotation = candidate_rotation
+            item.position = center - local_midpoint.get_rotated(best_rotation)
+            item.rotation = best_rotation
         else:
             item.position = center
-            self.set_aguja_rotation(item, Angle(best_rotation * pi / 4))
+            self.set_aguja_rotation(item, best_rotation)
 
     def apply_item_configuration(self, item, short_id, cv_name, signal_type, side):
         if item is None:
@@ -1952,7 +1911,7 @@ class TrackEditor(QMainWindow):
 
     def rotate_selected(self, amount):
         if self.selected is None or len(self.selected_items) != 1:
-            self.statusBar().showMessage("Selecciona primero un elemento de la rejilla.")
+            self.statusBar().showMessage("Selecciona primero un elemento.")
             return
         if isinstance(self.selected, Señal):
             track = next((item for item in self.items_by_dependency.get(self.selected.id.dep, [])
@@ -1964,6 +1923,9 @@ class TrackEditor(QMainWindow):
             options = []
             for position, port_angle in track.get_outs():
                 candidate = port_angle - Angle(pi)
+                if not any(candidate.close_to(rotation)
+                           for rotation in self.allowed_rotations()):
+                    continue
                 if candidate.close_to(current):
                     continue
                 diff = (candidate.angle - current.angle) % (2 * pi)
@@ -1980,7 +1942,7 @@ class TrackEditor(QMainWindow):
         if not items and self.selected is not None:
             items = [self.selected]
         if not items:
-            self.statusBar().showMessage("Selecciona primero un elemento de la rejilla.")
+            self.statusBar().showMessage("Selecciona primero un elemento.")
             return
         selected_set = set(items)
         for item in items:
@@ -2209,49 +2171,15 @@ class TrackEditor(QMainWindow):
         pen = QPen(QColor("#d7dee7"), 1)
         for col in range(COLS + 1):
             self.grid_graphics.append(
-                self.scene.addLine(col * CELL, 0, col * CELL, ROWS * CELL, pen)
+                self.scene.addLine(col * GRID_WIDTH, 0,
+                                   col * GRID_WIDTH, ROWS * GRID_HEIGHT, pen)
             )
         for row in range(ROWS + 1):
             self.grid_graphics.append(
-                self.scene.addLine(0, row * CELL, COLS * CELL, row * CELL, pen)
+                self.scene.addLine(0, row * GRID_HEIGHT,
+                                   COLS * GRID_WIDTH, row * GRID_HEIGHT, pen)
             )
         self.draw_items()
-
-    @staticmethod
-    def direction_point(center, direction):
-        angle = direction.value * pi / 4
-        dx, dy = cos(angle), sin(angle)
-        half_cell = CELL / 2
-        if direction.value % 2 == 0:
-            # Los puntos cardinales terminan exactamente en el borde.
-            return center[0] + dx * half_cell, center[1] + dy * half_cell
-        # El extremo diagonal llega a la esquina de la celda; el propio
-        # recorrido diagonal ocupa visualmente las celdas cercanas.
-        extent = half_cell
-        return (center[0] + (1 if dx > 0 else -1) * extent,
-                center[1] + (1 if dy > 0 else -1) * extent)
-
-    def add_direction_arrow(self, center, direction, color, position_direction=None):
-        angle = direction.value * pi / 4
-        ux, uy = cos(angle), sin(angle)
-        px, py = -uy, ux
-        if position_direction is None:
-            position_direction = direction
-        position_angle = position_direction.value * pi / 4
-        anchor = (
-            center[0] + cos(position_angle) * 12,
-            center[1] + sin(position_angle) * 12,
-        )
-        tip = (anchor[0] + ux * 6, anchor[1] + uy * 6)
-        base = (tip[0] - ux * 7, tip[1] - uy * 7)
-        wing_a = (base[0] + px * 4, base[1] + py * 4)
-        wing_b = (base[0] - px * 4, base[1] - py * 4)
-        arrow_pen = QPen(color, 2.5)
-        arrow_pen.setCapStyle(Qt.PenCapStyle.FlatCap if hasattr(Qt, "PenCapStyle") else Qt.FlatCap)
-        return [
-            self.scene.addLine(tip[0], tip[1], wing_a[0], wing_a[1], arrow_pen),
-            self.scene.addLine(tip[0], tip[1], wing_b[0], wing_b[1], arrow_pen),
-        ]
 
     def draw_items(self):
         # Preserve the grid graphics; replace only item graphics on each redraw.
@@ -2296,6 +2224,7 @@ class TrackEditor(QMainWindow):
             elif isinstance(item, Aguja):
                 branch_ends = []
                 for path_points in (item.points_normal, item.points_invertida, item.points_punta):
+                    path_points = [Point(0,0)]+path_points[1:]
                     transformed = [item.position + p.get_rotated(item.rotation.angle) for p in path_points]
                     screen_points = [item_screen_point(p) for p in transformed]
                     branch_ends.append(screen_points[-1])
@@ -2332,7 +2261,7 @@ class TrackEditor(QMainWindow):
             else:
                 label.setPos(
                     label_center[0] - label.boundingRect().width() / 2,
-                    label_center[1] + CELL * .17,
+                    label_center[1]# + CELL * .17,
                 )
             label.setZValue(2)
             self.item_graphics.append(label)

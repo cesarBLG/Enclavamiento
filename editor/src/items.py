@@ -10,7 +10,6 @@ import math
 from pathlib import Path
 from typing import Dict, List, Tuple
 
-
 class TipoElemento(Enum):
     CV_LINEAL = 1
     AGUJA = 2
@@ -36,15 +35,6 @@ class Direccion(Enum):
     NW = 5
     N = 6
     NE = 7
-
-
-def get_next_position(pos, direction):
-    """Ayuda heredada para las herramientas del editor basadas en celdas."""
-    offsets = ((1, 0), (1, 1), (0, 1), (-1, 1),
-               (-1, 0), (-1, -1), (0, -1), (1, -1))
-    dx, dy = offsets[direction.value if isinstance(direction, Direccion) else int(direction)]
-    return (pos[0] + dx, pos[1] + dy)
-
 
 class Point:
     __slots__ = ("x", "y")
@@ -289,18 +279,11 @@ class Aguja(SeccionVia):
         if angulo is None or not isinstance(angulo, (int, float)) or not math.isfinite(angulo):
             raise ValueError(f"Falta el ángulo de la aguja {id.id}.")
         self.angulo = float(angulo)
-        self.points_punta = self._path(punta or [Point(-15, 0)])
-        self.points_normal = self._path(normal or [Point(15, 0)])
-        self.points_invertida = self._path(invertida or [Point(15, 15)])
+        self.points_punta = punta
+        self.points_normal = normal
+        self.points_invertida = invertida
         self.lado = None
         self.cv = None
-
-    @staticmethod
-    def _path(points):
-        values = [p if isinstance(p, Point) else Point(*p) for p in points]
-        if not values or not values[0].close_to(Point(0, 0)):
-            values.insert(0, Point(0, 0))
-        return values
 
     @staticmethod
     def get_connections():
@@ -325,10 +308,10 @@ class Aguja(SeccionVia):
 
     def serialize(self):
         return {**super().serialize(), "tipo": "Aguja",
-                "points_normal": [p.serialize() for p in self.points_normal[1:]],
-                "points_invertida": [p.serialize() for p in self.points_invertida[1:]],
-                "points_punta": [p.serialize() for p in self.points_punta[1:]],
-                    "angulo": self.angulo,
+                "points_normal": [p.serialize() for p in self.points_normal],
+                "points_invertida": [p.serialize() for p in self.points_invertida],
+                "points_punta": [p.serialize() for p in self.points_punta],
+                "angulo": self.angulo,
                 "cv": self.cv.id if self.cv else None,
                 "lado": self.lado.name if self.lado else None}
 
