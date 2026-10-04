@@ -91,7 +91,7 @@ bool bloqueo::desbloqueo_permitido()
     // - Si no existe posibilidad de cruce en la estación emisora (estación cerrada sin agujas talonables),
     //   esta estación no puede ser receptora de otro bloqueo
     if (ruta == TipoMovimiento::Itinerario || colateral.ruta == TipoMovimiento::Itinerario || ocupado.par || ocupado.impar) return false;
-    if (escape && cv_entrada != nullptr && cv_entrada->get_state() > EstadoCV::Prenormalizado) return false;
+    if (escape && cv_entrada != nullptr && !cv_libre(cv_entrada->get_state())) return false;
     if (tipo == TipoBloqueo::BAD || tipo == TipoBloqueo::BLAD) return false;
     if (estado == bloqueo_emisor) {
         if (bloqueo_vinculado != nullptr && (colateral.bloqueo_siguiente || bloqueo_vinculado->propagacion_completa) && (bloqueo_vinculado->estado == bloqueo_vinculado->bloqueo_receptor || bloqueo_vinculado->colateral.estado_objetivo == bloqueo_vinculado->bloqueo_receptor || bloqueo_vinculado->estado == EstadoBloqueo::SinDatos)) {
@@ -143,7 +143,7 @@ void bloqueo::message_cv(const id_elemento &id, estado_cv ecv)
     if (!escape && estado != bloqueo_emisor && tipo != TipoBloqueo::BAD && tipo != TipoBloqueo::BLAD) {
         bool esc=false;
         // Liberación circuito de agujas estando ocupado el de entrada
-        if (ruta == TipoMovimiento::Ninguno && ((ecv.evento && ecv.evento->lado == lado && !ecv.evento->ocupacion) || (!ecv.evento && ecv.estado_previo > EstadoCV::Prenormalizado && ecv.estado <= EstadoCV::Prenormalizado)) && cv_entrada != nullptr && cv_entrada->get_state() > EstadoCV::Prenormalizado && !cv_entrada->is_averia()) {
+        if (ruta == TipoMovimiento::Ninguno && ((ecv.evento && ecv.evento->lado == lado && !ecv.evento->ocupacion) || (!ecv.evento && !cv_libre(ecv.estado_previo) && cv_libre(ecv.estado))) && cv_entrada != nullptr && !cv_libre(cv_entrada->get_state()) && !cv_entrada->is_averia()) {
             for (auto &[sec, r] : cvs_agujas) {
                 if (sec->get_cv()->id != id) continue;
                 bool accesible = true;
@@ -196,8 +196,8 @@ void bloqueo::message_cv(const id_elemento &id, estado_cv ecv)
     bool liberar = false;
 
     // Desbloqueo si se produce liberación del último CV de trayecto
-    if (estado == bloqueo_receptor && index == 0 && est_cv <= EstadoCV::Prenormalizado
-         && (prev_est == (lado == Lado::Impar ? EstadoCV::OcupadoPar : EstadoCV::OcupadoImpar) || prev_est == EstadoCV::Ocupado)
+    if (estado == bloqueo_receptor && index == 0 && cv_libre(est_cv)
+         && (prev_est != (lado == Lado::Impar ? EstadoCV::OcupadoImpar : EstadoCV::OcupadoPar))
          && (!ecv.evento || ecv.evento->lado == lado))
             liberar = true;
 
@@ -210,7 +210,7 @@ void bloqueo::message_cv(const id_elemento &id, estado_cv ecv)
     if (dependencias[estacion]->cerrada) {
         // Si se ocupa el primer CV, establecer bloqueo si no lo estaba
         if (ecv.evento && ecv.evento->lado == lado && estado == EstadoBloqueo::Desbloqueo
-            && ecv.estado_previo <= EstadoCV::Prenormalizado && ecv.estado > EstadoCV::Prenormalizado
+            && cv_libre(ecv.estado_previo) && !cv_libre(ecv.estado)
             && index == 0 && bloqueo_permitido(true)) {
 
             estado_objetivo = bloqueo_emisor;
@@ -234,7 +234,7 @@ void bloqueo::message_cv(const id_elemento &id, estado_cv ecv)
     // Gestionar desbloqueo
     if (liberar && desbloqueo_permitido()) estado_objetivo = EstadoBloqueo::Desbloqueo;
 
-    if (ecv.estado_previo <= EstadoCV::Prenormalizado && ecv.estado > EstadoCV::Prenormalizado && estado == bloqueo_receptor && señal_entrada != nullptr) {
+    if (cv_libre(ecv.estado_previo) && !cv_libre(ecv.estado) && estado == bloqueo_receptor && señal_entrada != nullptr) {
         // Soneria proximidad
         auto &prox = señal_entrada->proximidad_señal.ultimos_cvs_proximidad;
         if (prox.find(id) != prox.end())

@@ -1,6 +1,10 @@
 #include "cv.h"
 #include "items.h"
 #include "topology.h"
+bool cv_libre(EstadoCV estado)
+{
+    return estado <= (parametros.prenormalizacion_libre ? EstadoCV::Prenormalizado : EstadoCV::Libre);
+}
 RemotaCV cv::get_estado_remota()
 {
     RemotaCV r;

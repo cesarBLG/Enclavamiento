@@ -437,9 +437,9 @@ void ruta::update()
     for (auto &[sec, val] : señal_inicio->proximidad_señal.get(tipo)) {
         auto dir = val.first;
         auto e = sec->get_cv()->get_state();
-        if (e > EstadoCV::Prenormalizado && (e != (dir == Lado::Impar ? EstadoCV::OcupadoPar : EstadoCV::OcupadoImpar))) {
+        if (!cv_libre(e) && (e != (dir == Lado::Impar ? EstadoCV::OcupadoPar : EstadoCV::OcupadoImpar))) {
             proximidad_ocupada = true;
-            if (!sec->get_cv()->is_averia()) proximidad_ocupada_fai = true;
+            if (!sec->get_cv()->is_averia() && e != EstadoCV::Prenormalizado) proximidad_ocupada_fai = true;
             break;
         }
     }
@@ -551,7 +551,7 @@ void ruta::update()
             for (auto &sig : señales) {
                 if (sig->seccion == secciones[i].seccion && sig->ruta_activa == this) sig->ruta_activa = nullptr;
             }
-            if (secciones[i].seccion->get_cv() == nullptr || secciones[i].seccion->get_cv()->get_state() <= EstadoCV::Prenormalizado) {
+            if (secciones[i].seccion->get_cv() == nullptr || cv_libre(secciones[i].seccion->get_cv()->get_state())) {
                 if (secciones[i].seccion->is_asegurada(this)) {
                     secciones[i].seccion->liberar(this);
                     secciones_aseguradas.erase(secciones[i].seccion);
@@ -577,7 +577,7 @@ void ruta::update()
     if (ocupada && señal_inicio->ruta_activa == this) {
         bool libre = true;
         for (int i=0; i<secciones.size(); i++) {
-            if (secciones[i].seccion->get_cv() != nullptr && secciones[i].seccion->get_cv()->get_state() > EstadoCV::Prenormalizado) {
+            if (secciones[i].seccion->get_cv() != nullptr && !cv_libre(secciones[i].seccion->get_cv()->get_state())) {
                 libre = false;
                 break;
             }
@@ -635,7 +635,7 @@ void ruta::message_cv(const id_elemento &id, estado_cv ecv)
         if (estado_fai == EstadoFAI::EnEspera) inicio_temporizacion_fai = get_milliseconds();
     }
     // En maniobra, cerrar señal si se libera el circuito anterior a la señal o el de señal
-    if (tipo == TipoMovimiento::Maniobra && !sucesion_automatica && señal_inicio->ruta_activa == this && (ocupada || cv_inicio == nullptr) && ecv.estado <= EstadoCV::Prenormalizado && ecv.estado_previo > EstadoCV::Prenormalizado) {
+    if (tipo == TipoMovimiento::Maniobra && !sucesion_automatica && señal_inicio->ruta_activa == this && (ocupada || cv_inicio == nullptr) && cv_libre(ecv.estado) && !cv_libre(ecv.estado_previo)) {
         bool proximidad_liberada = false;
         if (señal_inicio->proximidad_señal.proximidad0.size() > 0) {
             proximidad_liberada = true;

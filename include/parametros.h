@@ -11,6 +11,7 @@ struct parametros_predeterminados
     double fraccion_ejes_prenormalizacion;
     bool deslizamiento_bloqueo;
     bool aprec_anterior;
+    bool prenormalizacion_libre;
     Aspecto aspecto_desviada;
 };
 #ifndef WITHOUT_JSON

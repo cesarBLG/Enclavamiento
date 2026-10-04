@@ -108,7 +108,7 @@ class aguja : public seccion_via, public estado_aguja
         if (posicion_enclavada && posicion_enclavada != pos) return false;
         if ((mandada && mandada->first == pos) || comprobacion == pos) return true;
         if (bloqueo || !enclavada.empty() || talonable_muelle) return false;
-        if (!anular_pedal && cv_seccion != nullptr && cv_seccion->get_state() > EstadoCV::Prenormalizado) return false;
+        if (!anular_pedal && cv_seccion != nullptr && !cv_libre(cv_seccion->get_state())) return false;
         if (!anular_pedal && afectada_galibo(lados<int>::from_directional(0, pos == PosicionAguja::Invertida ? 0 : 1, lado))) return false;
         if (escape != nullptr && (pos == PosicionAguja::Normal || !escape->talonable)) {
             escape->escape = nullptr;

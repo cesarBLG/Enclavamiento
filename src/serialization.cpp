@@ -457,6 +457,7 @@ void from_json(const json &j, parametros_predeterminados &params)
     params.diferimetro_prenormalizacion_cv_tren = j.value("PrenormalizaciónCVTren", 20) * 1000;
     params.tiempo_espera_fai = j.value("EspaciadoFAI", 20) * 1000;
     params.fraccion_ejes_prenormalizacion = j.value("FracciónEjesPrenormalización", 0.5);
+    params.prenormalizacion_libre = j.value("PrenormalizaciónLibre", true);
     params.deslizamiento_bloqueo = j.value("DeslizamientoBloqueo", false);
     params.aspecto_desviada = j.value("AspectoDesviada", Aspecto::AnuncioParada);
     params.aprec_anterior = j.value("AnuncioPrecaución", true);

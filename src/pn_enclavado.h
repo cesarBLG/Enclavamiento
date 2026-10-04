@@ -52,7 +52,7 @@ public:
     }
     void update()
     {
-        if (permiso_apertura() && seccion->get_cv()->get_state() <= EstadoCV::Prenormalizado) {
+        if (permiso_apertura() && cv_libre(seccion->get_cv()->get_state())) {
             mando_cierre = false;
         }
         if (!mando_cierre && perdida_comprobacion) perdida_comprobacion = false;
@@ -106,13 +106,13 @@ public:
                 }, tiempo);
             }
         }
-        if (ecv.estado_previo <= EstadoCV::Prenormalizado && ecv.estado > EstadoCV::Prenormalizado) {
+        if (cv_libre(ecv.estado_previo) && !cv_libre(ecv.estado)) {
             for (Lado l : {Lado::Impar, Lado::Par}) {
                 if (tipo[l] != TipoPN::Enclavado) aviso_cierre[l] = false;
             }
             mando_cierre = true;
         }
-        ocupado = ecv.estado > EstadoCV::Prenormalizado;
+        ocupado = !cv_libre(ecv.estado);
         update();
     }
     RemotaPN get_estado_remota()

@@ -177,7 +177,7 @@ bool seccion_via::afectada_galibo(lados<int> outs)
         if (!pt.afectado_propio(outs)) continue;
         auto *sec = secciones[pt.seccion_causante];
         auto *cv = sec->get_cv();
-        if (cv != nullptr && cv->get_state() > EstadoCV::Prenormalizado) {
+        if (cv != nullptr && !cv_libre(cv->get_state())) {
             // Ocupación en la posición de falta de gálibo
             if (pt.afectado_ajeno(sec->ocupacion_outs))
                 return true;
@@ -216,7 +216,7 @@ void seccion_via::message_cv(const id_elemento &id, estado_cv ev)
         }
     }
     bool intempestiva = false;
-    if ((ev.evento && ev.evento->ocupacion || (!ev.evento && ev.estado_previo <= EstadoCV::Prenormalizado)) && ev.estado > EstadoCV::Prenormalizado) {
+    if ((ev.evento && ev.evento->ocupacion || (!ev.evento && cv_libre(ev.estado_previo))) && !cv_libre(ev.estado)) {
         if (trayecto) {
             if (ev.evento && bloqueo_asociado && bloqueo_act.estado != (ev.evento->lado == Lado::Impar ? EstadoBloqueo::BloqueoImpar : EstadoBloqueo::BloqueoPar) && bloqueo_act.ruta[ev.evento->lado] != TipoMovimiento::Maniobra) {
                 //intempestiva = true;
@@ -235,7 +235,7 @@ void seccion_via::message_cv(const id_elemento &id, estado_cv ev)
                 int in = ruta_asegurada->outs[opp];
                 if (in >= 0 && siguientes_secciones[opp][in].id.id != "") {
                     auto *sec = secciones[siguientes_secciones[opp][in].id];
-                    if (sec->ruta_asegurada && sec->ruta_asegurada->ruta_asegurada == ruta_asegurada->ruta_asegurada && sec->get_cv() != nullptr && sec->get_cv() != cv_seccion && sec->get_cv()->get_state() <= EstadoCV::Prenormalizado)
+                    if (sec->ruta_asegurada && sec->ruta_asegurada->ruta_asegurada == ruta_asegurada->ruta_asegurada && sec->get_cv() != nullptr && sec->get_cv() != cv_seccion && cv_libre(sec->get_cv()->get_state()))
                         intempestiva = true;
                 }
             }
@@ -246,7 +246,7 @@ void seccion_via::message_cv(const id_elemento &id, estado_cv ev)
         cv_seccion->ocupacion_intempestiva = true;
     }
 
-    if (ev.estado_previo <= EstadoCV::Prenormalizado && ev.estado > EstadoCV::Prenormalizado) {
+    if (cv_libre(ev.estado_previo) && !cv_libre(ev.estado)) {
         // Determina los pines por los que se produce la ocupación
         for (Lado l : {Lado::Impar, Lado::Par}) {
             // Punto de entrada al CV en esta sección + punto de salida comprobando
@@ -259,7 +259,7 @@ void seccion_via::message_cv(const id_elemento &id, estado_cv ev)
             else if ((!ruta_asegurada_cv || ruta_asegurada || intempestiva) && active_outs[opp_lado(l)].size() == 1)
                 ocupacion_outs[l] = active_outs[opp_lado(l)].begin()->first;
         }
-    } else if (ev.estado <= EstadoCV::Prenormalizado) {
+    } else if (cv_libre(ev.estado)) {
         ocupacion_outs = {-1, -1};
     }
 

@@ -1,6 +1,7 @@
 #pragma once
 #include "lado.h"
 #include <optional>
+bool cv_libre(EstadoCV estado);
 struct evento_cv
 {
     Lado lado;
@@ -23,7 +24,7 @@ struct estado_cv
     }
     bool is_liberacion()
     {
-        return estado <= EstadoCV::Prenormalizado && estado_previo > EstadoCV::Prenormalizado;
+        return cv_libre(estado) && !cv_libre(estado_previo);
     }
 };
 #ifndef WITHOUT_JSON

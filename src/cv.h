@@ -46,7 +46,7 @@ public:
     {
         *((estado_cv*)this) = ecv;
         remota_cambio_elemento("cv", id);
-        if (estado <= EstadoCV::Prenormalizado) ocupacion_intempestiva = false;
+        if (cv_libre(estado)) ocupacion_intempestiva = false;
     }
 
     virtual RespuestaMando mando(const std::string &cmd, int me)
@@ -83,7 +83,7 @@ public:
     void send_state()
     {
         remota_cambio_elemento("cv", id);
-        if (estado <= EstadoCV::Prenormalizado) ocupacion_intempestiva = false;
+        if (cv_libre(estado)) ocupacion_intempestiva = false;
         json msg(*((estado_cv*)this));
         send_message(topic, msg.dump());
 

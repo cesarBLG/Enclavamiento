@@ -20,7 +20,7 @@ señal_impl::señal_impl(const id_elemento &id, const json &j) : señal(id, j), 
         }
     }
     if (aspecto_maximo_ocupacion.empty())
-        aspecto_maximo_ocupacion[EstadoCanton::Libre] = tipo == TipoSeñal::Maniobra ? Aspecto::MovimientoAutorizado : Aspecto::ViaLibre;
+        aspecto_maximo_ocupacion[parametros.prenormalizacion_libre ? EstadoCanton::Prenormalizado : EstadoCanton::Libre] = tipo == TipoSeñal::Maniobra ? Aspecto::MovimientoAutorizado : Aspecto::ViaLibre;
     if (j.contains("LímiteProximidad")) {
         for (auto &jprox : j["LímiteProximidad"]) {
             proximidad_señal.ultimos_cvs_proximidad.insert(id_elemento::from_default_dep(jprox.get<std::string>(), id.dependencia));
