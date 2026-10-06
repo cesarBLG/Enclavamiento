@@ -24,8 +24,10 @@ enum struct Aspecto
 {
     Parada,
     RebaseAutorizado,
-    RebaseAutorizadoDestellos,
+    IndicadoraDesviada,
+    IndicadoraDirecta,
     MovimientoAutorizado,
+    RebaseAutorizadoDestellos,
     ParadaSelectiva,
     ParadaSelectivaDestellos,
     ParadaDiferida,

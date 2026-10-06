@@ -20,7 +20,7 @@ señal_impl::señal_impl(const id_elemento &id, const json &j) : señal(id, j), 
         }
     }
     if (aspecto_maximo_ocupacion.empty())
-        aspecto_maximo_ocupacion[parametros.prenormalizacion_libre ? EstadoCanton::Prenormalizado : EstadoCanton::Libre] = tipo == TipoSeñal::Maniobra ? Aspecto::MovimientoAutorizado : Aspecto::ViaLibre;
+        aspecto_maximo_ocupacion[parametros.prenormalizacion_libre ? EstadoCanton::Prenormalizado : EstadoCanton::Libre] = tipo == TipoSeñal::Maniobra ? Aspecto::MovimientoAutorizado : (tipo == TipoSeñal::Retroceso ? Aspecto::IndicadoraDirecta : Aspecto::ViaLibre);
     if (j.contains("LímiteProximidad")) {
         for (auto &jprox : j["LímiteProximidad"]) {
             proximidad_señal.ultimos_cvs_proximidad.insert(id_elemento::from_default_dep(jprox.get<std::string>(), id.dependencia));
@@ -31,7 +31,7 @@ señal_impl::señal_impl(const id_elemento &id, const json &j) : señal(id, j), 
     cierre_stick = ruta_necesaria;
     clear_request = !cierre_stick;
     aprec_anterior = parametros.aprec_anterior;
-    aspecto_desviada = parametros.aspecto_desviada;
+    aspecto_desviada = tipo == TipoSeñal::Retroceso ? Aspecto::IndicadoraDesviada : parametros.aspecto_desviada;
 
     subscribe("signal/"+id_to_mqtt(id.id)+"/rec_aprec");
 }
@@ -148,15 +148,16 @@ void señal_impl::determinar_aspecto()
         aspecto = Aspecto::Parada;
     } else if (ruta_activa != nullptr && ruta_activa->tipo == TipoMovimiento::Maniobra) {
         aspecto = Aspecto::RebaseAutorizado;
-    } else if (ruta_activa != nullptr && ruta_activa->tipo == TipoMovimiento::Rebase) {
-        aspecto = tipo == TipoSeñal::Maniobra ? Aspecto::MovimientoAutorizado : Aspecto::RebaseAutorizadoDestellos;
     // Señal en parada si no se cumplen las condiciones para apertura en itinerario
     } else if (cerrar_itinerario || (prohibir_abrir_itinerario && (prev_aspecto == Aspecto::Parada || !ruta_necesaria))) {
         aspecto = Aspecto::Parada;
     } else {
         // Permitir o no la apertura con cantón ocupado en el mismo sentido, o en prenormalización
-        auto it = aspecto_maximo_ocupacion.lower_bound(canton);
+        // En rebase, abrir señal incluso con cantón ocupado
+        bool rebase = ruta_activa != nullptr && ruta_activa->tipo == TipoMovimiento::Rebase;
+        auto it = aspecto_maximo_ocupacion.lower_bound(rebase ? EstadoCanton::Libre : canton);
         aspecto = it == aspecto_maximo_ocupacion.end() ? Aspecto::Parada : it->second;
+        if (rebase && aspecto > Aspecto::RebaseAutorizadoDestellos) aspecto = Aspecto::RebaseAutorizadoDestellos;
         // Itinerarios ERTMS pueden abrir como máximo en parada selectiva
         if (ruta_activa != nullptr && ruta_activa->ertms && aspecto > Aspecto::ParadaSelectivaDestellos) aspecto = Aspecto::ParadaSelectivaDestellos;
         // Aspecto máximo permitido para cumplir las órdenes de la señal siguiente
@@ -359,6 +360,8 @@ RemotaSIG señal_impl::get_estado_remota_sig()
         case Aspecto::RebaseAutorizadoDestellos:
             r.SIG_IND = 5;
             break;
+        case Aspecto::IndicadoraDesviada:
+        case Aspecto::IndicadoraDirecta:
         case Aspecto::MovimientoAutorizado:
             r.SIG_IND = 6;
             break;

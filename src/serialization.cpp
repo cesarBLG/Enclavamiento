@@ -35,6 +35,8 @@ std::string to_string(Aspecto aspecto)
         case Aspecto::RebaseAutorizado: return "RebaseAutorizado";
         case Aspecto::RebaseAutorizadoDestellos: return "RebaseAutorizadoDestellos";
         case Aspecto::MovimientoAutorizado: return "MovimientoAutorizado";
+        case Aspecto::IndicadoraDesviada: return "IndicadoraDesviada";
+        case Aspecto::IndicadoraDirecta: return "IndicadoraDirecta";
         case Aspecto::ParadaDiferida: return "ParadaDiferida";
         case Aspecto::ParadaSelectiva: return "ParadaSelectiva";
         case Aspecto::ParadaSelectivaDestellos: return "ParadaSelectivaDestellos";
@@ -198,6 +200,8 @@ void from_json(const json &j, Aspecto &asp)
     else if (j == "RebaseAutorizadoDestellos") asp = Aspecto::RebaseAutorizadoDestellos;
     else if (j == "RebaseAutorizado") asp = Aspecto::RebaseAutorizado;
     else if (j == "MovimientoAutorizado") asp = Aspecto::MovimientoAutorizado;
+    else if (j == "IndicadoraDesviada") asp = Aspecto::IndicadoraDesviada;
+    else if (j == "IndicadoraDirecta") asp = Aspecto::IndicadoraDirecta;
     else asp = Aspecto::Parada;
 }
 void to_json(json &j, const TipoMovimiento &tipo)
