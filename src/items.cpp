@@ -307,6 +307,13 @@ void handle_message(const std::string &topic, const std::string &payload)
         if (it != señal_impls.end()) it->second->set_reconocimiento_aprec(json::parse(payload));
         return;
     }
+    std::regex signalFieldStatePattern(R"(^signal/([a-zA-Z0-9_-]+/[a-zA-Z0-9_'-]+)/field_state$)");
+    if (std::regex_match(topic, match, signalFieldStatePattern)) {
+        id_elemento id = id_elemento(id_from_mqtt(match[1]));
+        auto it = señal_impls.find(id);
+        if (it != señal_impls.end()) it->second->message_señal_campo(json::parse(payload));
+        return;
+    }
     std::regex bloqueoStatePattern(R"(^bloqueo/([a-zA-Z0-9_-]+/[a-zA-Z0-9_'-]+)/state$)");
     if (std::regex_match(topic, match, bloqueoStatePattern)) {
         estado_bloqueo eb(json::parse(payload));

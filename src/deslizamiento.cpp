@@ -92,7 +92,15 @@ bool nodo_deslizamiento::compatible(movimiento *r, int id_deslizamiento)
             if (sec2 == seccion && it != posicion_aparatos.end() && outs[dir] != it->second[dir]) return false;
 
             // No comprobar compatibilidad de una ruta con su propio deslizamiento
-            if (deslizamiento->fin_movimiento->señal_fin->ruta_activa == r)
+            bool continuacion = false;
+            for (auto *sig : r->get_señales()) {
+                if (deslizamiento->fin_movimiento->señal_fin == sig) {
+                    continuacion = true;
+                    break;
+                }
+                if (r->es_ruta) break;
+            }
+            if (continuacion)
                 continue;
 
             for (auto &pt : seccion->puntos_negros) {

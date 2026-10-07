@@ -4,6 +4,7 @@ struct estado_señal
 {
     Aspecto aspecto;
     Aspecto aspecto_maximo_anterior_señal;
+    unsigned int focos_mandados_mask = 0;
     bool desviada;
     bool sin_datos = false;
     bool operator<=>(const estado_señal &o) const = default;

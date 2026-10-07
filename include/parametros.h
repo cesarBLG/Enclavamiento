@@ -13,6 +13,7 @@ struct parametros_predeterminados
     bool aprec_anterior;
     bool prenormalizacion_libre;
     Aspecto aspecto_desviada;
+    std::map<Aspecto, std::vector<std::map<FocoSeñal, EstadoFocoSeñal>>> combinaciones_focos;
 };
 #ifndef WITHOUT_JSON
 #include "json.h"

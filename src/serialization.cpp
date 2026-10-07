@@ -43,9 +43,19 @@ std::string to_string(Aspecto aspecto)
         case Aspecto::Precaucion: return "Precaución";
         case Aspecto::AnuncioParada: return "AnuncioParada";
         case Aspecto::AnuncioPrecaucion: return "AnuncioPrecaución";
+        case Aspecto::ViaLibreCondicional: return "VíaLibreCondicional";
         case Aspecto::ViaLibre: return "VíaLibre";
     }
     return "";
+}
+std::string to_string(ReconocimientoAnuncioPrecaucion rec)
+{
+    switch (rec) {
+        case ReconocimientoAnuncioPrecaucion::Inactivo: return "Inactivo";
+        case ReconocimientoAnuncioPrecaucion::NoReconocido: return "NoReconocido";
+        case ReconocimientoAnuncioPrecaucion::Reconocido: return "Reconocido";
+        case ReconocimientoAnuncioPrecaucion::PerdidaReconocimiento: return "PerdidaReconocimiento";
+    }
 }
 std::string to_string(EstadoBloqueo estado)
 {
@@ -191,6 +201,7 @@ void to_json(json &j, const Aspecto &asp)
 void from_json(const json &j, Aspecto &asp)
 {
     if (j == "VíaLibre") asp = Aspecto::ViaLibre;
+    else if (j == "VíaLibreCondicional") asp = Aspecto::ViaLibreCondicional;
     else if (j == "AnuncioPrecaución") asp = Aspecto::AnuncioPrecaucion;
     else if (j == "AnuncioParada") asp = Aspecto::AnuncioParada;
     else if (j == "Precaución") asp = Aspecto::Precaucion;
@@ -203,6 +214,17 @@ void from_json(const json &j, Aspecto &asp)
     else if (j == "IndicadoraDesviada") asp = Aspecto::IndicadoraDesviada;
     else if (j == "IndicadoraDirecta") asp = Aspecto::IndicadoraDirecta;
     else asp = Aspecto::Parada;
+}
+void to_json(json &j, const ReconocimientoAnuncioPrecaucion &rec)
+{
+    j = to_string(rec);
+}
+void from_json(const json &j, ReconocimientoAnuncioPrecaucion &rec)
+{
+    if (j == "Inactivo") rec = ReconocimientoAnuncioPrecaucion::Inactivo;
+    else if (j == "NoReconocido") rec = ReconocimientoAnuncioPrecaucion::NoReconocido;
+    else if (j == "Reconocido") rec = ReconocimientoAnuncioPrecaucion::Reconocido;
+    else rec = ReconocimientoAnuncioPrecaucion::PerdidaReconocimiento;
 }
 void to_json(json &j, const TipoMovimiento &tipo)
 {
@@ -398,6 +420,7 @@ void to_json(json &j, const estado_señal &estado)
     j["Aspecto"] = estado.aspecto;
     j["AspectoAnterior"] = estado.aspecto_maximo_anterior_señal;
     if (estado.desviada) j["Desviada"] = estado.desviada;
+    j["Focos"] = estado.focos_mandados_mask;
 }
 void from_json(const json &j, estado_señal &estado)
 {
@@ -411,6 +434,7 @@ void from_json(const json &j, estado_señal &estado)
     estado.aspecto = j["Aspecto"];
     estado.aspecto_maximo_anterior_señal = j["AspectoAnterior"];
     estado.desviada = j.value("Desviada", false);
+    estado.focos_mandados_mask = j.value("Focos", 0u);
 }
 void to_json(json &j, const estado_inicio_ruta &estado)
 {
@@ -465,6 +489,25 @@ void from_json(const json &j, parametros_predeterminados &params)
     params.deslizamiento_bloqueo = j.value("DeslizamientoBloqueo", false);
     params.aspecto_desviada = j.value("AspectoDesviada", Aspecto::AnuncioParada);
     params.aprec_anterior = j.value("AnuncioPrecaución", true);
+
+    params.combinaciones_focos[Aspecto::ViaLibre].push_back({{FocoSeñal::V, EstadoFocoSeñal::Encendido}});
+    params.combinaciones_focos[Aspecto::ViaLibreCondicional].push_back({{FocoSeñal::V, EstadoFocoSeñal::Intermitente}});
+    params.combinaciones_focos[Aspecto::AnuncioPrecaucion].push_back({{FocoSeñal::V, EstadoFocoSeñal::Encendido}, {FocoSeñal::A, EstadoFocoSeñal::Encendido}});
+    params.combinaciones_focos[Aspecto::Precaucion].push_back({{FocoSeñal::V, EstadoFocoSeñal::Intermitente}});
+    params.combinaciones_focos[Aspecto::AnuncioParada].push_back({{FocoSeñal::A, EstadoFocoSeñal::Encendido}});
+    params.combinaciones_focos[Aspecto::ParadaDiferida].push_back({{FocoSeñal::A, EstadoFocoSeñal::Encendido}, {FocoSeñal::R, EstadoFocoSeñal::Encendido}});
+    params.combinaciones_focos[Aspecto::ParadaSelectivaDestellos].push_back({{FocoSeñal::Az, EstadoFocoSeñal::Intermitente}, {FocoSeñal::R, EstadoFocoSeñal::Encendido}});
+    params.combinaciones_focos[Aspecto::ParadaSelectiva].push_back({{FocoSeñal::Az, EstadoFocoSeñal::Encendido}, {FocoSeñal::R, EstadoFocoSeñal::Encendido}});
+    params.combinaciones_focos[Aspecto::MovimientoAutorizado].push_back({{FocoSeñal::Bh, EstadoFocoSeñal::Encendido}});
+    params.combinaciones_focos[Aspecto::IndicadoraDesviada].push_back({{FocoSeñal::Bh, EstadoFocoSeñal::Encendido}, {FocoSeñal::Bc, EstadoFocoSeñal::Encendido}});
+    params.combinaciones_focos[Aspecto::IndicadoraDirecta].push_back({{FocoSeñal::Bv, EstadoFocoSeñal::Encendido}, {FocoSeñal::Bc, EstadoFocoSeñal::Encendido}});
+    params.combinaciones_focos[Aspecto::RebaseAutorizado].push_back({{FocoSeñal::R, EstadoFocoSeñal::Encendido}, {FocoSeñal::Bh, EstadoFocoSeñal::Encendido}});
+    params.combinaciones_focos[Aspecto::RebaseAutorizado].push_back({{FocoSeñal::R, EstadoFocoSeñal::Encendido}, {FocoSeñal::Bv, EstadoFocoSeñal::Encendido}});
+    params.combinaciones_focos[Aspecto::RebaseAutorizado].push_back({{FocoSeñal::R, EstadoFocoSeñal::Encendido}, {FocoSeñal::Bc, EstadoFocoSeñal::Encendido}});
+    params.combinaciones_focos[Aspecto::RebaseAutorizado].push_back({{FocoSeñal::R, EstadoFocoSeñal::Intermitente}});
+    params.combinaciones_focos[Aspecto::RebaseAutorizadoDestellos].push_back({{FocoSeñal::R, EstadoFocoSeñal::Encendido}, {FocoSeñal::Bh, EstadoFocoSeñal::Intermitente}});
+    params.combinaciones_focos[Aspecto::RebaseAutorizadoDestellos].push_back({{FocoSeñal::R, EstadoFocoSeñal::Intermitente}});
+    params.combinaciones_focos[Aspecto::Parada].push_back({{FocoSeñal::R, EstadoFocoSeñal::Encendido}});
 }
 void to_json(json &j, const TipoBloqueo &tipo)
 {

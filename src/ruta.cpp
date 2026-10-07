@@ -224,8 +224,7 @@ bool movimiento::establecer(bool msg)
     log(id, "mandada", LOG_DEBUG);
     mandada = true;
     for (auto  &sig : señales) {
-        sig->ruta_activa = this;
-        sig->clear_request = true;
+        sig->ruta_mandada(this);
     }
     for (int i=0; i<secciones.size(); i++) {
         // Asegurar todas las secciones en el sentido de la ruta
@@ -393,8 +392,7 @@ bool ruta::establecer(bool msg)
         clear_timer(diferimetro_dai);
         diferimetro_dai = nullptr;
         for (auto  &sig : señales) {
-            sig->clear_request = true;
-            sig->ruta_activa = this;
+            sig->ruta_mandada(this);
         }
         mover_agujas();
         log(id, "re-mandada", LOG_DEBUG);
@@ -503,7 +501,7 @@ void ruta::update()
             inicio_temporizacion_fai = 0;
         }
     } else if (estado_fai == EstadoFAI::Solicitud || estado_fai == EstadoFAI::AperturaNoPosible || estado_fai == EstadoFAI::AperturaNoPosibleReconocida) {
-        if (señal_inicio->aspecto != Aspecto::Parada && señal_inicio->ruta_activa == this) {
+        if (señal_inicio->aspecto > Aspecto::Parada && señal_inicio->ruta_activa == this) {
             // Itinerario establecido y señal abierta
             estado_fai = EstadoFAI::Activo;
             fai_disparo_unico = false;
@@ -517,7 +515,7 @@ void ruta::update()
         }
     } else if (estado_fai == EstadoFAI::Activo) {
         // Si la señal se cierra por cualquier causa, es necesario que se vuelva a ocupar la proximidad para volver a abrir
-        if (señal_inicio->aspecto == Aspecto::Parada) {
+        if (señal_inicio->aspecto <= Aspecto::Parada) {
             estado_fai = EstadoFAI::Cancelado;
         }
     }
@@ -586,11 +584,11 @@ void ruta::update()
         // pasar a estado libre cuando todas las secciones están libres
         if (libre) {
             ocupada = false;
-            supervisada = señal_inicio->get_state() != Aspecto::Parada;
+            supervisada = señal_inicio->get_state() > Aspecto::Parada;
         }
     }
     // La ruta pasa a estar supervisada con la apertura de la señal
-    if (formada && !supervisada && señal_inicio->get_state() != Aspecto::Parada) {
+    if (formada && !supervisada && señal_inicio->get_state() > Aspecto::Parada) {
         supervisada = true;
         log(id, "supervisada");
     }

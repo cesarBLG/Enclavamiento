@@ -34,7 +34,15 @@ enum struct Aspecto
     Precaucion,
     AnuncioParada,
     AnuncioPrecaucion,
+    ViaLibreCondicional,
     ViaLibre,
+};
+enum struct ReconocimientoAnuncioPrecaucion
+{
+    Inactivo,
+    NoReconocido,
+    Reconocido,
+    PerdidaReconocimiento
 };
 enum struct EstadoBloqueo
 {
@@ -81,6 +89,24 @@ enum struct TipoSeñal
     Retroceso,
     Intermedia,
     PostePuntoProtegido,
+};
+enum struct FocoSeñal
+{
+    V,
+    R,
+    Bh,
+    Bv,
+    Bc,
+    Az,
+    A,
+    Pantalla,
+};
+enum struct EstadoFocoSeñal
+{
+    Apagado,
+    Intermitente,
+    Encendido,
+    Fundido
 };
 enum struct ACTC
 {
@@ -141,6 +167,7 @@ inline Lado opp_lado(Lado lado)
 std::string to_string(Lado lado);
 std::string to_string(EstadoCV estado);
 std::string to_string(Aspecto aspecto);
+std::string to_string(ReconocimientoAnuncioPrecaucion rec);
 std::string to_string(EstadoBloqueo estado);
 std::string to_string(EstadoCanton estado);
 std::string to_string(TipoMovimiento tipo);
@@ -169,6 +196,8 @@ void to_json(json &j, const TipoSeñal &tipo);
 void from_json(const json &j, TipoSeñal &tipo);
 void to_json(json &j, const Aspecto &asp);
 void from_json(const json &j, Aspecto &asp);
+void to_json(json &j, const ReconocimientoAnuncioPrecaucion &rec);
+void from_json(const json &j, ReconocimientoAnuncioPrecaucion &rec);
 void to_json(json &j, const ACTC &actc);
 void from_json(const json &j, ACTC &actc);
 void from_json(const json &j, TipoDestino &tipo);

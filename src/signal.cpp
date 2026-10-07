@@ -4,13 +4,6 @@
 señal::señal(const id_elemento &id, const json &j) : id(id), lado(j["Lado"]), tipo(j["Tipo"]), pin(j.value("Pin", 0)), bloqueo_asociado(j.contains("Bloqueo") ? std::optional<id_elemento>(id_elemento(j["Bloqueo"])) : std::nullopt), seccion(secciones[id_elemento::from_default_dep(j["Sección"], id.dependencia)]), seccion_prev(seccion->get_seccion_in(lado, pin).first), lado_prev(seccion->get_seccion_in(lado, pin).second), señal_virtual(j.value("ERTMS", false))
 {
     seccion->vincular_señal(this, lado, pin);
-    if (j.contains("AspectoAnteriorSeñal")) {
-        for (auto &[asp1, asp2] : j["AspectoAnteriorSeñal"].items()) {
-            aspectos_maximos_anterior_señal[json(asp1)] = asp2;
-        }
-    }
-    if (aspectos_maximos_anterior_señal.empty())
-        aspectos_maximos_anterior_señal[Aspecto::ParadaDiferida] = Aspecto::ViaLibre;
 }
 señal_impl::señal_impl(const id_elemento &id, const json &j) : señal(id, j), topic("signal/"+id_to_mqtt(id.id)+"/state"), topic_inicio("signal/"+id_to_mqtt(id.id)+"/inicio"), proximidad_señal(this)
 {
@@ -21,6 +14,18 @@ señal_impl::señal_impl(const id_elemento &id, const json &j) : señal(id, j), 
     }
     if (aspecto_maximo_ocupacion.empty())
         aspecto_maximo_ocupacion[parametros.prenormalizacion_libre ? EstadoCanton::Prenormalizado : EstadoCanton::Libre] = tipo == TipoSeñal::Maniobra ? Aspecto::MovimientoAutorizado : (tipo == TipoSeñal::Retroceso ? Aspecto::IndicadoraDirecta : Aspecto::ViaLibre);
+    
+    if (j.contains("AspectoAnteriorSeñal")) {
+        for (auto &[asp1, asp2] : j["AspectoAnteriorSeñal"].items()) {
+            aspectos_maximos_anterior_señal[json(asp1)] = asp2;
+        }
+    }
+    if (aspectos_maximos_anterior_señal.empty())
+        aspectos_maximos_anterior_señal[Aspecto::ParadaDiferida] = Aspecto::ViaLibre;
+    if (aspectos_maximos_anterior_señal.upper_bound(Aspecto::Parada) == aspectos_maximos_anterior_señal.begin()) {
+        aspectos_maximos_anterior_señal[Aspecto::Parada] = Aspecto::AnuncioParada;
+    }
+
     if (j.contains("LímiteProximidad")) {
         for (auto &jprox : j["LímiteProximidad"]) {
             proximidad_señal.ultimos_cvs_proximidad.insert(id_elemento::from_default_dep(jprox.get<std::string>(), id.dependencia));
@@ -33,7 +38,96 @@ señal_impl::señal_impl(const id_elemento &id, const json &j) : señal(id, j), 
     aprec_anterior = parametros.aprec_anterior;
     aspecto_desviada = tipo == TipoSeñal::Retroceso ? Aspecto::IndicadoraDesviada : parametros.aspecto_desviada;
 
+    if (j.contains("Aspectos")) aspectos_disponibles = j["Aspectos"].get<std::set<Aspecto>>();
+    if (aspectos_disponibles.empty()) {
+        if (tipo == TipoSeñal::Maniobra || tipo == TipoSeñal::Retroceso) {
+            aspectos_disponibles.insert(Aspecto::IndicadoraDesviada);
+            aspectos_disponibles.insert(Aspecto::IndicadoraDirecta);
+            aspectos_disponibles.insert(Aspecto::MovimientoAutorizado);
+            aspectos_disponibles.insert(Aspecto::Parada);
+            aspectos_disponibles.insert(Aspecto::RebaseAutorizado);
+        } else {
+            if (tipo == TipoSeñal::Entrada || tipo == TipoSeñal::Salida) {
+                aspectos_disponibles.insert(Aspecto::RebaseAutorizadoDestellos);
+                aspectos_disponibles.insert(Aspecto::RebaseAutorizado);
+            }
+            if (tipo == TipoSeñal::Avanzada) {
+                aspectos_disponibles.insert(Aspecto::ParadaDiferida);
+            }
+            aspectos_disponibles.insert(Aspecto::ViaLibre);
+            aspectos_disponibles.insert(Aspecto::Precaucion);
+            aspectos_disponibles.insert(Aspecto::AnuncioPrecaucion);
+            aspectos_disponibles.insert(Aspecto::AnuncioParada);
+            aspectos_disponibles.insert(Aspecto::ParadaSelectivaDestellos);
+            aspectos_disponibles.insert(Aspecto::ParadaSelectiva);
+            aspectos_disponibles.insert(Aspecto::Parada);
+        }
+    }
+    if (j.contains("Focos")) {
+        std::string focos = j["Focos"];
+        for (int i=0; i<focos.size(); i++) {
+            char next = (i+1<focos.size() ? focos[i+1] : ' ');
+            switch(focos[i]) {
+                case 'V':
+                    estado_foco_señal[FocoSeñal::V] = EstadoFocoSeñal::Apagado;
+                    break;
+                case 'R':
+                    estado_foco_señal[FocoSeñal::R] = EstadoFocoSeñal::Apagado;
+                    break;
+                case 'A':
+                    if (next == 'z') {
+                        estado_foco_señal[FocoSeñal::Az] = EstadoFocoSeñal::Apagado;
+                        i++;
+                    } else {
+                        estado_foco_señal[FocoSeñal::A] = EstadoFocoSeñal::Apagado;
+                    }
+                    break;
+                case 'B':
+                    if (next == 'h') {
+                        estado_foco_señal[FocoSeñal::Bh] = EstadoFocoSeñal::Apagado;
+                        i++;
+                    } else if (next == 'v') {
+                        estado_foco_señal[FocoSeñal::Bv] = EstadoFocoSeñal::Apagado;
+                        i++;
+                    } else if (next == 'c') {
+                        estado_foco_señal[FocoSeñal::Bc] = EstadoFocoSeñal::Apagado;
+                        i++;
+                    } else {
+                        estado_foco_señal[FocoSeñal::Bh] = EstadoFocoSeñal::Apagado;
+                    }
+                    break;
+            }
+        }
+    }
+    combinaciones_focos = parametros.combinaciones_focos;
+    if (!estado_foco_señal.empty()) {
+        for (auto it = aspectos_disponibles.begin(); it != aspectos_disponibles.end();) {
+            Aspecto asp = *it;
+            auto it2 = combinaciones_focos.find(*it);
+            if (it2 == combinaciones_focos.end()) {
+                it = aspectos_disponibles.erase(it);
+                continue;
+            }
+            bool aspecto_posible = false;
+            for (auto &comb : it2->second) {
+                bool foco_disponible = true;
+                for (auto &[foco, _] : comb) {
+                    if (!estado_foco_señal.contains(foco)) {
+                        foco_disponible = false;
+                        break;
+                    }
+                }
+                if (foco_disponible) {
+                    aspecto_posible = true;
+                    break;
+                }
+            }
+            if (!aspecto_posible) it = aspectos_disponibles.erase(it);
+            else it++;
+        }
+    }
     subscribe("signal/"+id_to_mqtt(id.id)+"/rec_aprec");
+    subscribe("signal/"+id_to_mqtt(id.id)+"/field_state");
 }
 void señal_impl::determinar_aspecto()
 {
@@ -43,7 +137,7 @@ void señal_impl::determinar_aspecto()
     Lado dir = lado;
     EstadoCanton canton = EstadoCanton::Libre;
     // Señal siguiente, a continuación del canton
-    señal *sig_señal = nullptr;
+    sig_señal = nullptr;
     // Condiciones que provocan el cierre de señal
     bool cerrar = false;
     // Condiciones que impiden abrir la señal, pero no la cierran si estaba abierta
@@ -91,7 +185,7 @@ void señal_impl::determinar_aspecto()
             if (!d->asegurado && !d->acceso_impedido)
                 cerrar = true;
         }
-        if (sec_act->is_asegurada() && (ruta_activa == nullptr || !sec_act->is_asegurada(ruta_activa))) cerrar = true;
+        if (sec_act->is_asegurada() && !seccion_asegurada) cerrar = true;
         if (sec_act->bloqueo_asociado) {
             if (!bloq_id) bloq_id = sec_act->bloqueo_asociado;
             if (tipo == TipoSeñal::Salida || tipo == TipoSeñal::Entrada) salida_trayecto = true;
@@ -107,7 +201,8 @@ void señal_impl::determinar_aspecto()
     // Condiciones que impiden la apertura de señal en itinerario, pero no la cierran si estaba abierta
     bool prohibir_abrir_itinerario = false;
     if (bloq_id) {
-        bloqueo_act = bloqueos[*bloq_id]->get_estado();
+        bloqueo_asociado_obj = bloqueos[*bloq_id];
+        auto bloqueo_act = bloqueo_asociado_obj->get_estado();
         TipoMovimiento tipo_opp = bloqueo_act.ruta[opp_lado(dir)];
         // Cerrar señales intermedias y de salida si falla comunicación con colateral
         cerrar |= bloqueo_act.estado == EstadoBloqueo::SinDatos;
@@ -131,10 +226,12 @@ void señal_impl::determinar_aspecto()
         cerrar_itinerario |= tipo_opp == TipoMovimiento::Maniobra && bloqueo_act.maniobra_compatible[opp_lado(dir)] < CompatibilidadManiobra::Compatible;
         // No permitir la apertura en itinerario de la señal de salida con bloqueo prohibido o A/CTC denegada
         prohibir_abrir_itinerario |= salida_trayecto && (bloqueo_act.prohibido[dir] || bloqueo_act.actc[dir] == ACTC::Denegada || (!ruta_necesaria && bloqueo_act.prioridad_itinerario[dir] < bloqueo_act.prioridad_itinerario[opp_lado(dir)]));
+    } else {
+        bloqueo_asociado_obj = nullptr;
     }
     // Cerrar señal con el cantón ocupado en sentido contrario
     cerrar_itinerario |= canton == EstadoCanton::Ocupado;
-    cerrar |= sig_señal != nullptr && sig_señal->aspecto_maximo_anterior_señal == Aspecto::Parada;
+    cerrar |= sig_señal != nullptr && sig_señal->aspecto_maximo_anterior_señal <= Aspecto::Parada;
     cerrar_itinerario |= sig_señal != nullptr && sig_señal->aspecto_maximo_anterior_señal <= Aspecto::RebaseAutorizadoDestellos;
     desviada |= sig_señal != nullptr && sig_señal->desviada;
     // Señal en parada si
@@ -142,14 +239,14 @@ void señal_impl::determinar_aspecto()
     // - Las condiciones no permiten mantener abierta la señal
     // - Se ha mandado el cierre de señal
     // - La señal es de inicio de ruta y la ruta no está asegurada o está en proceso de disolución
-    if ((prohibir_abrir && prev_aspecto == Aspecto::Parada) || 
-        cerrar || !clear_request || 
+    if ((prohibir_abrir && prev_aspecto <= Aspecto::Parada) || 
+        cerrar || !clear_request || aspecto_bloqueado <= Aspecto::Parada ||
         (ruta_necesaria && (ruta_activa == nullptr || !ruta_activa->is_formada()))) {
         aspecto = Aspecto::Parada;
     } else if (ruta_activa != nullptr && ruta_activa->tipo == TipoMovimiento::Maniobra) {
         aspecto = Aspecto::RebaseAutorizado;
     // Señal en parada si no se cumplen las condiciones para apertura en itinerario
-    } else if (cerrar_itinerario || (prohibir_abrir_itinerario && (prev_aspecto == Aspecto::Parada || !ruta_necesaria))) {
+    } else if (cerrar_itinerario || (prohibir_abrir_itinerario && (prev_aspecto <= Aspecto::Parada || !ruta_necesaria))) {
         aspecto = Aspecto::Parada;
     } else {
         // Permitir o no la apertura con cantón ocupado en el mismo sentido, o en prenormalización
@@ -171,21 +268,29 @@ void señal_impl::determinar_aspecto()
                 fin_itinerario = false;
             else
                 fin_itinerario = true;
-            if (fin_itinerario)
-                aprec_anterior_sin_reconocimiento = !aprec_anterior_reconocido;
             if (aspecto > aspecto_desviada) {
                 if (!aprec_anterior) {
                     if (!itinerarios_desviada)
                         aspecto = aspecto_desviada;
                 } else if (itinerarios_desviada) {
                     // Señal en vía de apartado desde la que todos los itinerarios existentes son a vía desviada
-                    if ((fin_itinerario && !aprec_anterior_reconocido) || aprec_anterior_sin_reconocimiento)
+                    if (!is_aspecto_disponible(aspecto_desviada)) {
+                        // Itinerarios sin anuncio de parada: abrir sin esperar al reconocimiento
+                        if (fin_itinerario && (aprec_anterior_reconocido == ReconocimientoAnuncioPrecaucion::Inactivo || aprec_anterior_reconocido == ReconocimientoAnuncioPrecaucion::PerdidaReconocimiento))
+                            aspecto = aspecto_desviada;
+                    } else if ((fin_itinerario && aprec_anterior_reconocido != ReconocimientoAnuncioPrecaucion::Reconocido) || aprec_anterior_reconocido == ReconocimientoAnuncioPrecaucion::PerdidaReconocimiento) {
                         aspecto = aspecto_desviada;
+                    }
                 } else {
                     // Resto de casos
                     if (aspecto == Aspecto::AnuncioPrecaucion) {
-                        if ((fin_itinerario && !aprec_anterior_reconocido) || aprec_anterior_sin_reconocimiento)
+                        if ((fin_itinerario && aprec_anterior_reconocido != ReconocimientoAnuncioPrecaucion::Reconocido) || aprec_anterior_reconocido == ReconocimientoAnuncioPrecaucion::PerdidaReconocimiento)
                             aspecto = aspecto_desviada;
+                    /*
+                    } else if (aspecto == Aspecto::PreanuncioParada) {
+                        if (!fin_itinerario || aprec_anterior_reconocido != ReconocimientoAnuncioPrecaucion::Reconocido)
+                            aspecto = aspecto_desviada;
+                    */
                     } else {
                         aspecto = aspecto_desviada;
                     }
@@ -193,45 +298,34 @@ void señal_impl::determinar_aspecto()
             }
         }
     }
+    if (aspecto > aspecto_bloqueado) aspecto = aspecto_bloqueado;
+
+    while (!is_aspecto_disponible(aspecto)) {
+        Aspecto asp = get_aspecto_degradado(aspecto);
+        if (asp == aspecto) {
+            if (tipo == TipoSeñal::Avanzada) {
+                aspecto = Aspecto::AnuncioParada;
+            }
+            break;
+        }
+        aspecto = asp;
+    }
+
+    determinar_focos();
+
     // Requerir pantallas virtuales en parada sin bloqueo establecido
     // Se define variable aspecto_virtual para determinar el aspecto de la señal anterior
     // Esto permite que la señal avanzada abra en función de la señal de entrada aunque
     // las pantallas estén cerradas por no haber bloqueo
     // Si la pantalla está cerrada por otro motivo, la avanzada mostrará parada selectiva
     Aspecto aspecto_virtual = aspecto;
-    if (señal_virtual && bloq_id && bloqueo_act.estado != (dir == Lado::Impar ? EstadoBloqueo::BloqueoImpar : EstadoBloqueo::BloqueoPar))
+    if (señal_virtual && bloqueo_asociado_obj != nullptr && bloqueo_asociado_obj->get_estado().estado != (dir == Lado::Impar ? EstadoBloqueo::BloqueoImpar : EstadoBloqueo::BloqueoPar))
         aspecto = Aspecto::Parada;
 
-    if (aspecto == Aspecto::Parada)
-        aprec_anterior_sin_reconocimiento = false;
-    else if (aspecto < prev_aspecto)
-        aprec_anterior_sin_reconocimiento = true;
-    bool prev_rec = aprec_reconocido;
-    bool send_rec = false;
-    if (aspecto == Aspecto::AnuncioPrecaucion) {
-        if (prev_aspecto != aspecto) {
-            inicio_aprec = get_milliseconds();
-            if (prev_aspecto == Aspecto::Parada) {
-                send_rec = aprec_reconocido = true;
-            }
-        }
-        if (get_milliseconds() - inicio_aprec > 10000) {
-            send_rec = aprec_reconocido = true;
-            inicio_aprec = get_milliseconds();
-        }
-    } else if (aprec_reconocido) {
-        aprec_reconocido = false;
-        if (aspecto != Aspecto::Parada || !paso_circulacion) {
-            send_rec = true;
-        }
-    }
-    if (send_rec && sig_señal != nullptr) {
-        if (aprec_reconocido != prev_rec) log(id, "anuncio de precaución " + std::string(aprec_reconocido ? "reconocido" : "no reconocido"), LOG_INFO);
-        send_message("signal/"+id_to_mqtt(sig_señal->id.id)+"/rec_aprec", json(aprec_reconocido).dump());
-    }
-
     // Indicar a la señal anterior el aspecto máximo que puede mostrar
-    aspecto_maximo_anterior_señal = get_aspecto_anterior(aspecto_virtual);
+    aspecto_maximo_anterior_señal = (--aspectos_maximos_anterior_señal.upper_bound(aspecto_virtual))->second;
+    if ((tipo == TipoSeñal::Intermedia || tipo == TipoSeñal::Avanzada) && apagada && aspecto == Aspecto::Parada) aspecto_maximo_anterior_señal = Aspecto::Parada;
+    
     if (frontera_salida != nullptr) {
         aspecto_maximo_anterior_señal = std::min(aspecto_maximo_anterior_señal, aspecto);
     }
@@ -242,7 +336,7 @@ void señal_impl::determinar_aspecto()
     // En caso de pantallas cerradas, las señal anterior puede ordenar como máximo parada selectiva
     // Además, las pantallas virtuales propagan el aspecto máximo de apertura requerido por la siguiente señal luminosa
     if (señal_virtual && aspecto_maximo_anterior_señal > Aspecto::ParadaSelectiva) {
-        if (aspecto == Aspecto::Parada)
+        if (aspecto <= Aspecto::Parada)
             aspecto_maximo_anterior_señal = Aspecto::ParadaSelectiva;
         if (sig_señal != nullptr)
             aspecto_maximo_anterior_señal = std::min(aspecto_maximo_anterior_señal, sig_señal->aspecto_maximo_anterior_señal);
@@ -250,8 +344,91 @@ void señal_impl::determinar_aspecto()
     if ((tipo == TipoSeñal::Maniobra || tipo == TipoSeñal::Retroceso) && sig_señal != nullptr) aspecto_maximo_anterior_señal = std::min(aspecto_maximo_anterior_señal, sig_señal->aspecto_maximo_anterior_señal);
     if (tipo == TipoSeñal::Maniobra || tipo == TipoSeñal::Retroceso || señal_virtual) this->desviada = desviada;
 }
+void señal_impl::determinar_focos()
+{
+    if (estado_foco_señal.empty()) {
+        focos_mandados_mask = 0;
+        return;
+    }
+    bool bloquear = false;
+    std::map<FocoSeñal, EstadoFocoSeñal> *combinacion = nullptr;
+    while (!combinacion) {
+        auto it = combinaciones_focos.find(aspecto);
+        if (it != combinaciones_focos.end() && !it->second.empty()) {
+            // Probar una combinación que no tenga focos fundidos
+            for (auto &comb : it->second) {
+                bool disponible = true;
+                for (auto &[foco, estado] : comb) {
+                    if (!estado_foco_señal.contains(foco) || estado_foco_señal[foco] == EstadoFocoSeñal::Fundido) {
+                        disponible = false;
+                        break;
+                    }
+                }
+                if (disponible) {
+                    combinacion = &comb;
+                    break;
+                }
+            }
+        }
+        if (combinacion) break;
+
+        Aspecto prev_aspecto = aspecto;
+        do {
+            Aspecto asp = get_aspecto_degradado(aspecto);
+            // Si no hay ningún aspecto válido, mantener el aspecto fundido y apagar la señal
+            if (asp == aspecto) {
+                aspecto = prev_aspecto;
+                break;
+            }
+            aspecto = asp;
+        } while (!is_aspecto_disponible(aspecto));
+        if (aspecto == prev_aspecto) break;
+
+        // bloquear = true;
+    }
+    if (bloquear) aspecto_bloqueado = aspecto;
+    apagada = false;
+    if (!combinacion) {
+        apagada = true;
+
+        if (is_aspecto_disponible(aspecto)) {
+            // Mandar la primera combinación disponible para que se encienda la señal en cuanto se reponga la lámpara
+            for (auto &comb : combinaciones_focos[aspecto]) {
+                bool disponible = true;
+                for (auto &[foco, estado] : comb) {
+                    if (!estado_foco_señal.contains(foco)) {
+                        disponible = false;
+                        break;
+                    }
+                }
+                if (disponible) {
+                    combinacion = &comb;
+                    break;
+                }
+            }
+        }
+    }
+    unsigned int mask = 0;
+    if (combinacion != nullptr) {
+        for (auto &[foco, estado] : *combinacion) {
+            mask |= ((unsigned int)estado)<<(2*(int)foco);
+        }
+    }
+    if (mask != focos_mandados_mask) {
+        focos_mandados_mask = mask;
+        ultimo_cambio_focos = get_milliseconds();
+    }
+    if (combinacion != nullptr && get_milliseconds() - ultimo_cambio_focos > 15000) {
+        for (auto &[foco, estado] : *combinacion) {
+            if (estado_foco_señal[foco] == EstadoFocoSeñal::Apagado) {
+                estado_foco_señal[foco] = EstadoFocoSeñal::Fundido;
+            }
+        }
+    }
+}
 void señal_impl::update()
 {
+    unsigned int prev_mask = focos_mandados_mask;
     Aspecto prev_aspecto = aspecto;
     estado_inicio_ruta prev_estado_inicio = estado_inicio;
 
@@ -259,20 +436,54 @@ void señal_impl::update()
 
     determinar_aspecto();
 
-    // Si la señal cierra en stick, es necesario volver a mandar la ruta para que vuelva a abrir
-    if (cierre_stick && !sucesion_automatica) {
-        if (aspecto == Aspecto::Parada) {
-            if (cleared) {
-                cleared = false;
-                if (!paso_circulacion) clear_request = false;
-            }
-            if (ruta_activa == nullptr) clear_request = false;
-        } else if (!cleared) {
-            cleared = true;
-        }
-    }
+    // Gestionar reconocimiento de anuncio de precaución
+    if (aspecto <= Aspecto::Parada)
+        aprec_anterior_reconocido = ReconocimientoAnuncioPrecaucion::Inactivo;
+    else if (aspecto < prev_aspecto && aprec_anterior_reconocido != ReconocimientoAnuncioPrecaucion::Inactivo)
+        aprec_anterior_reconocido = ReconocimientoAnuncioPrecaucion::PerdidaReconocimiento;
 
-    if (aspecto != Aspecto::Parada) {
+    ReconocimientoAnuncioPrecaucion prev_rec = aprec_reconocido;
+    if (aspecto == Aspecto::AnuncioPrecaucion) {
+        if (aprec_reconocido != ReconocimientoAnuncioPrecaucion::Reconocido) {
+            aprec_reconocido = ReconocimientoAnuncioPrecaucion::NoReconocido;
+            if (prev_aspecto != aspecto) {
+                inicio_aprec = get_milliseconds();
+                if (prev_aspecto <= Aspecto::Parada) {
+                    aprec_reconocido = ReconocimientoAnuncioPrecaucion::Reconocido;
+                }
+            }
+            if (get_milliseconds() - inicio_aprec > 10000) {
+                aprec_reconocido = ReconocimientoAnuncioPrecaucion::Reconocido;
+                inicio_aprec = get_milliseconds();
+            }
+        }
+    } else if (aprec_reconocido == ReconocimientoAnuncioPrecaucion::Reconocido) {
+        if (aspecto > Aspecto::Parada || !paso_circulacion)
+            aprec_reconocido = ReconocimientoAnuncioPrecaucion::PerdidaReconocimiento;
+        else
+            aprec_reconocido = ReconocimientoAnuncioPrecaucion::Inactivo;
+    } else if (aprec_reconocido == ReconocimientoAnuncioPrecaucion::NoReconocido) {
+        aprec_reconocido = ReconocimientoAnuncioPrecaucion::PerdidaReconocimiento;
+    }
+    if (señal_siguiente_aprec == nullptr && sig_señal != nullptr) señal_siguiente_aprec = sig_señal;
+    if (señal_siguiente_aprec != nullptr && sig_señal != señal_siguiente_aprec) {
+        if (aprec_reconocido == ReconocimientoAnuncioPrecaucion::Reconocido || aprec_reconocido == ReconocimientoAnuncioPrecaucion::NoReconocido)
+            aprec_reconocido = ReconocimientoAnuncioPrecaucion::PerdidaReconocimiento;
+    }
+    if (prev_rec != aprec_reconocido && señal_siguiente_aprec != nullptr && aprec_reconocido != ReconocimientoAnuncioPrecaucion::Inactivo) {
+        log(id, "anuncio de precaución " + to_string(aprec_reconocido), LOG_INFO);
+        send_message("signal/"+id_to_mqtt(señal_siguiente_aprec->id.id)+"/rec_aprec", json(aprec_reconocido).dump());
+    }
+    señal_siguiente_aprec = sig_señal;
+
+    if (clear_request && ruta_necesaria && ruta_activa == nullptr) clear_request = false;
+    if (aspecto < prev_aspecto && !paso_circulacion) {
+        // Si la señal cierra en stick, es necesario volver a mandar la ruta para que vuelva a abrir
+        if (cierre_stick) aspecto_bloqueado = aspecto;
+    }
+    if (aspecto_bloqueado < Aspecto::ViaLibre && aspecto < aspecto_bloqueado) aspecto_bloqueado = Aspecto::ViaLibre;
+
+    if (aspecto > Aspecto::Parada) {
         rebasada = false;
         ultimo_paso_abierta = get_milliseconds();
     }
@@ -280,7 +491,28 @@ void señal_impl::update()
 
     paso_circulacion = false;
 
-    send_state(aspecto != prev_aspecto, estado_inicio != prev_estado_inicio);
+    send_state(aspecto != prev_aspecto || prev_mask != focos_mandados_mask, estado_inicio != prev_estado_inicio);
+}
+bool señal_impl::is_aspecto_disponible(Aspecto asp)
+{
+    if (!aspectos_disponibles.empty() && !aspectos_disponibles.contains(asp)) return false;
+    bool bla = bloqueo_asociado_obj != nullptr && (bloqueo_asociado_obj->tipo == TipoBloqueo::BLAU || bloqueo_asociado_obj->tipo == TipoBloqueo::BLAD || bloqueo_asociado_obj->tipo == TipoBloqueo::BLAB);
+    if (asp == Aspecto::AnuncioParada && tipo != TipoSeñal::Avanzada && bla)
+        return false;
+    if (asp == Aspecto::Parada && tipo == TipoSeñal::Avanzada && bla)
+        return false;
+    return true;
+}
+bool señal_impl::normalizar_fusion()
+{
+    bool normalizada = false;
+    for (auto &[foco, estado] : estado_foco_señal) {
+        if (estado == EstadoFocoSeñal::Fundido) {
+            estado = EstadoFocoSeñal::Apagado;
+            normalizada = true;
+        }
+    }
+    return normalizada;
 }
 RespuestaMando señal_impl::mando(const std::string &cmd, int me)
 {
@@ -294,10 +526,11 @@ RespuestaMando señal_impl::mando(const std::string &cmd, int me)
             clear_request = false;
             return RespuestaMando::Aceptado;
         }
-    } else if (cmd == "NPS" && !cierre_stick) {
-        if (!clear_request) {
+    } else if (cmd == "NPS" && !ruta_necesaria) {
+        if (!clear_request || aspecto_bloqueado < Aspecto::ViaLibre || normalizar_fusion()) {
             log(id, "normalizar señal", LOG_DEBUG);
             clear_request = true;
+            aspecto_bloqueado = Aspecto::ViaLibre;
             return RespuestaMando::Aceptado;
         }
     } else if (cmd == "BS") {
@@ -341,6 +574,7 @@ RespuestaMando señal_impl::mando(const std::string &cmd, int me)
     }
     return RespuestaMando::OrdenRechazada;
 }
+#define SIG_FOCO(x) estado_foco_señal.contains(x) ? (estado_foco_señal[x] == EstadoFocoSeñal::Fundido ? 3 : 1) : 0
 RemotaSIG señal_impl::get_estado_remota_sig()
 {
     RemotaSIG r;
@@ -387,13 +621,14 @@ RemotaSIG señal_impl::get_estado_remota_sig()
             r.SIG_IND = 11;
             break;
     }
-    r.SIG_FOCO_R = 1;
-    r.SIG_FOCO_BL_C = 1;
-    r.SIG_FOCO_BL_V = 0;
-    r.SIG_FOCO_BL_H = 0;
-    r.SIG_FOCO_AZ = 0;
-    r.SIG_FOCO_AM = 1;
-    r.SIG_FOCO_V = 1;
+    if (apagada) r.SIG_IND = 0;
+    r.SIG_FOCO_R = SIG_FOCO(FocoSeñal::R);
+    r.SIG_FOCO_BL_C = SIG_FOCO(FocoSeñal::Bc);
+    r.SIG_FOCO_BL_V = SIG_FOCO(FocoSeñal::Bv);
+    r.SIG_FOCO_BL_H = SIG_FOCO(FocoSeñal::Bh);
+    r.SIG_FOCO_AZ = SIG_FOCO(FocoSeñal::Az);
+    r.SIG_FOCO_AM = SIG_FOCO(FocoSeñal::A);
+    r.SIG_FOCO_V = SIG_FOCO(FocoSeñal::V);
     r.SIG_ME = me_pendiente ? 1 : 0;
     r.SIG_B = bloqueo_señal ? 1 : 0;
     r.SIG_UIC = 0;
@@ -450,7 +685,7 @@ void señal_impl::message_cv(const id_elemento &id, estado_cv ev)
     paso_circulacion = false;
     if (ev.is_ocupacion(lado)) {
         // Con el paso de la circulación se cierra la señal, salvo en maniobras
-        if (ruta_activa != nullptr && ruta_activa->tipo != TipoMovimiento::Maniobra && (!sucesion_automatica || ruta_activa->tipo != TipoMovimiento::Itinerario) && (aspecto != Aspecto::Parada || get_milliseconds() - ultimo_paso_abierta > 30000)) {
+        if (ruta_activa != nullptr && ruta_activa->tipo != TipoMovimiento::Maniobra && (!sucesion_automatica || ruta_activa->tipo != TipoMovimiento::Itinerario) && (aspecto > Aspecto::Parada || get_milliseconds() - ultimo_paso_abierta > 30000)) {
             for (auto &sig : ruta_activa->get_señales()) {
                 if (sig == this) {
                     ruta_activa = nullptr;
@@ -461,7 +696,7 @@ void señal_impl::message_cv(const id_elemento &id, estado_cv ev)
         }
         if (ev.evento && (ev.evento->seccion.id == "" || (ev.evento->seccion == seccion->id && ev.evento->pin == pin))) {
             // Si la señal estaba cerrada, es un rebase de señal
-            if (aspecto == Aspecto::Parada) {
+            if (aspecto <= Aspecto::Parada) {
                 if (ruta_necesaria && get_milliseconds() - ultimo_paso_abierta > 30000) {
                     rebasada = true;
                     log(this->id, "rebasada", LOG_WARNING);
@@ -519,7 +754,7 @@ void proximidad::construir()
             if (prev == nullptr) prev = act->siguiente_seccion(next, dir_opp);
 
             if (sig != nullptr) {
-                if (sig != señal_inicio && sig->aspecto == Aspecto::Parada) break;
+                if (sig != señal_inicio && sig->aspecto <= Aspecto::Parada) break;
                 auto sig_impl = señal_impls.find(sig->id);
                 if (sig_impl == señal_impls.end() || (prev != nullptr && prev->is_trayecto())) {
                     ruta_actual = nullptr;

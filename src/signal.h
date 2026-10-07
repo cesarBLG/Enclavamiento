@@ -5,6 +5,7 @@
 class ruta;
 class frontera;
 class señal_impl;
+class bloqueo;
 struct proximidad
 {
     señal_impl *señal_inicio;
@@ -22,8 +23,6 @@ struct proximidad
 };
 class señal : public estado_señal
 {
-protected:
-    std::map<Aspecto, Aspecto> aspectos_maximos_anterior_señal;
 public:
     const id_elemento id;
     const std::optional<id_elemento> bloqueo_asociado;
@@ -45,17 +44,6 @@ public:
     {
         *((estado_señal*)this) = est;
     }
-    Aspecto get_aspecto_anterior(Aspecto asp)
-    {
-        auto it = aspectos_maximos_anterior_señal.upper_bound(asp);
-        if (it == aspectos_maximos_anterior_señal.begin()) {
-            // Por defecto, requerir anuncio de parada
-            return Aspecto::AnuncioParada;
-        } else {
-            // Aspecto de la señal anterior restringido por el aspecto de esta señal
-            return (--it)->second;
-        }
-    }
 };
 class señal_impl : public señal
 {
@@ -65,10 +53,10 @@ public:
     proximidad proximidad_señal;
 protected:
     std::map<EstadoCanton, Aspecto> aspecto_maximo_ocupacion;
+    std::map<Aspecto, Aspecto> aspectos_maximos_anterior_señal;
 
-    estado_bloqueo bloqueo_act;
-
-    bool cleared = false;
+    bloqueo *bloqueo_asociado_obj=nullptr;
+    señal *sig_señal=nullptr;
 
     bool me_pendiente = false;
     bool rebasada;
@@ -79,16 +67,47 @@ protected:
     estado_inicio_ruta estado_inicio;
 
     bool itinerarios_desviada = false;
-    bool aprec_anterior_reconocido = false;
-    bool aprec_anterior_sin_reconocimiento = false;
-    bool aprec_reconocido = false;
+    ReconocimientoAnuncioPrecaucion aprec_anterior_reconocido = ReconocimientoAnuncioPrecaucion::Inactivo;
+    señal *señal_siguiente_aprec = nullptr;
+    ReconocimientoAnuncioPrecaucion aprec_reconocido = ReconocimientoAnuncioPrecaucion::Inactivo;
     int64_t inicio_aprec = 0;
     Aspecto aspecto_desviada = Aspecto::AnuncioParada;
     bool aprec_anterior = true;
 
+    std::map<FocoSeñal,EstadoFocoSeñal> estado_foco_señal;
+    int64_t ultimo_cambio_focos = 0;
+    bool apagada = false;
+    std::set<Aspecto> aspectos_disponibles;
+    std::map<Aspecto, std::vector<std::map<FocoSeñal, EstadoFocoSeñal>>> combinaciones_focos;
+    static inline Aspecto get_aspecto_degradado(Aspecto asp)
+    {
+        switch (asp) {
+            case Aspecto::ViaLibre:
+                return Aspecto::ViaLibreCondicional;
+            case Aspecto::ViaLibreCondicional:
+            case Aspecto::AnuncioPrecaucion:
+                return Aspecto::AnuncioParada;
+            case Aspecto::AnuncioParada:
+                return Aspecto::Precaucion;
+            case Aspecto::Precaucion:
+                return Aspecto::ParadaSelectivaDestellos;
+            case Aspecto::ParadaSelectivaDestellos:
+                return Aspecto::ParadaSelectiva;
+            case Aspecto::IndicadoraDesviada:
+            case Aspecto::IndicadoraDirecta:
+            case Aspecto::MovimientoAutorizado:
+                return asp;
+            default:
+                return Aspecto::Parada;
+        }
+    }
+    bool is_aspecto_disponible(Aspecto asp);
+    bool normalizar_fusion();
+
 public:
     bool clear_request=false;
     movimiento *ruta_activa=nullptr;
+    Aspecto aspecto_bloqueado = Aspecto::ViaLibre;
 
     bool ruta_necesaria = true;
     bool cierre_stick;
@@ -112,12 +131,32 @@ public:
     void update();
     void message_cv(const id_elemento &id, estado_cv ev);
     cv* get_cv_inicio();
+    void ruta_mandada(movimiento *m)
+    {
+        ruta_activa = m;
+        clear_request = true;
+        aspecto_bloqueado = Aspecto::ViaLibre;
+        normalizar_fusion();
+    }
     void message_señal(estado_señal est) override {}
+    void message_señal_campo(unsigned int focos_mask)
+    {
+        for (auto &[foco, estado] : estado_foco_señal) {
+            auto estado_campo = (EstadoFocoSeñal)((focos_mask>>(2*(int)foco)) & 3);
+            if (estado_campo > EstadoFocoSeñal::Apagado || estado != EstadoFocoSeñal::Fundido)
+                estado = estado_campo;
+        }
+    }
+    void determinar_focos();
     RespuestaMando mando(const std::string &cmd, int me);
     RemotaSIG get_estado_remota_sig();
     RemotaIMV get_estado_remota_imv();
     RemotaPV get_estado_remota_pv();
     estado_inicio_ruta get_estado_inicio();
     bool is_rebasada() { return rebasada; }
-    void set_reconocimiento_aprec(bool rec) { aprec_anterior_reconocido = rec; }
+    void set_reconocimiento_aprec(ReconocimientoAnuncioPrecaucion rec)
+    {
+        // FIXME: el topic no está incluido en el gestor de conexiones, por lo que no es seguro si se pierde la comunicación con la señal anterior.
+        aprec_anterior_reconocido = rec;
+    }
 };

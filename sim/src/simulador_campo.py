@@ -15,6 +15,7 @@ def on_connect(client, userdata, flags, rc):
         print("mqtt: connected")
         client.subscribe("pn/+/+/cierre")
         client.subscribe("aguja/+/+/mando")
+        client.subscribe("signal/+/+/state")
     else:
         print(f"Connection failed with code {rc}")
 
@@ -41,6 +42,10 @@ def on_message(client, userdata, msg):
         dep, id = match.groups()
         client.publish(f"aguja/{dep}/{id}/comprobacion", "")
         send_later(f"aguja/{dep}/{id}/comprobacion", msg.payload, 3)
+    match = re.compile(r"^signal/([a-zA-Z0-9_-]+)/([a-zA-Z0-9_'-]+)/state$").match(topic)
+    if match:
+        dep, id = match.groups()
+        send_later(f"signal/{dep}/{id}/field_state", json.dumps(json.loads(msg.payload)["Focos"]), 0.5)
 
 # Create client
 client = mqtt.Client()

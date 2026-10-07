@@ -200,8 +200,8 @@ public:
                 sonerias.clear();
                 return RespuestaMando::Aceptado;
             }
-        } /*else if (cmd == "NB") {
-            if (!normalizado && !ocupado) {
+        } else if (cmd == "NB") {
+            /*if (!normalizado && !ocupado) {
                 if (me == 1) {
                     log(id, "normalizado", LOG_DEBUG);
                     normalizado = true;
@@ -209,8 +209,8 @@ public:
                 } else {
                     return RespuestaMando::MandoEspecialNecesario;
                 }
-            }
-        }*/
+            }*/
+        }
         if (aceptado != RespuestaMando::OrdenRechazada) update();
         return aceptado;
     }
