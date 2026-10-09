@@ -10,6 +10,7 @@ std::map<id_elemento, señal*> señales;
 std::map<id_elemento, señal_impl*> señal_impls;
 std::map<id_elemento, bloqueo*> bloqueos;
 std::set<ruta*> rutas;
+std::map<id_elemento, maniobra_local*> maniobras_locales;
 std::map<id_elemento, destino_ruta*> destinos_ruta;
 std::map<id_elemento, seccion_via*> secciones;
 std::map<id_elemento, aguja*> agujas;
@@ -27,6 +28,7 @@ std::set<std::string> comandos_cv = {"BTV","ABTV","DTV","LC"};
 std::set<std::string> comandos_ignorar_mando = {"C", "TML", "TME", "CML", "RML", "ME", "BL"};
 std::set<std::string> comandos_ctc = {"C", "L", "AS", "AAS"};
 std::set<std::string> comandos_local = {"TML", "TME", "CML", "RML"};
+std::set<std::string> comandos_ml = {"ML", "AML", "AMLE"};
 std::set<std::string> comandos_pn = {"APN", "CPN"};
 std::set<std::string> comandos_dependencia = {"RAL","RA","LD","LN","BCA","DCA","SI","ASI","RST"};
 std::set<std::string> comandos_estacion_cerrada = {"ASI","MAT","ATN","ATI"};
@@ -64,6 +66,11 @@ RespuestaMando mando(const std::vector<std::string> &ordenes, int me)
             if (ordenes.size() == 4) return it->second->mando_ruta(ordenes[2] ,ordenes[3], ordenes[0]);
             if (ordenes.size() == 5) return it->second->mando_ruta(ordenes[2], ordenes[3]+":"+ordenes[4], ordenes[0]);
         }
+    }
+    if (comandos_ml.find(cmd) != comandos_ml.end()) {
+        id_elemento id(ordenes[1],ordenes[2]);
+        auto it = maniobras_locales.find(id);
+        if (it != maniobras_locales.end()) return it->second->mando(ordenes[0], me);
     }
     if (comandos_destino.find(cmd) != comandos_destino.end()) {
         id_elemento id(ordenes[1],ordenes[2]);
@@ -429,6 +436,12 @@ void init_items_ordered(const json &j, std::string tipo)
                 if (r->valid) dependencias[estacion]->rutas.insert(r);
             }
         }
+        if (tipo == "ManiobrasLocales") {
+            for (auto &[id,jml] : jdep["ManiobrasLocales"].items()) {
+                id_elemento idml(estacion, id);
+                maniobras_locales[idml] = new maniobra_local(estacion, id, jml);
+            }
+        }
     }
     for (auto &[estacion, jdep] : j.items()) {
         if (tipo == "Secciones") {
@@ -467,6 +480,7 @@ void init_items(const json &j)
         init_items_ordered(jdeps, "Bloqueos");
         init_items_ordered(jdeps, "DestinosRuta");
         init_items_ordered(jdeps, "Rutas");
+        init_items_ordered(jdeps, "ManiobrasLocales");
     }
     std::map<std::string, cv_impl_cejes::cejes_position> cejes_to_pos;
     for (auto &[id, cv] : cv_impls) {
@@ -558,6 +572,9 @@ void loop_items()
         kvp.second->update();
     }
     for (auto &kvp : dependencias) {
+        kvp.second->update();
+    }
+    for (auto &kvp : maniobras_locales) {
         kvp.second->update();
     }
     for (auto &kvp : destinos_ruta) {

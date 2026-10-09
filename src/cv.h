@@ -30,8 +30,8 @@ public:
 
     EstadoCanton get_ocupacion(Lado lado)
     {
-        if (estado == EstadoCV::Libre) return EstadoCanton::Libre;
-        else if (estado == EstadoCV::Prenormalizado) return EstadoCanton::Prenormalizado;
+        if (cv_libre(estado)) return EstadoCanton::Libre;
+        else if (estado == EstadoCV::Prenormalizado) return EstadoCanton::OcupadoMismoSentido;
         else if (estado == EstadoCV::OcupadoImpar && lado == Lado::Impar) return EstadoCanton::OcupadoMismoSentido;
         else if (estado == EstadoCV::OcupadoPar && lado == Lado::Par) return EstadoCanton::OcupadoMismoSentido;
         else return EstadoCanton::Ocupado;

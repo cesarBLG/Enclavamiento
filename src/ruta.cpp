@@ -2,16 +2,6 @@
 #include "items.h"
 destino_ruta::destino_ruta(const id_elemento &id, const json &j) : id(id), tipo(j["Tipo"]), topic("destino/"+id_to_mqtt(id.id)+"/state")
 {
-    auto it = señal_impls.find(id);
-    if (tipo == TipoDestino::Señal && it != señal_impls.end()) {
-        señal_fin = it->second;
-
-        if (j.contains("Deslizamiento")) {
-            auto *d = new ruta_deslizamiento(this, j["Deslizamiento"]);
-            deslizamientos[TipoMovimiento::Itinerario] = d;
-            deslizamientos[TipoMovimiento::Maniobra] = d;
-        }
-    }
 }
 RespuestaMando destino_ruta::mando(const std::string &cmd, int me)
 {
@@ -36,7 +26,7 @@ RespuestaMando destino_ruta::mando(const std::string &cmd, int me)
         }
     } else if (cmd == "DEI" && ruta_activa != nullptr) {
         if (me) {
-            return ruta_activa->dei() ? RespuestaMando::Aceptado : RespuestaMando::OrdenRechazada;
+            return ((ruta*)ruta_activa)->dei() ? RespuestaMando::Aceptado : RespuestaMando::OrdenRechazada;
         } else {
             me_pendiente = true;
             return RespuestaMando::MandoEspecialNecesario;
@@ -73,7 +63,7 @@ frontera *destino_ruta::get_frontera()
     }
     return nullptr;
 }
-ruta::ruta(const std::string &estacion, const json &j) : movimiento(estacion, j["Tipo"], estacion+" "+j["Inicio"].get<std::string>()+" "+j["Destino"].get<std::string>(), true, j.value("ERTMS", false)), id_inicio(j["Inicio"]), id_destino(j["Destino"]), bloqueo_salida(j.contains("Bloqueo") ? std::optional<id_elemento>(id_elemento(j["Bloqueo"])) : std::nullopt)
+ruta::ruta(const std::string &estacion, const json &j) : movimiento(estacion, j["Tipo"], j["Inicio"].get<std::string>()+" "+j["Destino"].get<std::string>(), true, j.value("ERTMS", false)), id_inicio(j["Inicio"]), id_destino(j["Destino"]), bloqueo_salida(j.contains("Bloqueo") ? std::optional<id_elemento>(id_elemento(j["Bloqueo"])) : std::nullopt)
 {
     id_elemento id_señal(estacion, id_inicio);
     if (señal_impls.find(id_señal) == señal_impls.end()) {
@@ -98,6 +88,10 @@ ruta::ruta(const std::string &estacion, const json &j) : movimiento(estacion, j[
         return;
     }
     destino = destinos_ruta[full_id_destino];
+    if (destino->tipo == TipoDestino::Señal) {
+        auto it = señal_impls.find(destino->id);
+        if (it != señal_impls.end()) señales_fin.push_back(it->second);
+    }
 
     maniobra_compatible = j.value("Compatible", CompatibilidadManiobra::IncompatibleBloqueo);
     if (j.contains("PosiciónAparatos")) {
@@ -123,7 +117,7 @@ ruta::ruta(const std::string &estacion, const json &j) : movimiento(estacion, j[
         auto *fin = ::secciones[id_fin];
         do
         {
-            ocupacion_maxima_secciones[sec] = sec == fin && (tipo == TipoMovimiento::Rebase || tipo == TipoMovimiento::Maniobra) && j.contains("DiferímetroDeslizamiento") ? EstadoCanton::Ocupado : EstadoCanton::Prenormalizado;
+            ocupacion_maxima_secciones[sec] = sec == fin && (tipo == TipoMovimiento::Rebase || tipo == TipoMovimiento::Maniobra) && j.contains("DiferímetroDeslizamiento") ? EstadoCanton::Ocupado : EstadoCanton::Libre;
 
             if (sec != señal_inicio->seccion) {
                 auto *sig = sec->señal_inicio(dir, prv);
@@ -165,9 +159,6 @@ ruta::ruta(const std::string &estacion, const json &j) : movimiento(estacion, j[
     }
     if (secciones.empty()) lado_bloqueo = lado;
     else lado_bloqueo = *secciones.back().dir;
-    if (!ertms && destino->deslizamientos.find(tipo) != destino->deslizamientos.end()) {
-        deslizamiento = destino->deslizamientos[tipo];
-    }
     if (j.contains("SeñalLiberación")) {
         señales.push_back(señal_impls[id_elemento::from_default_dep(j["SeñalLiberación"], estacion)]);
     }
@@ -195,6 +186,16 @@ bool movimiento::posible_establecer(bool msg)
             if (msg) log(id, "señal mandada por otra ruta", LOG_DEBUG);
             return false;
         }
+        if (sig->bloqueo_señal) {
+            if (msg) log(id, "señal bloqueada", LOG_DEBUG);
+            return false;
+        }
+    }
+    for (auto &sig : señales_fin) {
+        if (sig->ruta_fin != nullptr && sig->ruta_fin != this) {
+            if (msg) log(id, "señal destino de otra ruta", LOG_DEBUG);
+            return false;
+        }
     }
     // Agujas no enclavadas o bloqueadas
     for (auto &[sec, pins] : posicion_aparatos) {
@@ -207,6 +208,29 @@ bool movimiento::posible_establecer(bool msg)
             }
         }
     }
+
+    deslizamientos_afectados.clear();
+    for (int i=0; i<secciones.size(); i++) {
+        auto *sec = secciones[i].seccion;
+        // La ruta requiere secciones ya aseguradas por otra ruta
+        if (!sec->asegurar_posible(this, secciones[i].outs, secciones[i].dir)) {
+            if (msg) log(id, "asegurar imposible", LOG_DEBUG);
+            return false;
+        }
+        // Bloqueo de vía establecido
+        if (sec->is_bloqueo_seccion()) {
+            if (msg) log(id, "bloqueo seccion", LOG_DEBUG);
+            return false;
+        }
+        for (auto &[nodo,_] : sec->get_deslizamiento()) {
+            deslizamientos_afectados[nodo->deslizamiento] = -1;
+        }
+    }
+    for (auto &sig : señales_fin) {
+        auto *desliz = sig->get_deslizamiento(this);
+        if (desliz != nullptr) deslizamientos_afectados[desliz] = -1;
+    }
+
     for (auto &[desliz, id] : deslizamientos_afectados) {
         int compat = desliz->compatible(this);
         if (compat < 0) {
@@ -219,12 +243,14 @@ bool movimiento::posible_establecer(bool msg)
 }
 bool movimiento::establecer(bool msg)
 {
-    deslizamientos_afectados.clear();
     if (!posible_establecer(msg)) return false;
     log(id, "mandada", LOG_DEBUG);
     mandada = true;
     for (auto  &sig : señales) {
         sig->ruta_mandada(this);
+    }
+    for (auto &sig : señales_fin) {
+        sig->ruta_fin = this;
     }
     for (int i=0; i<secciones.size(); i++) {
         // Asegurar todas las secciones en el sentido de la ruta
@@ -240,8 +266,8 @@ bool movimiento::establecer(bool msg)
 }
 bool ruta::posible_establecer(bool msg)
 {
-    if (destino->bloqueo_destino || señal_inicio->bloqueo_señal) {
-        if (msg) log(id, "bloqueo destino o señal", LOG_DEBUG);
+    if (destino->bloqueo_destino) {
+        if (msg) log(id, "bloqueo destino", LOG_DEBUG);
         return false;
     }
     
@@ -351,7 +377,7 @@ bool ruta::posible_establecer(bool msg)
             }
         // No permitir rutas de salida con bloqueo receptor
         } else if (bloqueo_receptor) {
-            if (msg) log(id, "maniobra incompatible con bloqueo", LOG_DEBUG);
+            if (msg) log(id, "itineario incompatible con bloqueo", LOG_DEBUG);
             return false;
         }
         // No permitir varias rutas hacia el mismo bloqueo
@@ -360,25 +386,6 @@ bool ruta::posible_establecer(bool msg)
             return false;
         }
     }
-
-    deslizamientos_afectados.clear();
-    for (int i=0; i<secciones.size(); i++) {
-        auto *sec = secciones[i].seccion;
-        // La ruta requiere secciones ya aseguradas por otra ruta
-        if (!sec->asegurar_posible(this, secciones[i].outs, secciones[i].dir)) {
-            if (msg) log(id, "asegurar imposible", LOG_DEBUG);
-            return false;
-        }
-        // Bloqueo de vía establecido
-        if (sec->is_bloqueo_seccion()) {
-            if (msg) log(id, "bloqueo seccion", LOG_DEBUG);
-            return false;
-        }
-        for (auto &[nodo,_] : sec->get_deslizamiento()) {
-            deslizamientos_afectados[nodo->deslizamiento] = -1;
-        }
-    }
-    if (deslizamiento) deslizamientos_afectados[deslizamiento] = -1;
 
     return movimiento::posible_establecer(msg);
 }
@@ -425,6 +432,11 @@ void movimiento::update()
     if (agujas_dispuestas && !formada) {
         formada = true;
         log(id, "formada", LOG_INFO);
+    }
+
+    for (auto &sig : señales_fin) {
+        auto *desliz = sig->get_deslizamiento(this);
+        if (desliz != nullptr) desliz->update();
     }
 }
 void ruta::update()
@@ -523,10 +535,6 @@ void ruta::update()
     movimiento::update();
 
     if (!mandada) return;
-
-    if (deslizamiento != nullptr) {
-        deslizamiento->update();
-    }
 
     // Mandar cierre de PN si la proximidad está ocupada
     if ((proximidad_ocupada || señal_inicio->proximidad_señal.get(tipo).empty()) && señal_inicio->ruta_activa != nullptr) {
@@ -692,7 +700,7 @@ bool ruta::dai(bool anular_bloqueo)
                 if (sig->seccion == sec && sig->ruta_activa == this && sig->ruta_necesaria) sig->clear_request = false;
             }
             if (!sec->is_asegurada(this)) break;
-            if (sec->get_ocupacion(prev, *secciones[i].dir) > EstadoCanton::Prenormalizado) break;
+            if (sec->get_ocupacion(prev, *secciones[i].dir) > EstadoCanton::Libre) break;
             if (i + 1 == secciones.size() && !señales.empty()) {
                 auto *sig = señales.back();
                 if (sig->seccion_prev == sec && sig->ruta_activa == this && sig->ruta_necesaria) sig->clear_request = false;
@@ -737,6 +745,9 @@ void movimiento::disolver()
     for (auto &sig : señales) {
         if (sig->ruta_activa == this) sig->ruta_activa = nullptr;
     }
+    for (auto &sig : señales_fin) {
+        if (sig->ruta_fin == this) sig->ruta_fin = nullptr;
+    }
     mandada = false;
     formada = false;
     for (auto *sec : secciones_aseguradas) {
@@ -763,7 +774,10 @@ void ruta::disolver()
     diferimetro_dei = nullptr;
     diferimetro_deslizamiento = nullptr;
     diferimetro_cancelado = false;
-    if (deslizamiento) deslizamiento->liberar();
+    for (auto &sig : señales_fin) {
+        auto *desliz = sig->get_deslizamiento(this);
+        if (desliz != nullptr) desliz->liberar();
+    }
     if (destino->ruta_activa == this) destino->ruta_activa = nullptr;
     movimiento::disolver();
 }
@@ -794,7 +808,7 @@ void ruta::disolucion_parcial(bool anular_bloqueo)
             if (sig->seccion == sec && sig->ruta_activa == this) sig->ruta_activa = nullptr;
         }
         if (!sec->is_asegurada(this)) break;
-        if (sec->get_ocupacion(prev, *secciones[i].dir) > EstadoCanton::Prenormalizado) break;
+        if (sec->get_ocupacion(prev, *secciones[i].dir) > EstadoCanton::Libre) break;
         sec->liberar(this);
         secciones_aseguradas.erase(sec);
         if (i + 1 == secciones.size() && !señales.empty()) {
@@ -862,6 +876,87 @@ RespuestaMando ruta::mando(const std::string &inicio, const std::string &fin, co
         if (set_fai(true)) return RespuestaMando::Aceptado;
     } else if (cmd == "AFA") {
         if (set_fai(false)) return RespuestaMando::Aceptado;
+    }
+    return RespuestaMando::OrdenRechazada;
+}
+maniobra_local::maniobra_local(const std::string &estacion, const std::string &id, const json &j) : movimiento(estacion, TipoMovimiento::Maniobra, id, false, false), temporizador_anulacion(3*60*1000)
+{
+    if (j.contains("PosiciónAparatos")) {
+        for (auto &[sec_id, jpos] : j["PosiciónAparatos"].items()) {
+            auto id_aparato = id_elemento::from_default_dep(sec_id, estacion);
+            if (::secciones.find(id_aparato) == ::secciones.end()) {
+                log(id, "sección de posición de aparato inválida", LOG_ERROR);
+                continue;
+            }
+            posicion_aparatos[::secciones[id_aparato]] = jpos;
+        }
+    }
+    for (auto &[id, sec] : j["Secciones"].items()) {
+        secciones.push_back({::secciones[id_elemento::from_default_dep(id, estacion)], std::nullopt, sec});
+        ocupacion_maxima_secciones[secciones.back().seccion] = EstadoCanton::Libre;
+    }
+    for (auto &id : j["Señales"]) {
+        señales.push_back(::señal_impls[id_elemento::from_default_dep(id, estacion)]);
+    }
+}
+bool maniobra_local::anular(bool emergencia)
+{
+    if (!mandada) return false;
+    if (!emergencia) {
+        for (int i=0; i<secciones.size(); i++) {
+            auto *cv_seccion = secciones[i].seccion->get_cv();
+            if (cv_seccion != nullptr && !cv_libre(cv_seccion->get_state())) return false;
+        }
+    }
+    diferimetro_anulacion = set_timer([this]() {
+        disolver();
+    }, temporizador_anulacion);
+    for (auto &sig : señales) {
+        sig->clear_request = false;
+    }
+    return true;
+}
+bool maniobra_local::posible_establecer(bool msg)
+{
+    for (int i=0; i<secciones.size(); i++) {
+        auto *cv_seccion = secciones[i].seccion->get_cv();
+        if (cv_seccion == nullptr) continue;
+        auto it = ocupacion_maxima_secciones.find(secciones[i].seccion);
+        if (it == ocupacion_maxima_secciones.end()) continue;
+        EstadoCV est = cv_seccion->get_state();
+        if (it->second == EstadoCanton::Libre && est > EstadoCV::Libre) {
+            if (msg) log(id, "cv ocupado", LOG_DEBUG);
+            return false;
+        }
+    }
+    return movimiento::posible_establecer(msg);
+}
+bool maniobra_local::establecer(bool msg)
+{
+    if (!mandada && !movimiento::establecer(msg)) return false;
+    for (auto  &sig : señales) {
+        sig->ruta_mandada(this);
+    }
+    clear_timer(diferimetro_anulacion);
+    diferimetro_anulacion = nullptr;
+    return true;
+}
+RespuestaMando maniobra_local::mando(const std::string &cmd, int me)
+{
+    if (me_pendiente && me == 0) return RespuestaMando::MandoEspecialEnCurso;
+    bool pend = me_pendiente;
+    me_pendiente = false;
+    if (cmd == "ML") return establecer(true) ? RespuestaMando::Aceptado : RespuestaMando::OrdenRechazada;
+    else if (cmd == "AML") return anular() ? RespuestaMando::Aceptado : RespuestaMando::OrdenRechazada;
+    else if (cmd == "AMLE") {
+        if (mandada) {
+            if (me) {
+                return anular(true) ? RespuestaMando::Aceptado : RespuestaMando::OrdenRechazada;
+            } else {
+                me_pendiente = true;
+                return RespuestaMando::MandoEspecialNecesario;
+            }
+        }
     }
     return RespuestaMando::OrdenRechazada;
 }

@@ -16,7 +16,6 @@ enum struct EstadoCV
 enum struct EstadoCanton
 {
     Libre,
-    Prenormalizado,
     OcupadoMismoSentido,
     Ocupado,
 };

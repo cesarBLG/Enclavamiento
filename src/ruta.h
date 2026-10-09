@@ -22,8 +22,6 @@ public:
     bool bloqueo_destino = false;
     bool me_pendiente = false;
     ruta *ruta_activa = nullptr;
-    señal_impl *señal_fin = nullptr;
-    std::map<TipoMovimiento, ruta_deslizamiento*> deslizamientos;
     destino_ruta(const id_elemento &id, const json &j);
     RespuestaMando mando(const std::string &cmd, int me);
     RemotaFMV get_estado_remota();
@@ -34,9 +32,6 @@ public:
     }
     void update()
     {
-        if (señal_fin != nullptr) {
-            señal_fin->ruta_fin = ruta_activa;
-        }
         auto prev_estado = estado;
         estado = get_estado();
         if (estado != prev_estado) send_state();
@@ -59,6 +54,7 @@ protected:
     std::map<seccion_via*, EstadoCanton> ocupacion_maxima_secciones;
     std::map<seccion_via*, lados<int>> posicion_aparatos;
     std::vector<señal_impl*> señales;
+    std::vector<señal_impl*> señales_fin;
     std::vector<elemento_ruta> secciones;
     std::set<seccion_via*> secciones_aseguradas;
     std::vector<std::pair<pn_enclavado*, Lado>> pn_afectados;
@@ -66,7 +62,7 @@ protected:
     bool mandada = false;
     bool formada = false;
 public:
-    movimiento(const std::string &estacion, TipoMovimiento tipo, const std::string &id, bool es_ruta=true, bool ertms=false) : estacion(estacion), tipo(tipo), id((tipo == TipoMovimiento::Itinerario ? (ertms ? "ER " : "I ") : (tipo == TipoMovimiento::Rebase ? "R " : (es_ruta ? "M " : "ML ")))+id), es_ruta(es_ruta), ertms(ertms) {}
+    movimiento(const std::string &estacion, TipoMovimiento tipo, const std::string &id, bool es_ruta=true, bool ertms=false) : estacion(estacion), tipo(tipo), id((es_ruta ? (tipo == TipoMovimiento::Itinerario ? (ertms ? "ER " : "I ") : (tipo == TipoMovimiento::Rebase ? "R " : (es_ruta ? "M " : "ML "))) : "")+estacion+" "+id), es_ruta(es_ruta), ertms(ertms) {}
     virtual bool establecer(bool msg=false);
     virtual bool posible_establecer(bool msg=false);
     virtual void disolver();
@@ -111,7 +107,6 @@ protected:
     std::shared_ptr<timer> diferimetro_deslizamiento;
     señal_impl *señal_inicio;
     destino_ruta *destino;
-    ruta_deslizamiento *deslizamiento = nullptr;
     Lado lado;
     Lado lado_bloqueo;
     estado_bloqueo bloqueo_act;
@@ -290,4 +285,23 @@ public:
 protected:
     void activar_pns();
     void desactivar_pns();
+};
+class maniobra_local : public movimiento
+{
+    bool me_pendiente = false;
+    std::shared_ptr<timer> diferimetro_anulacion;
+    int64_t temporizador_anulacion;
+    void disolver() override
+    {
+        clear_timer(diferimetro_anulacion);
+        diferimetro_anulacion = nullptr;
+        movimiento::disolver();
+    }
+    bool anular(bool emergencia=false);
+public:
+    maniobra_local(const std::string &estacion, const std::string &id, const json &j);
+    bool establecer(bool msg=false) override;
+    bool posible_establecer(bool msg=false) override;
+
+    RespuestaMando mando(const std::string &cmd, int me);
 };

@@ -13,7 +13,7 @@ señal_impl::señal_impl(const id_elemento &id, const json &j) : señal(id, j), 
         }
     }
     if (aspecto_maximo_ocupacion.empty())
-        aspecto_maximo_ocupacion[parametros.prenormalizacion_libre ? EstadoCanton::Prenormalizado : EstadoCanton::Libre] = tipo == TipoSeñal::Maniobra ? Aspecto::MovimientoAutorizado : (tipo == TipoSeñal::Retroceso ? Aspecto::IndicadoraDirecta : Aspecto::ViaLibre);
+        aspecto_maximo_ocupacion[EstadoCanton::Libre] = tipo == TipoSeñal::Maniobra ? Aspecto::MovimientoAutorizado : (tipo == TipoSeñal::Retroceso ? Aspecto::IndicadoraDirecta : Aspecto::ViaLibre);
     
     if (j.contains("AspectoAnteriorSeñal")) {
         for (auto &[asp1, asp2] : j["AspectoAnteriorSeñal"].items()) {
@@ -31,10 +31,15 @@ señal_impl::señal_impl(const id_elemento &id, const json &j) : señal(id, j), 
             proximidad_señal.ultimos_cvs_proximidad.insert(id_elemento::from_default_dep(jprox.get<std::string>(), id.dependencia));
         }
     }
+    if (j.contains("Deslizamiento")) {
+        auto *d = new ruta_deslizamiento(this, j["Deslizamiento"]);
+        deslizamientos[TipoMovimiento::Itinerario] = d;
+        deslizamientos[TipoMovimiento::Maniobra] = d;
+    }
+
     ruta_necesaria = j.value("RutaNecesaria", tipo != TipoSeñal::Intermedia && tipo != TipoSeñal::Avanzada);
     itinerarios_desviada = j.value("ItinerariosDesviada", false);
-    cierre_stick = ruta_necesaria;
-    clear_request = !cierre_stick;
+    clear_request = !ruta_necesaria;
     aprec_anterior = parametros.aprec_anterior;
     aspecto_desviada = tipo == TipoSeñal::Retroceso ? Aspecto::IndicadoraDesviada : parametros.aspecto_desviada;
 
@@ -176,8 +181,12 @@ void señal_impl::determinar_aspecto()
         if ((sec_prv != nullptr && !sec_act->transitable(sec_prv, l)) || (sec_prv == nullptr && !sec_act->transitable(pin, l)))
             cerrar = true;
         if (seccion_asegurada) {
-            if (ruta_activa->get_ocupacion_maxima_secciones().find(sec_act)->second < sec_ocup && (ruta_activa->tipo != TipoMovimiento::Maniobra || sec_act != seccion || (sec_ocup == EstadoCanton::Ocupado && sec_act->get_cv()->ocupacion_intempestiva)))
-                cerrar = true;
+            if (ruta_activa->get_ocupacion_maxima_secciones().find(sec_act)->second < sec_ocup) {
+                if (ruta_activa->tipo != TipoMovimiento::Maniobra || (sec_ocup == EstadoCanton::Ocupado && sec_act->get_cv()->ocupacion_intempestiva))
+                    cerrar = true;
+                else
+                    prohibir_abrir = true;
+            }
             if (sec_act->is_bloqueo_seccion())
                 prohibir_abrir = true;
         }
@@ -207,7 +216,7 @@ void señal_impl::determinar_aspecto()
         // Cerrar señales intermedias y de salida si falla comunicación con colateral
         cerrar |= bloqueo_act.estado == EstadoBloqueo::SinDatos;
         // Cerrar señal avanzada si está establecido el itinerario o maniobra de salida
-        cerrar |= (tipo_opp == TipoMovimiento::Itinerario || (tipo_opp == TipoMovimiento::Maniobra && bloqueos[*bloq_id]->deslizamiento_bloqueo)) && tipo == TipoSeñal::Avanzada;
+        cerrar |= (tipo_opp == TipoMovimiento::Itinerario || (tipo_opp == TipoMovimiento::Maniobra && bloqueo_asociado_obj->deslizamiento_bloqueo)) && tipo == TipoSeñal::Avanzada;
         // Cerrar señales intermedias y de salida si hay escape de material en sentido contrario
         cerrar |= bloqueo_act.escape[opp_lado(dir)];
         // Impedir maniobra de salida en caso de escape de material propio, salvo que la maniobra sea compatible con bloqueo receptor
@@ -477,9 +486,9 @@ void señal_impl::update()
     señal_siguiente_aprec = sig_señal;
 
     if (clear_request && ruta_necesaria && ruta_activa == nullptr) clear_request = false;
-    if (aspecto < prev_aspecto && !paso_circulacion) {
+    if (aspecto < prev_aspecto && (!sucesion_automatica || !paso_circulacion)) {
         // Si la señal cierra en stick, es necesario volver a mandar la ruta para que vuelva a abrir
-        if (cierre_stick) aspecto_bloqueado = aspecto;
+        if (cierre_stick && ruta_necesaria && (ruta_activa == nullptr || ruta_activa->es_ruta)) aspecto_bloqueado = aspecto;
     }
     if (aspecto_bloqueado < Aspecto::ViaLibre && aspecto < aspecto_bloqueado) aspecto_bloqueado = Aspecto::ViaLibre;
 
@@ -573,6 +582,13 @@ RespuestaMando señal_impl::mando(const std::string &cmd, int me)
         }
     }
     return RespuestaMando::OrdenRechazada;
+}
+ruta_deslizamiento *señal_impl::get_deslizamiento(movimiento *m)
+{
+    if (m->ertms) return nullptr;
+    auto it = deslizamientos.find(m->tipo);
+    if (it == deslizamientos.end()) return nullptr;
+    return it->second; 
 }
 #define SIG_FOCO(x) estado_foco_señal.contains(x) ? (estado_foco_señal[x] == EstadoFocoSeñal::Fundido ? 3 : 1) : 0
 RemotaSIG señal_impl::get_estado_remota_sig()
@@ -706,6 +722,8 @@ void señal_impl::message_cv(const id_elemento &id, estado_cv ev)
                 ultimo_paso_abierta = get_milliseconds();
                 paso_circulacion = true;
             }
+        } else if (!ev.evento && !cv_inicio->ocupacion_intempestiva) {
+            paso_circulacion = true;
         }
     }
 }
@@ -744,7 +762,7 @@ void proximidad::construir()
     for (auto &[sec, props] : proximidad0) {
         auto &[dir, next] = props;
         seccion_via *act = sec;
-        ruta *ruta_actual = nullptr;
+        movimiento *ruta_actual = nullptr;
         bool trayecto = false;
         señal *sig = señal_inicio;
         while (act != nullptr) {
@@ -759,7 +777,7 @@ void proximidad::construir()
                 if (sig_impl == señal_impls.end() || (prev != nullptr && prev->is_trayecto())) {
                     ruta_actual = nullptr;
                     trayecto = true;
-                } else if (ruta_actual == nullptr || ruta_actual->get_señal_inicio() == sig_impl->second) {
+                } else if (ruta_actual == nullptr || (prev != nullptr && !prev->is_asegurada(ruta_actual))) {
                     ruta_actual = sig_impl->second->ruta_fin;
                     trayecto = false;
                     if (ruta_actual != nullptr && ruta_actual->tipo != TipoMovimiento::Itinerario) ruta_actual = nullptr;

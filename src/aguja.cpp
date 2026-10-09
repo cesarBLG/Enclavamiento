@@ -9,7 +9,7 @@ aguja::aguja(const id_elemento &id, const json &j) : seccion_via(id, j, TipoSecc
             siguientes_secciones[lado].push_back(conexion(id.dependencia, jt));
         }
     }
-    talonable = j.value("Talonable", true);
+    talonable = j.value("Talonable", false);
     if (j.contains("PosiciónMuelle")) talonable_muelle = j["PosiciónMuelle"] == 1 ? PosicionAguja::Invertida : PosicionAguja::Normal;
     all_outs[lado][0] = {0,1};
     all_outs[opp_lado(lado)][0].insert(0);

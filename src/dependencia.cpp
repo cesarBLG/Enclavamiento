@@ -34,7 +34,7 @@ movimiento_servicio_intermitente::movimiento_servicio_intermitente(const std::st
             señales.push_back(::señal_impls[id_elemento::from_default_dep(id, estacion)]);
     }
     for (auto &[id, sec] : cfg.secciones) {
-        secciones.push_back({::secciones[id_elemento::from_default_dep(id, estacion)], std::nullopt, sec.first, sec.second});
+        secciones.push_back({::secciones[id_elemento::from_default_dep(id, estacion)], std::nullopt, {sec.first, sec.second}});
     }
 }
 dependencia::dependencia(const std::string id, const json &j) : id(id), mando_actual({false, "PLO_"+id, std::nullopt, false})
@@ -215,7 +215,7 @@ bool dependencia::set_servicio_intermitente(bool cerrar)
                 if (cerrar) sig->clear_request |= clear;
                 else sig->clear_request &= clear;
             }
-            sig->cierre_stick = sig->ruta_necesaria && !cerrar;
+            sig->cierre_stick = !cerrar;
         }
     }
     cerrada = cerrar;

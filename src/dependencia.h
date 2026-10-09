@@ -79,7 +79,6 @@ struct dependencia
             send_message("luz", "noche", 0, true);
             log(id, "luz noche", LOG_DEBUG);
             return RespuestaMando::Aceptado;
-        } else if (cmd == "LD") {
         } else if (cmd == "BCA") {
             if (!bloqueo_agujas) {
                 bloqueo_agujas = true;

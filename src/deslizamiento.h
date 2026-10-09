@@ -2,7 +2,7 @@
 #include <enclavamiento.h>
 #include <set>
 class seccion_via;
-class destino_ruta;
+class señal_impl;
 class movimiento;
 class ruta_deslizamiento;
 struct nodo_deslizamiento
@@ -26,13 +26,13 @@ struct nodo_deslizamiento
 };
 struct ruta_deslizamiento
 {
-    destino_ruta *fin_movimiento;
+    señal_impl *señal_inicio;
     std::set<movimiento*> rutas_afectadas;
     nodo_deslizamiento *root;
     std::vector<std::map<seccion_via*, lados<int>>> deslizamientos_orientados;
     int deslizamiento_activo = -1;
     bool formado = false;
-    ruta_deslizamiento(destino_ruta *fin, const json &j);
+    ruta_deslizamiento(señal_impl *señal_inicio, const json &j);
     int compatible(movimiento *r);
     void activar(int id);
     void liberar();

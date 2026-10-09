@@ -2,6 +2,7 @@
 #include <enclavamiento.h>
 #include "topology.h"
 #include "remota.h"
+#include "deslizamiento.h"
 class ruta;
 class frontera;
 class señal_impl;
@@ -51,6 +52,7 @@ public:
     const std::string topic;
     const std::string topic_inicio;
     proximidad proximidad_señal;
+    std::map<TipoMovimiento, ruta_deslizamiento*> deslizamientos;
 protected:
     std::map<EstadoCanton, Aspecto> aspecto_maximo_ocupacion;
     std::map<Aspecto, Aspecto> aspectos_maximos_anterior_señal;
@@ -110,11 +112,11 @@ public:
     Aspecto aspecto_bloqueado = Aspecto::ViaLibre;
 
     bool ruta_necesaria = true;
-    bool cierre_stick;
+    bool cierre_stick = true;
     bool abierta_desbloqueo = false;
     bool abierta_bloqueo_receptor = false;
 
-    ruta *ruta_fin=nullptr;
+    movimiento *ruta_fin=nullptr;
     ruta *ruta_fai=nullptr;
     bool bloqueo_señal = false;
     bool sucesion_automatica = false;
@@ -153,6 +155,7 @@ public:
     RemotaIMV get_estado_remota_imv();
     RemotaPV get_estado_remota_pv();
     estado_inicio_ruta get_estado_inicio();
+    ruta_deslizamiento *get_deslizamiento(movimiento *m);
     bool is_rebasada() { return rebasada; }
     void set_reconocimiento_aprec(ReconocimientoAnuncioPrecaucion rec)
     {

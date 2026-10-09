@@ -166,9 +166,11 @@ bool seccion_via::transitable(int in, Lado dir)
         if (!f->protegido(ruta_asegurada ? ruta_asegurada->ruta_asegurada : nullptr))
             return false;
     }
-    // TODO: Maniobra local
-    if (ruta_asegurada && (ruta_asegurada->outs[dir] != out || ruta_asegurada->outs[opp_lado(dir)] != in))
+    if (ruta_asegurada && 
+        ((ruta_asegurada->outs[dir] >= 0 && ruta_asegurada->outs[dir] != out) || 
+        (ruta_asegurada->outs[opp_lado(dir)] >= 0 && ruta_asegurada->outs[opp_lado(dir)] != in))) {
         return false;
+    }
     return true;
 }
 bool seccion_via::afectada_galibo(lados<int> outs)
@@ -217,7 +219,7 @@ void seccion_via::message_cv(const id_elemento &id, estado_cv ev)
     }
     bool intempestiva = false;
     if ((ev.evento && ev.evento->ocupacion || (!ev.evento && cv_libre(ev.estado_previo))) && !cv_libre(ev.estado)) {
-        if (trayecto) {
+        if (trayecto && !ruta_asegurada_cv) {
             if (ev.evento && bloqueo_asociado && bloqueo_act.estado != (ev.evento->lado == Lado::Impar ? EstadoBloqueo::BloqueoImpar : EstadoBloqueo::BloqueoPar) && bloqueo_act.ruta[ev.evento->lado] != TipoMovimiento::Maniobra) {
                 //intempestiva = true;
             }

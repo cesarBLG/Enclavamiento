@@ -22,7 +22,6 @@ std::string to_string(EstadoCanton estado)
 {
     switch(estado) {
         case EstadoCanton::Libre: return "Libre";
-        case EstadoCanton::Prenormalizado: return "Prenormalizado";
         case EstadoCanton::OcupadoMismoSentido: return "OcupadoMismoSentido";
         case EstadoCanton::Ocupado: return "Ocupado";
     }
@@ -179,7 +178,6 @@ void to_json(json &j, const EstadoCanton &estado)
 void from_json(const json &j, EstadoCanton &estado)
 {
     if (j == "Libre") estado = EstadoCanton::Libre;
-    else if (j == "Prenormalizado") estado = EstadoCanton::Prenormalizado;
     else if (j == "OcupadoMismoSentido") estado = EstadoCanton::OcupadoMismoSentido;
     else estado = EstadoCanton::Ocupado;
 }

@@ -1,17 +1,17 @@
 #include "deslizamiento.h"
 #include "items.h"
-ruta_deslizamiento::ruta_deslizamiento(destino_ruta *fin, const json &j) : fin_movimiento(fin)
+ruta_deslizamiento::ruta_deslizamiento(señal_impl *señal_inicio, const json &j) : señal_inicio(señal_inicio)
 {;
     std::set<seccion_via*> stop;
     for (auto &id : j["Límite"]) {
-        stop.insert(secciones[id_elemento::from_default_dep(id, fin->id.dependencia)]);
+        stop.insert(secciones[id_elemento::from_default_dep(id, señal_inicio->id.dependencia)]);
     }
-    root = new nodo_deslizamiento(fin->señal_fin->seccion_prev, fin->señal_fin->seccion, fin->señal_fin->lado, this, stop);
+    root = new nodo_deslizamiento(señal_inicio->seccion_prev, señal_inicio->seccion, señal_inicio->lado, this, stop);
     if (j.contains("DeslizamientosOrientados")) {
         for (auto &jo : j["DeslizamientosOrientados"]) {
             std::map<seccion_via*, lados<int>> pos;
             for (auto &[sec_id, jpos] : jo.items()) {
-                pos[::secciones[id_elemento::from_default_dep(sec_id, fin->id.dependencia)]] = jpos;
+                pos[::secciones[id_elemento::from_default_dep(sec_id, señal_inicio->id.dependencia)]] = jpos;
             }
             deslizamientos_orientados.push_back(pos);
         }
@@ -44,7 +44,7 @@ int ruta_deslizamiento::compatible(movimiento *r)
         for (auto &[sec,outs] : pos) {
             if (sec->tipo == TipoSeccion::Aguja) {
                 auto *ag = (aguja*)sec;
-                if (ag->is_enclavada_excepto(fin_movimiento->ruta_activa))
+                if (ag->is_enclavada_excepto(señal_inicio->ruta_fin))
                     continue;
                 if (r != nullptr) {
                     auto &pos2 = r->get_posicion_aparatos();
@@ -91,17 +91,8 @@ bool nodo_deslizamiento::compatible(movimiento *r, int id_deslizamiento)
 
             if (sec2 == seccion && it != posicion_aparatos.end() && outs[dir] != it->second[dir]) return false;
 
-            // No comprobar compatibilidad de una ruta con su propio deslizamiento
-            bool continuacion = false;
-            for (auto *sig : r->get_señales()) {
-                if (deslizamiento->fin_movimiento->señal_fin == sig) {
-                    continuacion = true;
-                    break;
-                }
-                if (r->es_ruta) break;
-            }
-            if (continuacion)
-                continue;
+            // No comprobar rutas de continuacion
+            if (r->es_ruta && ((ruta*)r)->get_señal_inicio() == deslizamiento->señal_inicio) continue;
 
             for (auto &pt : seccion->puntos_negros) {
                 if (pt.seccion_causante != sec2->id || !pt.afectado_ajeno(outs))
@@ -137,7 +128,8 @@ bool nodo_deslizamiento::compatible(movimiento *r, int id_deslizamiento)
                 ruta_asegurada = sec->get_ruta_asegurada();
                 if (ruta_asegurada) {
                     // No comprobar rutas de continuación
-                    if (ruta_asegurada->ruta_asegurada->es_ruta && ((ruta*)ruta_asegurada->ruta_asegurada)->get_señal_inicio() == deslizamiento->fin_movimiento->señal_fin) continue;
+                    if (ruta_asegurada->ruta_asegurada->es_ruta && ((ruta*)ruta_asegurada->ruta_asegurada)->get_señal_inicio() == deslizamiento->señal_inicio) continue;
+                    
                     if (pt.afectado_ajeno(ruta_asegurada->outs)) {
                         deslizamiento->rutas_afectadas.insert(ruta_asegurada->ruta_asegurada);
                         return false;
@@ -196,9 +188,9 @@ void nodo_deslizamiento::actualizar(bool set)
         if (seccion->tipo == TipoSeccion::Aguja) {
             aguja *a = (aguja*)seccion;
             if (it == posicion_aparatos.end()) {
-                a->desenclavar(deslizamiento->fin_movimiento->ruta_activa);
+                a->desenclavar(deslizamiento->señal_inicio->ruta_fin);
             } else if (dependencias[seccion->id.dependencia]->bloqueo_agujas || !a->mover(a->get_posicion(it->second))) {
-                a->requerir_movimiento(deslizamiento->fin_movimiento->ruta_activa, a->get_posicion(it->second));
+                a->requerir_movimiento(deslizamiento->señal_inicio->ruta_fin, a->get_posicion(it->second));
             }
         }
     }
@@ -214,10 +206,10 @@ void nodo_deslizamiento::actualizar(bool set)
         }
     }
     if (set) {
-        seccion->asegurar_deslizamiento(deslizamiento->fin_movimiento->ruta_activa, this);
+        seccion->asegurar_deslizamiento(deslizamiento->señal_inicio->ruta_fin, this);
         asegurado = true;
     } else {
-        seccion->liberar_deslizamiento(deslizamiento->fin_movimiento->ruta_activa, this);
+        seccion->liberar_deslizamiento(deslizamiento->señal_inicio->ruta_fin, this);
         asegurado = false;
     }
 }
@@ -268,11 +260,11 @@ void ruta_deslizamiento::activar(int id)
 {
     if (deslizamiento_activo == id) return;
     formado = false;
-    if (fin_movimiento->ruta_activa == nullptr) {
+    if (señal_inicio->ruta_fin == nullptr) {
         liberar();
         return;
     }
-    log(fin_movimiento->id, "deslizamiento activo " + std::to_string(id));
+    log(señal_inicio->id, "deslizamiento activo " + std::to_string(id));
     deslizamiento_activo = id;
     root->actualizar(true);
     for (auto *r2 : rutas_afectadas) {
@@ -299,7 +291,7 @@ void ruta_deslizamiento::update()
             if (sec->tipo == TipoSeccion::Aguja) {
                 aguja *a = (aguja*)sec;
                 auto pos = a->get_posicion(pins);
-                if (!a->enclavar(fin_movimiento->ruta_activa, a->get_posicion(pins))) {
+                if (!a->enclavar(señal_inicio->ruta_fin, a->get_posicion(pins))) {
                     agujas_dispuestas = false;
                     break;
                 }
@@ -307,7 +299,7 @@ void ruta_deslizamiento::update()
         }
         if (agujas_dispuestas) {
             formado = true;
-            log(fin_movimiento->id, "deslizamiento formado " + std::to_string(deslizamiento_activo));
+            log(señal_inicio->id, "deslizamiento formado " + std::to_string(deslizamiento_activo));
             for (auto &r : rutas_afectadas) {
                 r->deslizamientos_afectados[this] = deslizamiento_activo;
             }
