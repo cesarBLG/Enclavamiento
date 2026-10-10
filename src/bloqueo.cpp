@@ -181,7 +181,7 @@ void bloqueo::message_cv(const id_elemento &id, estado_cv ecv)
         if (esc && estado == EstadoBloqueo::Desbloqueo && dependencias[estacion]->cerrada && !colateral.prohibido && colateral.actc != ACTC::Denegada) esc = false;
         if (esc) {
             escape = true;
-            sonerias[TipoSoneria::EscapeMaterial] = get_milliseconds();
+            dependencias[estacion]->set_alarma(TipoAlarma::EM, this, 1, true);
             log(this->id, "escape emisor", LOG_WARNING);
             if (index < 0) update();
         }
@@ -241,6 +241,36 @@ void bloqueo::message_cv(const id_elemento &id, estado_cv ecv)
             sonerias[TipoSoneria::OcupacionProximidad] = get_milliseconds();
     }
 
+    update();
+}
+void bloqueo::message_colateral(estado_bloqueo_lado colateral)
+{
+    if (colateral == this->colateral) return;
+    if (mando_estacion.central && colateral.mando_estacion != this->colateral.mando_estacion) {
+        if (!colateral.mando_estacion.central) { // Colateral a ML
+            if (actc == ACTC::NoNecesaria) actc = ACTC::Concedida;
+        } else if (colateral.mando_estacion.puesto == mando_estacion.puesto) { // Mismo CTC
+            actc = ACTC::NoNecesaria;
+        } else { // Distinto CTC
+            if (actc == ACTC::NoNecesaria) actc = ACTC::Concedida;
+        }
+    }
+    if (!this->colateral.escape && colateral.escape) {
+        dependencias[estacion]->set_alarma(TipoAlarma::EM, this, 1, true);
+        if (bloqueo_vinculado != nullptr && bloqueo_vinculado->propagacion_completa) {
+            bloqueo_vinculado->escape = true;
+            bloqueo_vinculado->update();
+        }
+    } else if (this->colateral.escape && !colateral.escape) {
+        dependencias[estacion]->set_alarma(TipoAlarma::EM, this, 0);
+    }
+    if (!this->colateral.cierre_señales && colateral.cierre_señales) {
+        dependencias[estacion]->set_alarma(TipoAlarma::CB, this, 1, true);
+    } else if (this->colateral.cierre_señales && !colateral.cierre_señales) {
+        dependencias[estacion]->set_alarma(TipoAlarma::CB, this, 0);
+    }
+    this->colateral = colateral;
+    calcular_ocupacion();
     update();
 }
 void bloqueo::desvincular()
@@ -328,6 +358,7 @@ void bloqueo::update()
     }
     if (colateral.normalizar_escape && escape && desbloqueo_permitido()) {
         escape = false;
+        dependencias[estacion]->set_alarma(TipoAlarma::EM, this, 0);
         log(id, "escape emisor normalizado", LOG_INFO);
         if (bloqueo_vinculado != nullptr && propagacion_completa) {
             bloqueo_vinculado->normalizar_escape = true;

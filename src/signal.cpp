@@ -359,7 +359,7 @@ void señal_impl::determinar_focos()
         focos_mandados_mask = 0;
         return;
     }
-    bool bloquear = false;
+    bool fusion = false;
     std::map<FocoSeñal, EstadoFocoSeñal> *combinacion = nullptr;
     while (!combinacion) {
         auto it = combinaciones_focos.find(aspecto);
@@ -393,9 +393,9 @@ void señal_impl::determinar_focos()
         } while (!is_aspecto_disponible(aspecto));
         if (aspecto == prev_aspecto) break;
 
-        // bloquear = true;
+        fusion = true;
     }
-    if (bloquear) aspecto_bloqueado = aspecto;
+    //if (fusion) aspecto_bloqueado = aspecto;
     apagada = false;
     if (!combinacion) {
         apagada = true;
@@ -417,6 +417,7 @@ void señal_impl::determinar_focos()
             }
         }
     }
+    dependencias[id.dependencia]->set_alarma(TipoAlarma::SE, this, apagada ? 2 : (fusion ? 1 : 0), true);
     unsigned int mask = 0;
     if (combinacion != nullptr) {
         for (auto &[foco, estado] : *combinacion) {

@@ -246,6 +246,7 @@ void seccion_via::message_cv(const id_elemento &id, estado_cv ev)
     if (intempestiva) {
         log(cv_seccion->id, "ocupacion intempestiva", LOG_WARNING);
         cv_seccion->ocupacion_intempestiva = true;
+        dependencias[cv_seccion->id.dependencia]->set_alarma(TipoAlarma::OV, cv_seccion, 1, true);
     }
 
     if (cv_libre(ev.estado_previo) && !cv_libre(ev.estado)) {

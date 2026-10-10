@@ -355,3 +355,63 @@ void from_json(const nlohmann::json& j, RemotaAG& p)
     p.AG_ENC       = j.value("AG_ENC", 0);
     p.AG_GAL       = j.value("AG_GAL", 0);
 }
+
+// ---------------- RemotaIGA ----------------
+
+void to_json(nlohmann::json& j, const RemotaIGA& p)
+{
+    j = nlohmann::json{
+        {"IGA_RAL",  p.IGA_RAL},
+        {"IGA_RM",   p.IGA_RM},
+        {"IGA_OV",   p.IGA_OV},
+        {"IGA_BA",   p.IGA_BA},
+        {"IGA_MA",   p.IGA_MA},
+        {"IGA_AG",   p.IGA_AG},
+        {"IGA_SE_A", p.IGA_SE_A},
+        {"IGA_SE_R", p.IGA_SE_R},
+        {"IGA_LUM",  p.IGA_LUM},
+        {"IGA_RE",   p.IGA_RE},
+        {"IGA_EN",   p.IGA_EN},
+        {"IGA_PN",   p.IGA_PN},
+        {"IGA_DE_AL", p.IGA_DE_AL},
+        {"IGA_DE_FS", p.IGA_DE_FS},
+        {"IGA_EM",   p.IGA_EM},
+        {"IGA_CB",   p.IGA_CB},
+        {"IGA_NB",   p.IGA_NB},
+        {"IGA_FI",   p.IGA_FI},
+        {"IGA_EI",   p.IGA_EI},
+        {"IGA_OR",   p.IGA_OR},
+        {"IGA_EL",   p.IGA_EL},
+        {"IGA_EAG",  p.IGA_EAG},
+        {"IGA_CF",   p.IGA_CF},
+        {"IGA_CE",   p.IGA_CE}
+    };
+}
+
+void from_json(const nlohmann::json& j, RemotaIGA& p)
+{
+    p.IGA_RAL  = j.value("IGA_RAL",  0u);
+    p.IGA_RM   = j.value("IGA_RM",   0u);
+    p.IGA_OV   = j.value("IGA_OV",   0u);
+    p.IGA_BA   = j.value("IGA_BA",   0u);
+    p.IGA_MA   = j.value("IGA_MA",   0u);
+    p.IGA_AG   = j.value("IGA_AG",   0u);
+    p.IGA_SE_A = j.value("IGA_SE_A", 0u);
+    p.IGA_SE_R = j.value("IGA_SE_R", 0u);
+    p.IGA_LUM  = j.value("IGA_LUM",  0u);
+    p.IGA_RE   = j.value("IGA_RE",   0u);
+    p.IGA_EN   = j.value("IGA_EN",   0u);
+    p.IGA_PN   = j.value("IGA_PN",   0u);
+    p.IGA_DE_AL = j.value("IGA_DE_AL", 0u);
+    p.IGA_DE_FS = j.value("IGA_DE_FS", 0u);
+    p.IGA_EM   = j.value("IGA_EM",   0u);
+    p.IGA_CB   = j.value("IGA_CB",   0u);
+    p.IGA_NB   = j.value("IGA_NB",   0u);
+    p.IGA_FI   = j.value("IGA_FI",   0u);
+    p.IGA_EI   = j.value("IGA_EI",   0u);
+    p.IGA_OR   = j.value("IGA_OR",   0u);
+    p.IGA_EL   = j.value("IGA_EL",   0u);
+    p.IGA_EAG  = j.value("IGA_EAG",  0u);
+    p.IGA_CF   = j.value("IGA_CF",   0u);
+    p.IGA_CE   = j.value("IGA_CE",   0u);
+}

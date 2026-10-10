@@ -55,6 +55,7 @@ std::string to_string(ReconocimientoAnuncioPrecaucion rec)
         case ReconocimientoAnuncioPrecaucion::Reconocido: return "Reconocido";
         case ReconocimientoAnuncioPrecaucion::PerdidaReconocimiento: return "PerdidaReconocimiento";
     }
+    return "";
 }
 std::string to_string(EstadoBloqueo estado)
 {
@@ -137,7 +138,6 @@ std::string to_string(TipoSoneria tipo)
         case TipoSoneria::Averia: return "Averia";
         case TipoSoneria::OcupacionProximidad: return "OcupacionProximidad";
         case TipoSoneria::EstablecimientoBloqueo: return "EstablecimientoBloqueo";
-        case TipoSoneria::EscapeMaterial: return "EscapeMaterial";
     }
     return "";
 }
@@ -542,7 +542,6 @@ void from_json(const json &j, TipoSoneria &tipo)
     else if (j == "Averia") tipo = TipoSoneria::Averia;
     else if (j == "EstablecimientoBloqueo") tipo = TipoSoneria::EstablecimientoBloqueo;
     else if (j == "OcupacionProximidad") tipo = TipoSoneria::OcupacionProximidad;
-    else if (j == "EscapeMaterial") tipo = TipoSoneria::EscapeMaterial;
 }
 void to_json(json &j, const TipoSeccion &tipo)
 {

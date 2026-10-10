@@ -53,6 +53,10 @@ void dependencia::update()
         }
         if (cerrada) set_servicio_intermitente(true);
         inicializada = true;
+
+        for (auto &[id, bloqueo] : bloqueos) {
+            bloqueo->cambio_mando(mando_actual);
+        }
     }
 
     std::map<id_elemento, ruta*> movimiento_bloqueos;
@@ -84,6 +88,14 @@ void dependencia::update()
             bloq->set_ruta(it->second->tipo, it->second->maniobra_compatible, false, pri);
         }
         son = std::max(bloq->update_soneria(), son);
+    }
+    for (auto &[al, objs] : alarmas) {
+        for (auto &[obj, dat] : objs) {
+            if (!dat.second) {
+                son = TipoSoneria::Averia;
+                break;
+            }
+        }
     }
     if (soneria != son) {
         soneria = son;

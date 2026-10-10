@@ -266,23 +266,7 @@ public:
     {
         return destino;
     }
-    bool set_fai(bool activar) {
-        if (activar) {
-            if (!fai && señal_inicio->ruta_fai == nullptr) {
-                fai = true;
-                señal_inicio->ruta_fai = this;
-                return true;
-            }
-        } else {
-            if ((fai || fai_disparo_unico) && señal_inicio->ruta_fai == this) {
-                fai = false;
-                fai_disparo_unico = false;
-                señal_inicio->ruta_fai = nullptr;
-                return true;
-            }
-        }
-        return false;
-    }
+    bool set_fai(bool activar);
 
     RespuestaMando mando(const std::string &inicio, const std::string &fin, const std::string &cmd);
 

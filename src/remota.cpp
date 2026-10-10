@@ -134,10 +134,15 @@ void update_remota()
         }
     }
     for (auto &[id, dep] : dependencias) {
-        std::pair<std::string,id_elemento> comp("dep", id+":DEP");
-        if (sendall || update_components.find(comp) != update_components.end()) {
+        std::pair<std::string,id_elemento> comp1("dep", id+":DEP");
+        std::pair<std::string,id_elemento> comp2("iga", id+":IGA");
+        if (sendall || update_components.find(comp1) != update_components.end()) {
             auto r = json(dep->get_estado_remota());
-            push(j, {ElementoRemota::DEP, comp.second}, r);
+            push(j, {ElementoRemota::DEP, comp1.second}, r);
+        }
+        if (sendall || update_components.find(comp2) != update_components.end()) {
+            auto r = json(dep->get_estado_remota_iga());
+            push(j, {ElementoRemota::IGA, comp2.second}, r);
         }
     }
     for (auto &[id, pn] : pns) {

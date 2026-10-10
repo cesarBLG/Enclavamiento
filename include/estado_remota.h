@@ -168,6 +168,33 @@ struct RemotaPN
     unsigned int PN_PRX1:1;
     unsigned int PN_PRX2:1;
 };
+struct RemotaIGA
+{
+    unsigned int IGA_RAL:1;
+    unsigned int IGA_RM:1;
+    unsigned int IGA_OV:1;
+    unsigned int IGA_BA:1;
+    unsigned int IGA_MA:2;
+    unsigned int IGA_AG:2;
+    unsigned int IGA_SE_A:2;
+    unsigned int IGA_SE_R:2;
+    unsigned int IGA_LUM:2;
+    unsigned int IGA_RE:2;
+    unsigned int IGA_EN:2;
+    unsigned int IGA_PN:2;
+    unsigned int IGA_DE_AL:2;
+    unsigned int IGA_DE_FS:2;
+    unsigned int IGA_EM:2;
+    unsigned int IGA_CB:2;
+    unsigned int IGA_NB:2;
+    unsigned int IGA_FI:2;
+    unsigned int IGA_EI:2;
+    unsigned int IGA_OR:3;
+    unsigned int IGA_EL:3;
+    unsigned int IGA_EAG:2;
+    unsigned int IGA_CF:3;
+    unsigned int IGA_CE:2;
+};
 #ifndef WITHOUT_JSON
 #include "json.h"
 void to_json(json& j, const RemotaSIG& p);
@@ -205,4 +232,7 @@ void from_json(const json& j, RemotaDEP& p);
 
 void to_json(json& j, const RemotaPN& p);
 void from_json(const json& j, RemotaPN& p);
+
+void to_json(json& j, const RemotaIGA& p);
+void from_json(const json& j, RemotaIGA& p);
 #endif

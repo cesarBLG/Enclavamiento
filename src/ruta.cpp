@@ -503,6 +503,7 @@ void ruta::update()
             dai(true);
             estado_fai = EstadoFAI::EnEspera;
             inicio_temporizacion_fai = 0;
+            dependencias[señal_inicio->id.dependencia]->set_alarma(TipoAlarma::FI, señal_inicio, 0);
         }
     }
     if (!fai && !fai_disparo_unico) {
@@ -511,18 +512,21 @@ void ruta::update()
         if (estado_fai != EstadoFAI::EnEspera) {
             estado_fai = EstadoFAI::EnEspera;
             inicio_temporizacion_fai = 0;
+            dependencias[señal_inicio->id.dependencia]->set_alarma(TipoAlarma::FI, señal_inicio, 0);
         }
     } else if (estado_fai == EstadoFAI::Solicitud || estado_fai == EstadoFAI::AperturaNoPosible || estado_fai == EstadoFAI::AperturaNoPosibleReconocida) {
         if (señal_inicio->aspecto > Aspecto::Parada && señal_inicio->ruta_activa == this) {
             // Itinerario establecido y señal abierta
             estado_fai = EstadoFAI::Activo;
             fai_disparo_unico = false;
+            dependencias[señal_inicio->id.dependencia]->set_alarma(TipoAlarma::FI, señal_inicio, 1);
         } else if (estado_fai == EstadoFAI::Solicitud) {
             // FAI mandando ruta
             if (señal_inicio->ruta_activa != this || diferimetro_dai != nullptr) establecer();
             // Señal no abre tras temporizador, dejar de re-mandar la ruta
             if (estado_fai == EstadoFAI::Solicitud && get_milliseconds() - inicio_temporizacion_fai > 3*60*1000) {
                 estado_fai = EstadoFAI::AperturaNoPosible;
+            dependencias[señal_inicio->id.dependencia]->set_alarma(TipoAlarma::FI, señal_inicio, 2, true);
             }
         }
     } else if (estado_fai == EstadoFAI::Activo) {
@@ -839,6 +843,25 @@ void ruta::desactivar_pns()
         pn->desactivar_ruta(l);
     } 
 }
+bool ruta::set_fai(bool activar) {
+    if (activar) {
+        if (!fai && señal_inicio->ruta_fai == nullptr) {
+            fai = true;
+            señal_inicio->ruta_fai = this;
+            dependencias[señal_inicio->id.dependencia]->set_alarma(TipoAlarma::FI, señal_inicio, 1);
+            return true;
+        }
+    } else {
+        if ((fai || fai_disparo_unico) && señal_inicio->ruta_fai == this) {
+            fai = false;
+            fai_disparo_unico = false;
+            señal_inicio->ruta_fai = nullptr;
+            dependencias[señal_inicio->id.dependencia]->set_alarma(TipoAlarma::FI, señal_inicio, 0);
+            return true;
+        }
+    }
+    return false;
+}
 RespuestaMando ruta::mando(const std::string &inicio, const std::string &fin, const std::string &cmd)
 {
     if (inicio != id_inicio || fin != id_destino) return RespuestaMando::OrdenNoAplicable;
@@ -870,6 +893,7 @@ RespuestaMando ruta::mando(const std::string &inicio, const std::string &fin, co
             señal_inicio->ruta_fai = this;
             estado_fai = EstadoFAI::Solicitud;
             inicio_temporizacion_fai = get_milliseconds();
+            dependencias[señal_inicio->id.dependencia]->set_alarma(TipoAlarma::FI, señal_inicio, 1);
             return RespuestaMando::Aceptado;
         }
     } else if (cmd == "FAI") {

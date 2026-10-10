@@ -17,6 +17,84 @@ aguja::aguja(const id_elemento &id, const json &j) : seccion_via(id, j, TipoSecc
     subscribe("aguja/"+id_to_mqtt(id.id)+"/comprobacion");
     update();
 }
+void aguja::update()
+{
+    if (talonable_muelle && (!mandada || mandada->first != talonable_muelle)) mandada = {*talonable_muelle, 0};
+    if (talonable) {
+        active_outs[opp_lado(lado)][0] = 0;
+        active_outs[opp_lado(lado)][1] = 0;
+    } else if (comprobacion) {
+        bool invertida = comprobacion == PosicionAguja::Invertida;
+        active_outs[opp_lado(lado)][invertida ? 1 : 0] = 0;
+        active_outs[opp_lado(lado)][invertida ? 0 : 1] = -1;
+    } else {
+        active_outs[opp_lado(lado)][0] = -1;
+        active_outs[opp_lado(lado)][1] = -1;
+    }
+    active_outs[lado][0] = comprobacion == PosicionAguja::Invertida ? 1 : (comprobacion ? 0 : -1);
+
+    if (mandada) {
+        if (mandada->second != 0) {
+            if (mandada->first == comprobacion) {
+                mandada->second = 0;
+            } else if (get_milliseconds() - mandada->second > 15000) {
+                dependencias[id.dependencia]->set_alarma(TipoAlarma::MA, this, 2, true);
+                mandada->second = 0;
+            }
+        }
+        if (mandada->first == comprobacion) {
+            dependencias[id.dependencia]->set_alarma(TipoAlarma::MA, this, 0);
+        }
+    }
+
+    remota_cambio_elemento("sec", id);
+}
+void aguja::message_aguja(const std::string &comp)
+{
+    auto prev = comprobacion;
+    if (comp == "0") comprobacion = PosicionAguja::Normal;
+    else if (comp == "1") comprobacion = PosicionAguja::Invertida;
+    else comprobacion = std::nullopt;
+    if (comprobacion != prev) {
+        if (comprobacion == PosicionAguja::Normal) log(id, "comprobando a normal", LOG_INFO);
+        else if (comprobacion == PosicionAguja::Invertida) log(id, "comprobando a invertida", LOG_INFO);
+        else log(id, "sin comprobación", LOG_INFO);
+    }
+    for (auto it = requerida_movimiento.begin(); it != requerida_movimiento.end(); ) {
+        if (it->second == comprobacion) {
+            it = requerida_movimiento.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    if (!mandada && comprobacion) mandada = {*comprobacion, 0};
+    if (mandada && prev && *prev == mandada->first && comprobacion != mandada->first) dependencias[id.dependencia]->set_alarma(TipoAlarma::MA, this, 1);
+    update();
+}
+bool aguja::mover(PosicionAguja pos, bool anular_pedal)
+{
+    if (!posible_mover(pos, anular_pedal)) return false;
+    if (escape != nullptr && (pos == PosicionAguja::Normal || !escape->talonable)) {
+        escape->escape = nullptr;
+        escape->mover(pos, anular_pedal);
+        escape->escape = this;
+    }
+    if (comprobacion == pos) {
+        if (mandada && mandada->first != pos) {
+            mandada = {pos, 0};
+            update();
+        }
+        return true;
+    }
+    mandada = {pos, get_milliseconds()};
+    dependencias[id.dependencia]->set_alarma(TipoAlarma::MA, this, 1);
+    if (mandada->second == 0) mandada->second = 1;
+    comprobacion = std::nullopt;
+    send_message(topic_mando, pos == PosicionAguja::Invertida ? "1" : "0");
+    update();
+    log(id, pos == PosicionAguja::Invertida ? "mandada a invertida" : "mandada a normal");
+    return true;
+}
 RespuestaMando aguja::mando(const std::string &cmd, int me)
 {
     if (me_pendiente && me == 0) return RespuestaMando::MandoEspecialEnCurso;

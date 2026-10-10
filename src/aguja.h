@@ -17,53 +17,8 @@ class aguja : public seccion_via, public estado_aguja
     const Lado lado;
     const std::string topic_mando;
     aguja(const id_elemento &id, const json &j);
-    void update()
-    {
-        if (talonable_muelle && (!mandada || mandada->first != talonable_muelle)) mandada = {*talonable_muelle, 0};
-        if (talonable) {
-            active_outs[opp_lado(lado)][0] = 0;
-            active_outs[opp_lado(lado)][1] = 0;
-        } else if (comprobacion) {
-            bool invertida = comprobacion == PosicionAguja::Invertida;
-            active_outs[opp_lado(lado)][invertida ? 1 : 0] = 0;
-            active_outs[opp_lado(lado)][invertida ? 0 : 1] = -1;
-        } else {
-            active_outs[opp_lado(lado)][0] = -1;
-            active_outs[opp_lado(lado)][1] = -1;
-        }
-        active_outs[lado][0] = comprobacion == PosicionAguja::Invertida ? 1 : (comprobacion ? 0 : -1);
-
-        if (mandada && mandada->second != 0) {
-            if (mandada->first == comprobacion) {
-                mandada->second = 0;
-            } else if (get_milliseconds() - mandada->second > 15000) {
-                mandada->second = 0;
-            }
-        }
-
-        remota_cambio_elemento("sec", id);
-    }
-    void message_aguja(const std::string &comp)
-    {
-        auto prev = comprobacion;
-        if (comp == "0") comprobacion = PosicionAguja::Normal;
-        else if (comp == "1") comprobacion = PosicionAguja::Invertida;
-        else comprobacion = std::nullopt;
-        if (comprobacion != prev) {
-            if (comprobacion == PosicionAguja::Normal) log(id, "comprobando a normal", LOG_INFO);
-            else if (comprobacion == PosicionAguja::Invertida) log(id, "comprobando a invertida", LOG_INFO);
-            else log(id, "sin comprobación", LOG_INFO);
-        }
-        for (auto it = requerida_movimiento.begin(); it != requerida_movimiento.end(); ) {
-            if (it->second == comprobacion) {
-                it = requerida_movimiento.erase(it);
-            } else {
-                ++it;
-            }
-        }
-        if (!mandada && comprobacion) mandada = {*comprobacion, 0};
-        update();
-    }
+    void update();
+    void message_aguja(const std::string &comp);
     void message_cv(const id_elemento &id, estado_cv ev) override
     {
         if (id != id_cv) return;
@@ -120,29 +75,7 @@ class aguja : public seccion_via, public estado_aguja
         }
         return true;
     }
-    bool mover(PosicionAguja pos, bool anular_pedal=false)
-    {
-        if (!posible_mover(pos, anular_pedal)) return false;
-        if (escape != nullptr && (pos == PosicionAguja::Normal || !escape->talonable)) {
-            escape->escape = nullptr;
-            escape->mover(pos, anular_pedal);
-            escape->escape = this;
-        }
-        if (comprobacion == pos) {
-            if (mandada && mandada->first != pos) {
-                mandada = {pos, 0};
-                update();
-            }
-            return true;
-        }
-        mandada = {pos, get_milliseconds()};
-        if (mandada->second == 0) mandada->second = 1;
-        comprobacion = std::nullopt;
-        send_message(topic_mando, pos == PosicionAguja::Invertida ? "1" : "0");
-        update();
-        log(id, pos == PosicionAguja::Invertida ? "mandada a invertida" : "mandada a normal");
-        return true;
-    }
+    bool mover(PosicionAguja pos, bool anular_pedal=false);
     void requerir_movimiento(movimiento *r, PosicionAguja pos)
     {
         if (!enclavada.empty() || comprobacion == pos) return;

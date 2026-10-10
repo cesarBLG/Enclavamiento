@@ -156,8 +156,28 @@ enum struct TipoSoneria
     Apagada,
     EstablecimientoBloqueo,
     OcupacionProximidad,
-    EscapeMaterial,
     Averia
+};
+enum struct TipoAlarma
+{
+    MA,
+    AG,
+    PN,
+    FI,
+    EI,
+    EL,
+    EN,
+    EA,
+    SE,
+    OR,
+    OV,
+    CE,
+    EM,
+    CB,
+    NB,
+    DE,
+    CF,
+    RE
 };
 inline Lado opp_lado(Lado lado)
 {

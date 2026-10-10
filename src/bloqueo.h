@@ -80,6 +80,15 @@ public:
         }
         return son;
     }
+    bool ral()
+    {
+        auto it = sonerias.find(TipoSoneria::Averia);
+        if (it != sonerias.end()) {
+            sonerias.erase(it);
+            return true;
+        }
+        return false;
+    }
     void anular()
     {
         if (estado == bloqueo_emisor && desbloqueo_permitido()) {
@@ -105,32 +114,7 @@ public:
             update();
         }
     }
-    void message_colateral(estado_bloqueo_lado colateral)
-    {
-        if (colateral == this->colateral) return;
-        if (mando_estacion.central && colateral.mando_estacion != this->colateral.mando_estacion) {
-            if (!colateral.mando_estacion.central) { // Colateral a ML
-                if (actc == ACTC::NoNecesaria) actc = ACTC::Concedida;
-            } else if (colateral.mando_estacion.puesto == mando_estacion.puesto) { // Mismo CTC
-                actc = ACTC::NoNecesaria;
-            } else { // Distinto CTC
-                if (actc == ACTC::NoNecesaria) actc = ACTC::Concedida;
-            }
-        }
-        if (!this->colateral.escape && colateral.escape) {
-            sonerias[TipoSoneria::EscapeMaterial] = get_milliseconds();
-            if (bloqueo_vinculado != nullptr && bloqueo_vinculado->propagacion_completa) {
-                bloqueo_vinculado->escape = true;
-                bloqueo_vinculado->update();
-            }
-        }
-        if (!this->colateral.cierre_señales && colateral.cierre_señales) {
-            sonerias[TipoSoneria::Averia] = get_milliseconds();
-        }
-        this->colateral = colateral;
-        calcular_ocupacion();
-        update();
-    }
+    void message_colateral(estado_bloqueo_lado colateral);
     RespuestaMando mando(const std::string &cmd, int me)
     {
         RespuestaMando aceptado = RespuestaMando::OrdenRechazada;
