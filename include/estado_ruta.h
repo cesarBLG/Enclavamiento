@@ -18,6 +18,7 @@ struct estado_fin_ruta
 {
     TipoMovimiento tipo = TipoMovimiento::Ninguno;
     bool supervisada = false;
+    bool deslizamiento = false;
     bool bloqueo_destino = false;
     bool me_pendiente = false;
     std::optional<int64_t> fin_diferimetro;

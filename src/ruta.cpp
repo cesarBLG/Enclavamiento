@@ -891,29 +891,113 @@ maniobra_local::maniobra_local(const std::string &estacion, const std::string &i
             posicion_aparatos[::secciones[id_aparato]] = jpos;
         }
     }
-    for (auto &[id, sec] : j["Secciones"].items()) {
-        secciones.push_back({::secciones[id_elemento::from_default_dep(id, estacion)], std::nullopt, sec});
-        ocupacion_maxima_secciones[secciones.back().seccion] = EstadoCanton::Libre;
-    }
     for (auto &id : j["Señales"]) {
         señales.push_back(::señal_impls[id_elemento::from_default_dep(id, estacion)]);
+    }
+    if (j.contains("Secciones")) {
+        for (auto &[id, sec] : j["Secciones"].items()) {
+            secciones.push_back({::secciones[id_elemento::from_default_dep(id, estacion)], std::nullopt, sec});
+            ocupacion_maxima_secciones[secciones.back().seccion] = EstadoCanton::Libre;
+        }
+    } else {
+        std::set<señal_impl*> señales_intermedias;
+        for (auto *sig : señales) {
+            /*if (sig->seccion_prev != nullptr) {
+                int out = sig->seccion_prev->get_out(sig->seccion, sig->lado_prev);
+                std::set<int> ins;
+                for (auto &[in, outs] : sig->seccion_prev->all_outs[sig->lado_prev]) {
+                    if (outs.find(out) != outs.end()) ins.insert(in);
+                }
+                if (ins.size() == 1) {
+                    secciones.push_back({sig->seccion_prev, std::nullopt, lados<int>::from_directional(*ins.begin(), out, sig->lado_prev)});
+                } else {
+                    secciones.push_back({sig->seccion_prev, std::nullopt, lados<int>::from_directional(-1, out, sig->lado_prev)});
+                }
+                ocupacion_maxima_secciones[secciones.back().seccion] = EstadoCanton::Libre;
+            }*/
+            recorrer_seccion(sig->seccion, sig->pin, sig->lado, señales_intermedias, sig);
+        }
+        señales.insert(señales.end(), señales_intermedias.begin(), señales_intermedias.end());
+    }
+}
+void maniobra_local::recorrer_seccion(seccion_via *sec, int in, Lado dir, std::set<señal_impl*> &señales_intermedias, señal_impl *señal_origen)
+{
+    auto *sig = sec->señal_inicio(dir, in);
+    if (sig != nullptr && señal_impls.find(sig->id) != señal_impls.end()) {
+        bool found = false;
+        for (auto *sig2 : señales) {
+            if (sig == sig2) {
+                found = true;
+                break;
+            }
+        }
+        if (!found) señales_intermedias.insert(señal_impls[sig->id]);
+    }
+
+    std::set<int> outs;
+    seccion_via *next;
+    auto it = posicion_aparatos.find(sec);
+    if (it != posicion_aparatos.end()) {
+        if (it->second[opp_lado(dir)] != in) return;
+        outs.insert(it->second[dir]);
+    } else {
+        outs = sec->all_outs[dir][in];
+    }
+    bool found = false;
+    for (int j=0; j<secciones.size(); j++) {
+        if (secciones[j].seccion == sec) {
+            if (secciones[j].dir && secciones[j].dir != dir) secciones[j].dir = std::nullopt;
+            if (secciones[j].outs[opp_lado(dir)] != in) secciones[j].outs[opp_lado(dir)] = -1;
+            if (outs.size() != 1 || secciones[j].outs[dir] != *outs.begin()) secciones[j].outs[dir] = -1;
+            found = true;
+            break;
+        }
+    }
+    if (!found) {
+        if (outs.size() == 1) {
+            secciones.push_back({sec, dir, lados<int>::from_directional(in, *outs.begin(), dir)});
+        } else {
+            secciones.push_back({sec, dir, lados<int>::from_directional(in, -1, dir)});
+        }
+        ocupacion_maxima_secciones[secciones.back().seccion] = EstadoCanton::Libre;
+    }
+    for (auto &out : outs) {
+        auto *sig = sec->señal_inicio(opp_lado(dir), out);
+        if (sig != nullptr) {
+            bool found = false;
+            for (auto &sig2 : señales) {
+                if (sig == sig2) {
+                    found = true;
+                    break;
+                }
+            }
+            if (found) continue;
+        }
+        auto p = sec->get_seccion_in(opp_lado(dir), out);
+        if (p.first == nullptr) continue;
+        recorrer_seccion(p.first, p.first->get_in(sec, opp_lado(p.second)), opp_lado(p.second), señales_intermedias, señal_origen);
     }
 }
 bool maniobra_local::anular(bool emergencia)
 {
-    if (!mandada) return false;
+    if (!mandada || diferimetro_anulacion != nullptr) return false;
+    for (auto &sig : señales) {
+        sig->clear_request = false;
+    }
     if (!emergencia) {
+        anulacion_normal_imposible = true;
         for (int i=0; i<secciones.size(); i++) {
             auto *cv_seccion = secciones[i].seccion->get_cv();
-            if (cv_seccion != nullptr && !cv_libre(cv_seccion->get_state())) return false;
+            if (cv_seccion != nullptr && !cv_libre(cv_seccion->get_state())) {
+                log(id, "cv ocupado", LOG_DEBUG);
+                return false;
+            }
         }
+        anulacion_normal_imposible = false;
     }
     diferimetro_anulacion = set_timer([this]() {
         disolver();
     }, temporizador_anulacion);
-    for (auto &sig : señales) {
-        sig->clear_request = false;
-    }
     return true;
 }
 bool maniobra_local::posible_establecer(bool msg)
@@ -937,6 +1021,7 @@ bool maniobra_local::establecer(bool msg)
     for (auto  &sig : señales) {
         sig->ruta_mandada(this);
     }
+    anulacion_normal_imposible = false;
     clear_timer(diferimetro_anulacion);
     diferimetro_anulacion = nullptr;
     return true;
@@ -949,7 +1034,7 @@ RespuestaMando maniobra_local::mando(const std::string &cmd, int me)
     if (cmd == "ML") return establecer(true) ? RespuestaMando::Aceptado : RespuestaMando::OrdenRechazada;
     else if (cmd == "AML") return anular() ? RespuestaMando::Aceptado : RespuestaMando::OrdenRechazada;
     else if (cmd == "AMLE") {
-        if (mandada) {
+        if (mandada && anulacion_normal_imposible) {
             if (me) {
                 return anular(true) ? RespuestaMando::Aceptado : RespuestaMando::OrdenRechazada;
             } else {

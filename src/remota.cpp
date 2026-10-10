@@ -7,6 +7,7 @@ std::set<std::pair<std::string, id_elemento>> update_components;
 std::map<id_elemento, json> sigs;
 std::map<id_elemento, json> imvs;
 std::map<id_elemento, json> fmvs;
+std::map<id_elemento, json> mls;
 bool sendall = false;
 void remota_cambio_elemento(std::string tipo, const id_elemento &id)
 {
@@ -96,6 +97,11 @@ void update_remota()
         auto r = json(sig->get_estado_remota_imv());
         if (sendall || r != imvs[id]) push(j, {ElementoRemota::IMV, id}, r);
         imvs[id] = r;
+    }
+    for (auto &[id,ml] : maniobras_locales) {
+        auto r = json(ml->get_estado_remota());
+        if (sendall || r != mls[id]) push(j, {ElementoRemota::ML, id}, r);
+        mls[id] = r;
     }
     for (auto &[id, sec] : secciones) {
         std::pair<std::string,id_elemento> comp1("sec", id);

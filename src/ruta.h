@@ -159,7 +159,9 @@ public:
         else if (formada) r.IMV_EST = tipo == TipoMovimiento::Maniobra ? 5 : 4;
         else r.IMV_EST = 0;
         if (diferimetro_dai != nullptr) {
-            r.IMV_DIF_VAL = 1;
+            int tiempo_restante = (diferimetro_dai->time - get_milliseconds())/1000;
+            if (tiempo_restante <= 20) r.IMV_DIF_VAL = 1;
+            else r.IMV_DIF_VAL = std::max(std::min((tiempo_restante/30)+2, 13), 2);
         } else {
             r.IMV_DIF_VAL = 0;
         }
@@ -172,7 +174,9 @@ public:
         e.bloqueo_destino = destino->bloqueo_destino;
         e.me_pendiente = destino->me_pendiente;
         e.tipo = tipo;
-        if (diferimetro_dei) e.fin_diferimetro = diferimetro_dei->time;
+        e.deslizamiento = diferimetro_deslizamiento != nullptr;
+        if (diferimetro_deslizamiento) e.fin_diferimetro = diferimetro_deslizamiento->time;
+        else if (diferimetro_dei) e.fin_diferimetro = diferimetro_dei->time;
         return e;
     }
     RemotaFMV get_estado_remota_fin()
@@ -193,6 +197,15 @@ public:
                 break;
             default:
                 r.FMV_DIF_ELEM = 1;
+        }
+        if (diferimetro_deslizamiento) {
+            int tiempo_restante = (diferimetro_deslizamiento->time - get_milliseconds())/1000;
+            r.FMV_DIF_VAL = std::max(std::min((tiempo_restante/30)+2, 13), 2);
+        } else if (diferimetro_dei) {
+            int tiempo_restante = (diferimetro_dei->time - get_milliseconds())/1000;
+            r.FMV_DIF_VAL = std::max(std::min((tiempo_restante/30)+2, 13), 2);
+        } else {
+            r.FMV_DIF_VAL = 0;
         }
         r.FMV_ME = destino->me_pendiente ? 1 : 0;
         r.FMV_BD = destino->bloqueo_destino ? 1 : 0;
@@ -289,6 +302,7 @@ protected:
 class maniobra_local : public movimiento
 {
     bool me_pendiente = false;
+    bool anulacion_normal_imposible;
     std::shared_ptr<timer> diferimetro_anulacion;
     int64_t temporizador_anulacion;
     void disolver() override
@@ -298,10 +312,30 @@ class maniobra_local : public movimiento
         movimiento::disolver();
     }
     bool anular(bool emergencia=false);
+    void recorrer_seccion(seccion_via *sec, int in, Lado dir, std::set<señal_impl*> &señales_intermedias, señal_impl *señal_origen);
 public:
     maniobra_local(const std::string &estacion, const std::string &id, const json &j);
     bool establecer(bool msg=false) override;
     bool posible_establecer(bool msg=false) override;
 
     RespuestaMando mando(const std::string &cmd, int me);
+    RemotaML get_estado_remota()
+    {
+        RemotaML r;
+        r.ML_DAT = 1;
+        if (!mandada) r.ML_EST = 0;
+        else if (diferimetro_anulacion != nullptr) r.ML_EST = 3;
+        else if (anulacion_normal_imposible) r.ML_EST = 2;
+        else r.ML_EST = 1;
+        r.ML_ANUL_EMERG = diferimetro_anulacion != nullptr && anulacion_normal_imposible ? 1 : 0;
+        if (diferimetro_anulacion != nullptr) {
+            int tiempo_restante = (diferimetro_anulacion->time - get_milliseconds())/1000;
+            if (tiempo_restante > 150) r.ML_DIF_VAL = 3;
+            else if (tiempo_restante > 30) r.ML_DIF_VAL = 2;
+            else  r.ML_DIF_VAL = 1;
+        } else {
+            r.ML_DIF_VAL = 0;
+        }
+        return r;
+    }
 };
