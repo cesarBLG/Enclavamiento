@@ -89,6 +89,20 @@ enum struct TipoSeñal
     Intermedia,
     PostePuntoProtegido,
 };
+enum struct ClaseSeñal
+{
+    AbsolutaFocos,
+    PermisivaFocos,
+    Virtual,
+    Avanzada,
+    Indicadora
+};
+enum struct TipoIndicadora
+{
+    Agujas,
+    Direccion,
+    Salida
+};
 enum struct FocoSeñal
 {
     V,
@@ -192,6 +206,7 @@ std::string to_string(EstadoCanton estado);
 std::string to_string(TipoMovimiento tipo);
 std::string to_string(CompatibilidadManiobra comp);
 std::string to_string(TipoSeñal tipo);
+std::string to_string(ClaseSeñal clase);
 std::string to_string(ACTC actc);
 std::string to_string(TipoBloqueo tipo);
 std::string to_string(TipoPN tipo);
@@ -213,6 +228,8 @@ void to_json(json &j, const CompatibilidadManiobra &comp);
 void from_json(const json &j, CompatibilidadManiobra &comp);
 void to_json(json &j, const TipoSeñal &tipo);
 void from_json(const json &j, TipoSeñal &tipo);
+void to_json(json &j, const ClaseSeñal &clase);
+void from_json(const json &j, ClaseSeñal &clase);
 void to_json(json &j, const Aspecto &asp);
 void from_json(const json &j, Aspecto &asp);
 void to_json(json &j, const ReconocimientoAnuncioPrecaucion &rec);

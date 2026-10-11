@@ -85,7 +85,7 @@ void update_remota()
         fmvs[id] = r;
     }
     for (auto &[id, sig] : señal_impls) {
-        if (sig->señal_virtual) {
+        if (sig->clase == ClaseSeñal::Virtual) {
             auto r = json(sig->get_estado_remota_pv());
             if (sendall || r != sigs[id]) push(j, {ElementoRemota::PV, id}, r);
             sigs[id] = r;

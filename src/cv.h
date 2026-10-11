@@ -9,7 +9,7 @@
 #include "remota.h"
 #include <optional>
 class ruta;
-class señal;
+class señal_fundamental;
 class seccion_via;
 class cv : protected estado_cv
 {

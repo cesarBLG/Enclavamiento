@@ -286,7 +286,7 @@ EstadoCanton seccion_via::get_ocupacion(seccion_via* prev, Lado dir)
     if (in_ocupacion != prev) return EstadoCanton::Ocupado;
     return EstadoCanton::OcupadoMismoSentido;
 }
-señal *seccion_via::señal_inicio(Lado lado, int pin)
+señal_fundamental *seccion_via::señal_inicio(Lado lado, int pin)
 {
     auto it = señales[lado].find(pin);
     if (it != señales[lado].end()) return it->second;

@@ -13,6 +13,7 @@
 #include <optional>
 class movimiento;
 class señal;
+class señal_fundamental;
 class pn_enclavado;
 class nodo_deslizamiento;
 struct reserva_seccion
@@ -95,7 +96,8 @@ public:
     lados<std::map<int,std::set<int>>> all_outs;
     std::vector<punto_negro> puntos_negros;
 protected:
-    lados<std::map<int,señal*>> señales;
+    lados<std::map<int,señal_fundamental*>> señales;
+    lados<std::map<std::pair<ClaseSeñal,int>, std::vector<señal*>>> señales_sin_rojo;
     cv *cv_seccion;
     bool estacionamiento;
     bool trayecto;
@@ -125,12 +127,16 @@ public:
     seccion_via* siguiente_seccion(int pin, Lado &dir, bool usar_ruta_asegurada=false);
     std::pair<seccion_via*,Lado> get_seccion_in(Lado dir, int pin);
     void prev_secciones(seccion_via *next, Lado dir_fwd, std::vector<std::pair<seccion_via*, Lado>> &secciones, bool activas=true);
-    señal *señal_inicio(Lado lado, int pin);
-    señal *señal_inicio(Lado lado, seccion_via *prev)
+    señal_fundamental *señal_inicio(Lado lado, int pin);
+    señal_fundamental *señal_inicio(Lado lado, seccion_via *prev)
     {
         int in = get_in(prev, lado);
         if (in < 0) return nullptr;
         return señal_inicio(lado, in);
+    }
+    const std::vector<señal*> &lista_señales(Lado lado, int pin, ClaseSeñal clase)
+    {
+        return señales_sin_rojo[lado][{clase,pin}];
     }
     cv *get_cv()
     {
@@ -205,9 +211,10 @@ public:
             remota_cambio_elemento("sec", id);
         return aceptado;
     }
-    void vincular_señal(señal *sig, Lado lado, int pin)
+    void vincular_señal(señal *sig, Lado lado, int pin, ClaseSeñal clase)
     {
-        señales[lado][pin] = sig;
+        if (clase < ClaseSeñal::Avanzada) señales[lado][pin] = (señal_fundamental*)sig;
+        else señales_sin_rojo[lado][{clase, pin}].push_back(sig);
     }
     EstadoCanton get_ocupacion(seccion_via* prev, Lado dir);
     int get_in(seccion_via* prev, Lado dir);

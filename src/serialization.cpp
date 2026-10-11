@@ -101,6 +101,17 @@ std::string to_string(TipoSeñal tipo)
     }
     return "";
 }
+std::string to_string(ClaseSeñal clase)
+{
+    switch (clase) {
+        case ClaseSeñal::AbsolutaFocos: return "AbsolutaFocos";
+        case ClaseSeñal::PermisivaFocos: return "PermisivaFocos";
+        case ClaseSeñal::Avanzada: return "Avanzada";
+        case ClaseSeñal::Virtual: return "Virtual";
+        case ClaseSeñal::Indicadora: return "Indicadora";
+    }
+    return "";
+}
 std::string to_string(ACTC actc)
 {
     switch (actc) {
@@ -261,6 +272,18 @@ void from_json(const json &j, TipoSeñal &tipo)
     else if (j == "Intermedia") tipo = TipoSeñal::Intermedia;
     else if (j == "PostePuntoProtegido") tipo = TipoSeñal::PostePuntoProtegido;
 }
+void to_json(json &j, const ClaseSeñal &clase)
+{
+    j = to_string(clase);
+}
+void from_json(const json &j, ClaseSeñal &clase)
+{
+    if (j == "AbsolutaFocos") clase = ClaseSeñal::AbsolutaFocos;
+    else if (j == "PermisivaFocos") clase = ClaseSeñal::PermisivaFocos;
+    else if (j == "Avanzada") clase = ClaseSeñal::Avanzada;
+    else if (j == "Virtual") clase = ClaseSeñal::Virtual;
+    else if (j == "Indicadora") clase = ClaseSeñal::Indicadora;
+}
 void to_json(json &j, const ACTC &actc)
 {
     j = to_string(actc);
@@ -417,7 +440,8 @@ void to_json(json &j, const estado_señal &estado)
 {
     j["Aspecto"] = estado.aspecto;
     j["AspectoAnterior"] = estado.aspecto_maximo_anterior_señal;
-    if (estado.desviada) j["Desviada"] = estado.desviada;
+    if (estado.desviada_propagada) j["Desviada"] = estado.desviada_propagada;
+    if (estado.id_señal_focos.id != "") j["SeñalFocos"] = estado.id_señal_focos.id;
     j["Focos"] = estado.focos_mandados_mask;
 }
 void from_json(const json &j, estado_señal &estado)
@@ -426,13 +450,14 @@ void from_json(const json &j, estado_señal &estado)
         estado.sin_datos = true;
         estado.aspecto = Aspecto::Parada;
         estado.aspecto_maximo_anterior_señal = Aspecto::Parada;
-        estado.desviada = false;
+        estado.desviada_propagada = false;
         return;
     }
     estado.aspecto = j["Aspecto"];
     estado.aspecto_maximo_anterior_señal = j["AspectoAnterior"];
-    estado.desviada = j.value("Desviada", false);
+    estado.desviada_propagada = j.value("Desviada", false);
     estado.focos_mandados_mask = j.value("Focos", 0u);
+    if (j.contains("SeñalFocos")) estado.id_señal_focos = id_elemento(j["SeñalFocos"]);
 }
 void to_json(json &j, const estado_inicio_ruta &estado)
 {

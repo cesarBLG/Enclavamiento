@@ -6,7 +6,7 @@
 
 std::map<id_elemento, cv*> cvs;
 std::map<id_elemento, cv_impl*> cv_impls;
-std::map<id_elemento, señal*> señales;
+std::map<id_elemento, señal_fundamental*> señales;
 std::map<id_elemento, señal_impl*> señal_impls;
 std::map<id_elemento, bloqueo*> bloqueos;
 std::set<ruta*> rutas;
@@ -406,7 +406,7 @@ void init_items_ordered(const json &j, std::string tipo)
             for (auto &[id, js] : jdep["Señales"].items()) {
                 id_elemento is(estacion,id);
                 if (dependencias.find(estacion) == dependencias.end()) {
-                    auto *señ = new señal(is, js);
+                    auto *señ = new señal_fundamental(is, js, ClaseSeñal::AbsolutaFocos);
                     señales[is] = señ;
                     subscribe("signal/"+id_to_mqtt(is.id)+"/state");
                 } else {
