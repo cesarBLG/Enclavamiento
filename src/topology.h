@@ -107,6 +107,8 @@ protected:
     lados<std::map<int,int>> active_outs;
     std::optional<reserva_seccion> ruta_asegurada;
 
+    std::map<lados<int>, velocidad_agujas> velocidades_agujas;
+
     std::map<nodo_deslizamiento*, movimiento*> deslizamiento;
 
     std::vector<flanco*> proteccion_flanco;
@@ -255,7 +257,12 @@ public:
         }
         return false;
     }
-    virtual bool is_desviada(seccion_via *prev, Lado dir);
+    velocidad_agujas get_velocidad_agujas(lados<int> outs)
+    {
+        auto it = velocidades_agujas.find(outs);
+        if (it != velocidades_agujas.end()) return it->second;
+        return velocidad_agujas();
+    }
     RemotaCV get_estado_remota();
 };
 class cruzamiento : public seccion_via

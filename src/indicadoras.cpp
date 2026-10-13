@@ -19,7 +19,7 @@ void indicadora_salida::update()
     }
     if (señal_salida == nullptr || señal_salida->aspecto <= Aspecto::Parada) {
         if (seccion->get_cv() == nullptr || cv_libre(seccion->get_cv()->get_state())) aspecto = "Apagada";
-        else aspecto = "Parada";
+        else aspecto = "SeñalSalidaCerrada";
     } else {
         aspecto = "SeñalSalidaAbierta";
     }
@@ -56,23 +56,42 @@ void indicadora_agujas::update()
 {
     aspecto = "Apagada";
     auto ra = seccion->get_ruta_asegurada();
-    if (!ra 
-        || ra->lado == opp_lado(lado) || (ra->outs[opp_lado(lado)] >= 0 && ra->outs[opp_lado(lado)] != pin)
-        || !ra->ruta_asegurada->es_ruta || ra->ruta_asegurada->tipo != TipoMovimiento::Itinerario) {
+    if (!ra || ra->lado == opp_lado(lado) || ra->outs[opp_lado(lado)] != pin || ra->ruta_asegurada->tipo != TipoMovimiento::Itinerario)
         return;
-    }
-    for (auto &[pos, asp] : aspectos) {
-        bool aligned = true;
-        for (auto &[sec, outs] : pos) {
-            auto r2 = sec->get_ruta_asegurada();
-            if (!r2 || r2->ruta_asegurada != ra->ruta_asegurada || r2->outs != outs) {
-                aligned = false;
+    if (!aspectos_aparatos.empty()) {
+        for (auto &[pos, asp] : aspectos_aparatos) {
+            bool aligned = true;
+            for (auto &[sec, outs] : pos) {
+                auto ra2 = sec->get_ruta_asegurada();
+                if (!ra2 || ra2->ruta_asegurada != ra->ruta_asegurada || ra2->outs != outs) {
+                    aligned = false;
+                    break;
+                }
+            }
+            if (aligned) {
+                aspecto = asp;
                 break;
             }
         }
-        if (aligned) {
-            aspecto = asp;
-            break;
+    } else {
+        velocidad_agujas vel;
+        auto *sec_act = seccion;
+        Lado dir = lado;
+        while (sec_act != nullptr) {
+            auto ra2 = sec_act->get_ruta_asegurada();
+            if (!ra2 || ra2->ruta_asegurada != ra->ruta_asegurada) break;
+            vel.update(sec_act->get_velocidad_agujas(ra2->outs));
+            auto p = sec_act->get_seccion_in(opp_lado(dir), ra2->outs[dir]);
+            sec_act = p.first;
+            dir = opp_lado(p.second);
+        }
+        int vact = 0;
+        for (auto &[vel2, asp] : aspectos) {
+            if (vel2.posicion != vel.posicion) continue;
+            if (vel2.velocidad <= vel.velocidad && vel2.velocidad > vact) {
+                aspecto = asp;
+                vact = vel2.velocidad;
+            }
         }
     }
 }

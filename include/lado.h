@@ -13,10 +13,7 @@ struct lados
     {
         return l == Lado::Par ? par : impar;
     }
-    bool operator==(const lados<T> &o) const
-    {
-        return par == o.par && impar == o.impar;
-    }
+    auto operator<=>(const lados<T> &o) const = default;
     static lados<T> from_directional(T in, T out, Lado dir)
     {
         lados<T> l;

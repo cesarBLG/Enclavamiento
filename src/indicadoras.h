@@ -18,6 +18,21 @@ public:
     indicadora_salida(const id_elemento &id, const json &j) : señal_indicadora(id, j, TipoIndicadora::Salida) {}
     void update() override;
 };
+/*struct direccion
+{
+    id_elemento destino_propio; // Destino de la ruta que asegura la sección de la indicadora
+    std::vector<std::pair<señal_fundamental*,id_elemento>> destinos_posteriores;
+    bool activo(ruta *r)
+    {
+        if (r != nullptr && destino_propio.id != "" && r->id_destino != destino_propio) return false;
+        for (auto &[sig, dest] : destinos_posteriores) {
+            auto it = destinos_ruta.find(dest);
+            if (it == destinos_ruta.end()) continue;
+            if (it->second->ruta_activa == nullptr || it->second->ruta_activa->get_señal_inicio() != sig) return false;
+        }
+        return true;
+    }
+};*/
 class indicadora_direccion : public señal_indicadora
 {
     std::map<id_elemento, std::string> aspectos;
@@ -27,8 +42,12 @@ public:
 };
 class indicadora_agujas : public señal_indicadora
 {
-    std::vector<std::pair<std::map<seccion_via*, lados<int>>,std::string>> aspectos;
+    std::vector<std::pair<velocidad_agujas, std::string>> aspectos;
+    std::vector<std::pair<std::map<seccion_via*, lados<int>>,std::string>> aspectos_aparatos;
 public:
-    indicadora_agujas(const id_elemento &id, const json &j) : señal_indicadora(id, j, TipoIndicadora::Agujas) {}
+    indicadora_agujas(const id_elemento &id, const json &j) : señal_indicadora(id, j, TipoIndicadora::Agujas)
+    {
+        aspectos.push_back({{0, LadoAguja::Recto}, "↑"}); // ↖↗
+    }
     void update() override;
 };

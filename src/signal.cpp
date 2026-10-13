@@ -165,7 +165,7 @@ void señal_impl::determinar_aspecto()
     // Condiciones que impiden abrir la señal, pero no la cierran si estaba abierta
     bool prohibir_abrir = false;
     // Ruta a desviada
-    bool desviada = false;
+    velocidad_agujas agujas;
     // Nombre del bloqueo asociado
     std::optional<id_elemento> bloq_id = bloqueo_asociado;
     bool salida_trayecto = (tipo == TipoSeñal::Salida || tipo == TipoSeñal::Entrada) && bloq_id;
@@ -218,7 +218,7 @@ void señal_impl::determinar_aspecto()
             if (!bloq_id) bloq_id = sec_act->bloqueo_asociado;
             if (tipo == TipoSeñal::Salida || tipo == TipoSeñal::Entrada) salida_trayecto = true;
         }
-        desviada |= sec_act->is_desviada(sec_prv, dir);
+        agujas.update(sec_act->get_velocidad_agujas(lados<int>::from_directional(sec_act->get_in(sec_prv, dir), sec_act->get_out(next, dir), dir)));
 
         if (sig_señal == nullptr) {
             auto &avs = sec_act->lista_señales(lado, pin, ClaseSeñal::Avanzada);
@@ -274,7 +274,7 @@ void señal_impl::determinar_aspecto()
     cerrar_itinerario |= canton == EstadoCanton::Ocupado;
     cerrar |= aspecto_requerido_siguiente <= Aspecto::Parada;
     cerrar_itinerario |= aspecto_requerido_siguiente <= Aspecto::RebaseAutorizadoDestellos;
-    desviada |= sig_señal != nullptr && sig_señal->desviada_propagada;
+    if (sig_señal != nullptr) agujas.update(sig_señal->desviada_propagada);
     // Señal en parada si
     // - No se permite la apertura y no había abierto previamente
     // - Las condiciones no permiten mantener abierta la señal
@@ -301,7 +301,7 @@ void señal_impl::determinar_aspecto()
         // Aspecto máximo permitido para cumplir las órdenes de la señal siguiente
         aspecto = std::min(aspecto, aspecto_requerido_siguiente);
         // Itinerarios por vía desviada
-        if (desviada) {
+        if (agujas.velocidad < 200) {
             bool fin_itinerario;
             if (ruta_fin != nullptr && ruta_fin->tipo == TipoMovimiento::Maniobra)
                 fin_itinerario = false;
@@ -369,7 +369,7 @@ void señal_impl::determinar_aspecto()
         aspecto_maximo_anterior_señal = std::min(aspecto_maximo_anterior_señal, aspecto);
     }
     // En caso de ruta a desviada, mostrar anuncio de precaución en señal anterior
-    if (desviada && aprec_anterior && tipo != TipoSeñal::Maniobra && tipo != TipoSeñal::Retroceso && clase != ClaseSeñal::Virtual)
+    if (agujas.velocidad < 200 && aprec_anterior && tipo != TipoSeñal::Maniobra && tipo != TipoSeñal::Retroceso && clase != ClaseSeñal::Virtual)
         aspecto_maximo_anterior_señal = std::min(aspecto_maximo_anterior_señal, Aspecto::AnuncioPrecaucion);
 
     // En caso de pantallas cerradas, las señal anterior puede ordenar como máximo parada selectiva
@@ -379,7 +379,7 @@ void señal_impl::determinar_aspecto()
     // Las señales de retroceso, maniobra y pantallas virtuales propagan el aspecto máximo de apertura requerido por la siguiente señal siguiente
     if (tipo == TipoSeñal::Maniobra || tipo == TipoSeñal::Retroceso || clase == ClaseSeñal::Virtual) {
         aspecto_maximo_anterior_señal = std::min(aspecto_maximo_anterior_señal, aspecto_requerido_siguiente);
-        desviada_propagada = desviada;
+        desviada_propagada = agujas;
         if (sig_señal != nullptr) {
             if (sig_señal->id_señal_focos.id != "") id_señal_focos = sig_señal->id_señal_focos;
             else id_señal_focos = sig_señal->id;

@@ -159,6 +159,17 @@ enum struct TipoSeccion
     Cruzamiento,
     Aguja
 };
+enum struct LadoAguja
+{
+    Recto,
+    Izquierda,
+    Derecha
+};
+enum struct PosicionAguja
+{
+    Normal,
+    Invertida,
+};
 enum struct TipoPN
 {
     Automatico,

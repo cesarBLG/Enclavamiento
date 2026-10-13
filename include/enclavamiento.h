@@ -7,4 +7,5 @@
 #include "estado_cv.h"
 #include "estado_señal.h"
 #include "estado_ruta.h"
+#include "estado_aguja.h"
 #include "parametros.h"

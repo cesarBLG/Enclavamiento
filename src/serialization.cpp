@@ -440,7 +440,7 @@ void to_json(json &j, const estado_señal &estado)
 {
     j["Aspecto"] = estado.aspecto;
     j["AspectoAnterior"] = estado.aspecto_maximo_anterior_señal;
-    if (estado.desviada_propagada) j["Desviada"] = estado.desviada_propagada;
+    if (estado.desviada_propagada.posicion != LadoAguja::Recto) j["Desviada"] = estado.desviada_propagada;
     if (estado.id_señal_focos.id != "") j["SeñalFocos"] = estado.id_señal_focos.id;
     j["Focos"] = estado.focos_mandados_mask;
 }
@@ -450,12 +450,11 @@ void from_json(const json &j, estado_señal &estado)
         estado.sin_datos = true;
         estado.aspecto = Aspecto::Parada;
         estado.aspecto_maximo_anterior_señal = Aspecto::Parada;
-        estado.desviada_propagada = false;
         return;
     }
     estado.aspecto = j["Aspecto"];
     estado.aspecto_maximo_anterior_señal = j["AspectoAnterior"];
-    estado.desviada_propagada = j.value("Desviada", false);
+    estado.desviada_propagada = j.value("Desviada", velocidad_agujas());
     estado.focos_mandados_mask = j.value("Focos", 0u);
     if (j.contains("SeñalFocos")) estado.id_señal_focos = id_elemento(j["SeñalFocos"]);
 }
@@ -577,4 +576,16 @@ void from_json(const json &j, TipoSeccion &tipo)
     if (j == "Lineal") tipo = TipoSeccion::Lineal;
     else if (j == "Cruzamiento") tipo = TipoSeccion::Cruzamiento;
     else if (j == "Aguja") tipo = TipoSeccion::Aguja;
+}
+void to_json(json &j, const velocidad_agujas &vel)
+{
+    if (vel.posicion == LadoAguja::Recto) j = "R";
+    else j = (vel.posicion == LadoAguja::Derecha ? "D" : "I")+std::to_string(vel.velocidad);
+}
+void from_json(const json &j, velocidad_agujas &vel)
+{
+    if (j == "R") return;
+    std::string str = j;
+    vel.posicion = str[0] == 'D' ? LadoAguja::Derecha : LadoAguja::Izquierda;
+    vel.velocidad = std::stoi(str.substr(1));
 }

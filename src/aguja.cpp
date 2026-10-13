@@ -14,6 +14,7 @@ aguja::aguja(const id_elemento &id, const json &j) : seccion_via(id, j, TipoSecc
     all_outs[lado][0] = {0,1};
     all_outs[opp_lado(lado)][0].insert(0);
     all_outs[opp_lado(lado)][1].insert(0);
+    velocidades_agujas[lados<int>::from_directional(0, 1, lado)] = {30, LadoAguja::Derecha};
     subscribe("aguja/"+id_to_mqtt(id.id)+"/comprobacion");
     update();
 }
