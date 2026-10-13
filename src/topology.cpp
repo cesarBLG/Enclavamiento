@@ -73,23 +73,26 @@ void seccion_via::asegurar(movimiento *ruta, lados<int> outs, std::optional<Lado
     }
     remota_cambio_elemento("sec", id);
 }
-void seccion_via::asegurar_deslizamiento(movimiento *ruta, nodo_deslizamiento* nodo)
+void seccion_via::asegurar_deslizamiento(movimiento *ruta, nodo_deslizamiento* nodo, bool activo, bool activo_seccion)
 {
-    if (deslizamiento.find(nodo) != deslizamiento.end()) return;
-    deslizamiento[nodo] = ruta;
-    log(id, "deslizamiento asegurado", LOG_DEBUG);
-    remota_cambio_elemento("sec", id);
-}
-void seccion_via::liberar_deslizamiento(movimiento *ruta, nodo_deslizamiento* nodo)
-{
-    if (deslizamiento.find(nodo) == deslizamiento.end()) return;
-    deslizamiento.erase(nodo);
-    remota_cambio_elemento("sec", id);
-    for (auto &[n, r] : deslizamiento) {
-        if (r == ruta) return;
+    if (activo) deslizamiento_potencial.insert(nodo);
+    else deslizamiento_potencial.erase(nodo);
+    if (activo_seccion) {
+        if (deslizamiento.find(nodo) != deslizamiento.end()) return;
+        deslizamiento[nodo] = ruta;
+        log(id, "deslizamiento asegurado", LOG_DEBUG);
+        remota_cambio_elemento("sec", id);
+    } else {
+        auto it = deslizamiento.find(nodo);
+        if (it == deslizamiento.end()) return;
+        deslizamiento.erase(it);
+        remota_cambio_elemento("sec", id);
+        for (auto &[n, r] : deslizamiento) {
+            if (r == ruta) return;
+        }
+        log(id, "fin deslizamiento", LOG_DEBUG);
+        liberar(ruta);
     }
-    log(id, "fin deslizamiento", LOG_DEBUG);
-    liberar(ruta);
 }
 void seccion_via::liberar(movimiento *ruta)
 {

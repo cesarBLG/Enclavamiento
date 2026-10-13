@@ -222,7 +222,7 @@ bool movimiento::posible_establecer(bool msg)
             if (msg) log(id, "bloqueo seccion", LOG_DEBUG);
             return false;
         }
-        for (auto &[nodo,_] : sec->get_deslizamiento()) {
+        for (auto &nodo : sec->get_deslizamiento_potencial()) {
             deslizamientos_afectados[nodo->deslizamiento] = -1;
         }
     }

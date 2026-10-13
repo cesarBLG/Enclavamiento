@@ -110,6 +110,7 @@ protected:
     std::map<lados<int>, velocidad_agujas> velocidades_agujas;
 
     std::map<nodo_deslizamiento*, movimiento*> deslizamiento;
+    std::set<nodo_deslizamiento*> deslizamiento_potencial;
 
     std::vector<flanco*> proteccion_flanco;
 
@@ -145,8 +146,7 @@ public:
         return cv_seccion;
     }
     virtual void asegurar(movimiento *ruta, lados<int> outs, std::optional<Lado> dir);
-    void asegurar_deslizamiento(movimiento *ruta, nodo_deslizamiento* nodo);
-    void liberar_deslizamiento(movimiento *ruta, nodo_deslizamiento* nodo);
+    void asegurar_deslizamiento(movimiento *ruta, nodo_deslizamiento* nodo, bool activo, bool activo_seccion);
     virtual void liberar(movimiento *ruta);
     bool is_asegurada(movimiento *ruta=nullptr)
     {
@@ -171,6 +171,10 @@ public:
     const std::map<nodo_deslizamiento*, movimiento*> &get_deslizamiento()
     {
         return deslizamiento;
+    }
+    const std::set<nodo_deslizamiento*> &get_deslizamiento_potencial()
+    {
+        return deslizamiento_potencial;
     }
     TipoMovimiento get_tipo_movimiento();
     bool is_bloqueo_seccion() { return bloqueo_seccion; }

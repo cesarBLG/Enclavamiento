@@ -38,6 +38,7 @@ int ruta_deslizamiento::compatible(movimiento *r)
         rutas_afectadas.insert(r);
 
     // Priorizar deslizamientos orientados que coincidan con las rutas afectadas
+    int max_orientado_compatible = -1;
     for (int i=deslizamientos_orientados.size()-1; i>=0; i--) {
         auto &pos = deslizamientos_orientados[i];
         bool priority = true;
@@ -57,11 +58,13 @@ int ruta_deslizamiento::compatible(movimiento *r)
             }
         }
         if (!priority) continue;
-        if (root->compatible(r, i))
-            return i;
+        if (root->compatible(r, i)) {
+            max_orientado_compatible = i;
+            break;
+        }
     }
     for (int i=0; i<deslizamientos_orientados.size(); i++) {
-        if (root->compatible(r, i))
+        if (i == max_orientado_compatible || (root->compatible(r, i) && i >= max_orientado_compatible))
             return i;
     }
     return -1;
@@ -205,13 +208,8 @@ void nodo_deslizamiento::actualizar(bool set)
             n->actualizar(false);
         }
     }
-    if (set) {
-        seccion->asegurar_deslizamiento(deslizamiento->señal_inicio->ruta_fin, this);
-        asegurado = true;
-    } else {
-        seccion->liberar_deslizamiento(deslizamiento->señal_inicio->ruta_fin, this);
-        asegurado = false;
-    }
+    seccion->asegurar_deslizamiento(deslizamiento->señal_inicio->ruta_fin, this, deslizamiento->deslizamiento_activo >= 0, set);
+    asegurado = set;
 }
 void nodo_deslizamiento::cambio_activacion(bool accesible, bool acceso_impedido)
 {
