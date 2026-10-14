@@ -1,9 +1,5 @@
 cmake_minimum_required (VERSION 3.14)
 project (Enclavamiento)
-set(CMAKE_CXX_STANDARD 17)
-
-cmake_minimum_required (VERSION 3.14)
-project (Enclavamiento)
 set(CMAKE_CXX_STANDARD 20)
 
 set(SOURCES src/main.cpp src/mqtt.cpp src/log.cpp src/items.cpp src/cv.cpp src/bloqueo.cpp src/signal.cpp src/indicadoras.cpp src/frontera.cpp

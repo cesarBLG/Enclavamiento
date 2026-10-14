@@ -33,6 +33,7 @@ enum struct Aspecto
     Precaucion,
     AnuncioParada,
     AnuncioPrecaucion,
+    PreanuncioParada,
     ViaLibreCondicional,
     ViaLibre,
 };
@@ -112,7 +113,7 @@ enum struct FocoSeñal
     Bc,
     Az,
     A,
-    Pantalla,
+    Pantalla=8,
 };
 enum struct EstadoFocoSeñal
 {

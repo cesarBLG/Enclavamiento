@@ -265,7 +265,7 @@ public:
     {
         auto it = velocidades_agujas.find(outs);
         if (it != velocidades_agujas.end()) return it->second;
-        return velocidad_agujas();
+        return velocidad_agujas::max();
     }
     RemotaCV get_estado_remota();
 };

@@ -45,7 +45,9 @@ def on_message(client, userdata, msg):
     match = re.compile(r"^signal/([a-zA-Z0-9_-]+)/([a-zA-Z0-9_'-]+)/state$").match(topic)
     if match:
         dep, id = match.groups()
-        send_later(f"signal/{dep}/{id}/field_state", json.dumps(json.loads(msg.payload)["Focos"]), 0.5)
+        data = json.loads(msg.payload)
+        if data.get("Focos"):
+            send_later(f"signal/{dep}/{id}/field_state", json.dumps(json.loads(msg.payload)["Focos"]), 0.5)
 
 # Create client
 client = mqtt.Client()

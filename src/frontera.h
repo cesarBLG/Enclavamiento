@@ -5,7 +5,7 @@
 struct estado_frontera_entrada
 {
     bool autorizacion_entrada;
-    Aspecto aspecto_señal;
+    aspecto_extendido aspecto_señal;
     TipoMovimiento tipo_movimiento;
     bool dei;
 };
@@ -105,9 +105,9 @@ class frontera
     {
         send_entrada(true);
     }
-    Aspecto get_aspecto_entrada()
+    aspecto_extendido get_aspecto_entrada()
     {
-        if (!entrada_colateral.autorizacion_entrada) return Aspecto::Parada;
+        if (!entrada_colateral.autorizacion_entrada) return aspecto_extendido(Aspecto::Parada);
         return entrada_colateral.aspecto_señal;
     }
 };

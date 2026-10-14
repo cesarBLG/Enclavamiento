@@ -74,7 +74,7 @@ void indicadora_agujas::update()
             }
         }
     } else {
-        velocidad_agujas vel;
+        velocidad_agujas vel = velocidad_agujas::max();
         auto *sec_act = seccion;
         Lado dir = lado;
         while (sec_act != nullptr) {

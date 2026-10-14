@@ -47,6 +47,13 @@ std::string to_string(Aspecto aspecto)
     }
     return "";
 }
+std::string to_string(const aspecto_extendido &asp)
+{
+    std::string str = to_string(asp.aspecto);
+    if (asp.velocidad.velocidad > (asp.aspecto == Aspecto::AnuncioPrecaucion ? 30 : (asp.aspecto == Aspecto::PreanuncioParada ? 60 : 0)) || asp.velocidad.posicion != LadoAguja::Recto)
+        str += "+"+to_string(asp.velocidad);
+    return str;
+}
 std::string to_string(ReconocimientoAnuncioPrecaucion rec)
 {
     switch (rec) {
@@ -440,9 +447,9 @@ void to_json(json &j, const estado_señal &estado)
 {
     j["Aspecto"] = estado.aspecto;
     j["AspectoAnterior"] = estado.aspecto_maximo_anterior_señal;
-    if (estado.desviada_propagada.posicion != LadoAguja::Recto) j["Desviada"] = estado.desviada_propagada;
+    if (estado.desviada_propagada.velocidad < 200) j["Desviada"] = estado.desviada_propagada;
     if (estado.id_señal_focos.id != "") j["SeñalFocos"] = estado.id_señal_focos.id;
-    j["Focos"] = estado.focos_mandados_mask;
+    if (estado.focos_mandados_mask > 0) j["Focos"] = estado.focos_mandados_mask;
 }
 void from_json(const json &j, estado_señal &estado)
 {
@@ -452,9 +459,9 @@ void from_json(const json &j, estado_señal &estado)
         estado.aspecto_maximo_anterior_señal = Aspecto::Parada;
         return;
     }
-    estado.aspecto = j["Aspecto"];
-    estado.aspecto_maximo_anterior_señal = j["AspectoAnterior"];
-    estado.desviada_propagada = j.value("Desviada", velocidad_agujas());
+    estado.aspecto = (aspecto_extendido)j["Aspecto"];
+    estado.aspecto_maximo_anterior_señal = (aspecto_extendido)j["AspectoAnterior"];
+    estado.desviada_propagada = j.value("Desviada", velocidad_agujas::max());
     estado.focos_mandados_mask = j.value("Focos", 0u);
     if (j.contains("SeñalFocos")) estado.id_señal_focos = id_elemento(j["SeñalFocos"]);
 }
@@ -577,15 +584,46 @@ void from_json(const json &j, TipoSeccion &tipo)
     else if (j == "Cruzamiento") tipo = TipoSeccion::Cruzamiento;
     else if (j == "Aguja") tipo = TipoSeccion::Aguja;
 }
+std::string to_string(const velocidad_agujas &vel)
+{
+    if (vel.posicion == LadoAguja::Recto) {
+        if (vel.velocidad == 0) return "";
+        else if (vel.velocidad >= 200) return "R";
+        else return std::to_string(vel.velocidad);
+    }
+    return (vel.posicion == LadoAguja::Derecha ? "D" : "I")+std::to_string(vel.velocidad);
+}
 void to_json(json &j, const velocidad_agujas &vel)
 {
-    if (vel.posicion == LadoAguja::Recto) j = "R";
-    else j = (vel.posicion == LadoAguja::Derecha ? "D" : "I")+std::to_string(vel.velocidad);
+    j = to_string(vel);
 }
 void from_json(const json &j, velocidad_agujas &vel)
 {
-    if (j == "R") return;
+    if (j == "") {
+        vel = velocidad_agujas();
+        return;
+    } else if (j == "R") {
+        vel = velocidad_agujas::max();
+        return;
+    }
     std::string str = j;
-    vel.posicion = str[0] == 'D' ? LadoAguja::Derecha : LadoAguja::Izquierda;
-    vel.velocidad = std::stoi(str.substr(1));
+    char c = str[0];
+    if (c == 'D') vel = {std::stoi(str.substr(1)), LadoAguja::Derecha};
+    else if (c == 'I') vel = {std::stoi(str.substr(1)), LadoAguja::Izquierda};
+    else if (c == 'R') vel = {std::stoi(str.substr(1)), LadoAguja::Recto};
+    else vel = {std::stoi(str), LadoAguja::Recto};
+}
+void to_json(json &j, const aspecto_extendido &estado)
+{
+    j = to_string(estado);
+}
+void from_json(const json &j, aspecto_extendido &estado)
+{
+    std::string str = j;
+    auto pos = str.find('+');
+    if (pos == std::string::npos) {
+        estado = aspecto_extendido((Aspecto)j);
+    } else {
+        estado = {json(str.substr(0, pos)), json(str.substr(pos+1))};
+    }
 }
