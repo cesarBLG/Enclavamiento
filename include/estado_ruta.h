@@ -16,6 +16,7 @@ struct estado_inicio_ruta
 };
 struct estado_fin_ruta
 {
+    id_elemento señal_inicio;
     TipoMovimiento tipo = TipoMovimiento::Ninguno;
     bool supervisada = false;
     bool deslizamiento = false;

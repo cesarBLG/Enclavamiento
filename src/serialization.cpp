@@ -497,6 +497,7 @@ void to_json(json &j, const estado_fin_ruta &estado)
     j["BloqueoDestino"] = estado.bloqueo_destino;
     j["ME"] = estado.me_pendiente;
     if (estado.fin_diferimetro) j["FinDiferimetro"] = *estado.fin_diferimetro;
+    if (estado.señal_inicio.id != "") j["SeñalInicio"] = estado.señal_inicio.id;
 }
 void from_json(const json &j, estado_fin_ruta &estado)
 {
@@ -506,6 +507,7 @@ void from_json(const json &j, estado_fin_ruta &estado)
     estado.me_pendiente = j.value("ME", false);
     estado.deslizamiento = j.value("Deslizamiento", false);
     if (j.contains("FinDiferimetro"))estado.fin_diferimetro = j["FinDiferimetro"];
+    estado.señal_inicio = id_elemento(j.value("SeñalInicio", ""));
 }
 void from_json(const json &j, parametros_predeterminados &params)
 {

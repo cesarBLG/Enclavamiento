@@ -170,6 +170,7 @@ public:
     estado_fin_ruta get_estado_fin()
     {
         estado_fin_ruta e;
+        e.señal_inicio = señal_inicio->id;
         e.supervisada = supervisada;
         e.bloqueo_destino = destino->bloqueo_destino;
         e.me_pendiente = destino->me_pendiente;

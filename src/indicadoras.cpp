@@ -1,7 +1,21 @@
 #include "indicadoras.h"
 #include "ruta.h"
 #include "items.h"
-void indicadora_salida::update()
+señal_indicadora *señal_indicadora::from_json(const id_elemento &id, const json &j)
+{
+    TipoIndicadora tipo = j["Tipo"];
+    switch (tipo) {
+        case TipoIndicadora::Agujas:
+            return new indicadora_agujas(id, j);
+        case TipoIndicadora::Direccion:
+            return new indicadora_direccion(id, j);
+        case TipoIndicadora::Salida:
+            return new indicadora_salida(id, j);
+        default:
+            return nullptr;
+    }
+}
+void indicadora_salida::determinar_aspecto()
 {
     seccion_via *sec_act = seccion;
     Lado dir = lado;
@@ -24,7 +38,29 @@ void indicadora_salida::update()
         aspecto = "SeñalSalidaAbierta";
     }
 }
-void indicadora_direccion::update()
+indicadora_direccion::indicadora_direccion(const id_elemento &id, const json &j) : señal_indicadora(id, j, TipoIndicadora::Direccion)
+{
+    for (auto &dir : j["Direcciones"]) {
+        ruta_compuesta rc;
+        rc.aspecto = dir["Aspecto"];
+        rc.destino_propio = id_elemento(dir.value("DestinoPropio", ""));
+        if (dir.contains("Rutas")) {
+            for (auto &r : dir["Rutas"]) {
+                rc.rutas.push_back({id_elemento(r["Inicio"]),id_elemento(r["Destino"])});
+            }
+        }
+    }
+    for (auto &rc : aspectos) {
+        if (rc.destino_propio.id != "") destinos[rc.destino_propio] = estado_fin_ruta();
+        for (auto &[_,dest] : rc.rutas) {
+            destinos[dest] = estado_fin_ruta();
+        }
+    }
+    for (auto &[dst, _] : destinos) {
+        subscribe("destino/"+id_to_mqtt(id.id)+"/state");
+    }
+}
+void indicadora_direccion::determinar_aspecto()
 {
     aspecto = "Apagada";
     ruta *r = nullptr;
@@ -37,27 +73,60 @@ void indicadora_direccion::update()
         }
         r = (ruta*)ra->ruta_asegurada;
     }
-    for (auto &[id, asp] : aspectos) {
-        auto it = destinos_ruta.find(id);
-        if (it == destinos_ruta.end()) continue;
-        auto *r2 = it->second->ruta_activa;
-        if (r2 == nullptr) continue;
-        if (r == r2) {
-            aspecto = asp;
-            break;
+    for (auto &asp : aspectos) {
+        if (r != nullptr && asp.destino_propio.id != "" && asp.destino_propio != r->get_destino()->id)
+            continue;
+        bool activo = true;
+        for (auto &r2 : asp.rutas) {
+            auto it = destinos.find(r2.second);
+            if (it == destinos.end() || it->second.señal_inicio != r2.first || it->second.tipo != TipoMovimiento::Itinerario) {
+                activo = false;
+                break;
+            }
         }
-        if (r == nullptr || r2->get_señal_inicio()->id == r->get_destino()->id) {
-            aspecto = asp;
+        if (activo) {
+            aspecto = asp.aspecto;
             break;
         }
     }
 }
-void indicadora_agujas::update()
+indicadora_agujas::indicadora_agujas(const id_elemento &id, const json &j) : señal_indicadora(id, j, TipoIndicadora::Agujas)
+{
+    if (j.contains("AspectosAparatos")) {
+        for (auto &jap : j["AspectosAparatos"]) {
+            std::map<seccion_via*, lados<int>> posicion_aparatos;
+            for (auto &[id, pos] : jap["PosiciónAparatos"].items()) {
+                posicion_aparatos[secciones[id]] = pos;
+            }
+            velocidad_agujas vel = jap["Velocidad"];
+            bool found = false;
+            for (auto &vel2 : velocidades) {
+                if (vel == vel2) {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) velocidades.push_back(vel);
+            aspectos_aparatos.push_back({std::move(posicion_aparatos), vel});
+        }
+    } else if (j.contains("Velocidades")) {
+        velocidades = j["Velocidades"];
+    } else {
+        velocidades.push_back(velocidad_agujas::max());
+        velocidades.push_back({30, LadoAguja::Derecha});
+        velocidades.push_back({30, LadoAguja::Izquierda});
+    }
+    for (auto &vel : velocidades) {
+        aspectos.push_back(to_string(vel));
+    }
+}
+void indicadora_agujas::determinar_aspecto()
 {
     aspecto = "Apagada";
     auto ra = seccion->get_ruta_asegurada();
     if (!ra || ra->lado == opp_lado(lado) || ra->outs[opp_lado(lado)] != pin || ra->ruta_asegurada->tipo != TipoMovimiento::Itinerario)
         return;
+    velocidad_agujas vel = velocidad_agujas::max();
     if (!aspectos_aparatos.empty()) {
         for (auto &[pos, asp] : aspectos_aparatos) {
             bool aligned = true;
@@ -68,13 +137,10 @@ void indicadora_agujas::update()
                     break;
                 }
             }
-            if (aligned) {
-                aspecto = asp;
-                break;
-            }
+            if (aligned)
+                vel.update(asp);
         }
     } else {
-        velocidad_agujas vel = velocidad_agujas::max();
         auto *sec_act = seccion;
         Lado dir = lado;
         while (sec_act != nullptr) {
@@ -85,13 +151,16 @@ void indicadora_agujas::update()
             sec_act = p.first;
             dir = opp_lado(p.second);
         }
-        int vact = 0;
-        for (auto &[vel2, asp] : aspectos) {
-            if (vel2.posicion != vel.posicion) continue;
-            if (vel2.velocidad <= vel.velocidad && vel2.velocidad > vact) {
-                aspecto = asp;
-                vact = vel2.velocidad;
-            }
+    }
+    velocidad_agujas vact = {0, LadoAguja::Recto};
+    int index = -1;
+    for (int i=0; i<velocidades.size(); i++) {
+        velocidad_agujas vel2 = velocidades[i];
+        if (vel2.posicion != vel.posicion) continue;
+        if (vel2.velocidad <= vel.velocidad && vel2.velocidad > vact.velocidad) {
+            index = i;
+            vact = vel2;
         }
     }
+    if (index >= 0) aspecto = aspectos[index];
 }

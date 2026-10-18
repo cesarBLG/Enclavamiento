@@ -46,8 +46,10 @@ def on_message(client, userdata, msg):
     if match:
         dep, id = match.groups()
         data = json.loads(msg.payload)
+        if data == "desconexion":
+            return
         if data.get("Focos"):
-            send_later(f"signal/{dep}/{id}/field_state", json.dumps(json.loads(msg.payload)["Focos"]), 0.5)
+            send_later(f"signal/{dep}/{id}/field_state", json.dumps(data["Focos"]), 0.5)
 
 # Create client
 client = mqtt.Client()

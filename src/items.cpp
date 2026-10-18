@@ -7,6 +7,8 @@
 std::map<id_elemento, cv*> cvs;
 std::map<id_elemento, cv_impl*> cv_impls;
 std::map<id_elemento, señal_fundamental*> señales;
+std::map<id_elemento, señal_indicadora*> indicadoras;
+std::map<id_elemento, señal_avanzada_sin_parada*> avanzadas;
 std::map<id_elemento, señal_impl*> señal_impls;
 std::map<id_elemento, bloqueo*> bloqueos;
 std::set<ruta*> rutas;
@@ -340,6 +342,14 @@ void handle_message(const std::string &topic, const std::string &payload)
         if (it != bloqueos.end()) it->second->message_colateral(json::parse(payload));
         return;
     }
+    std::regex destinoStatePattern(R"(^destino/([a-zA-Z0-9_-]+/[a-zA-Z0-9_'-]+)/state$)");
+    if (std::regex_match(topic, match, destinoStatePattern)) {
+        id_elemento id = id_elemento(id_from_mqtt(match[1]));
+        for (auto &[_,ind] : indicadoras) {
+            if (ind->tipo == TipoIndicadora::Direccion) ((indicadora_direccion*)ind)->message_destino(id, json::parse(payload));
+        }
+        return;
+    }
     std::regex comprobacionPNPattern(R"(^pn/([a-zA-Z0-9_-]+/[a-zA-Z0-9_'-]+)/comprobacion$)");
     if (std::regex_match(topic, match, comprobacionPNPattern)) {
         id_elemento id = id_elemento(id_from_mqtt(match[1]));
@@ -405,10 +415,18 @@ void init_items_ordered(const json &j, std::string tipo)
         if (tipo == "Señales") {
             for (auto &[id, js] : jdep["Señales"].items()) {
                 id_elemento is(estacion,id);
-                if (dependencias.find(estacion) == dependencias.end()) {
-                    auto *señ = new señal_fundamental(is, js, ClaseSeñal::AbsolutaFocos);
+                ClaseSeñal clase = js.value("Clase", ClaseSeñal::AbsolutaFocos);
+                if (clase == ClaseSeñal::Indicadora) {
+                    if (dependencias.find(estacion) == dependencias.end()) continue;
+                    indicadoras[is] = señal_indicadora::from_json(is, js);
+                } else if (dependencias.find(estacion) == dependencias.end()) {
+                    auto *señ = new señal_fundamental(is, js, clase);
                     señales[is] = señ;
                     subscribe("signal/"+id_to_mqtt(is.id)+"/state");
+                } else if (clase == ClaseSeñal::Avanzada) {
+                    auto *señ = new señal_avanzada_sin_parada(is, js);
+                    señales[is] = señ;
+                    avanzadas[is] = señ;
                 } else {
                     auto *señ = new señal_impl(is, js);
                     señales[is] = señ;
@@ -545,6 +563,12 @@ void init_items(const json &j)
         managed_topics.insert(kvp.second->topic);
         managed_topics.insert(kvp.second->topic_inicio);
     }
+    for (auto &kvp : avanzadas) {
+        managed_topics.insert(kvp.second->topic);
+    }
+    for (auto &kvp : indicadoras) {
+        managed_topics.insert(kvp.second->topic);
+    }
     for (auto &kvp : bloqueos) {
         managed_topics.insert(kvp.second->topic);
         managed_topics.insert(kvp.second->topic_colateral);
@@ -571,6 +595,12 @@ void loop_items()
     for (auto &kvp : señal_impls) {
         kvp.second->update();
     }
+    for (auto &kvp : avanzadas) {
+        kvp.second->update();
+    }
+    for (auto &kvp : indicadoras) {
+        kvp.second->update();
+    }
     for (auto &kvp : dependencias) {
         kvp.second->update();
     }
@@ -586,6 +616,9 @@ void loop_items()
             kvp.second->send_state();
         }
         for (auto &kvp : señal_impls) {
+            kvp.second->send_state();
+        }
+        for (auto &kvp : indicadoras) {
             kvp.second->send_state();
         }
         for (auto &kvp : bloqueos) {

@@ -98,6 +98,11 @@ void update_remota()
         if (sendall || r != imvs[id]) push(j, {ElementoRemota::IMV, id}, r);
         imvs[id] = r;
     }
+    for (auto &[id, sig] : avanzadas) {
+        auto r = json(sig->get_estado_remota_sig());
+        if (sendall || r != sigs[id]) push(j, {ElementoRemota::SIG, id}, r);
+        sigs[id] = r;
+    }
     for (auto &[id,ml] : maniobras_locales) {
         auto r = json(ml->get_estado_remota());
         if (sendall || r != mls[id]) push(j, {ElementoRemota::ML, id}, r);

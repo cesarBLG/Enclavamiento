@@ -1,6 +1,7 @@
 #pragma once
 #include "cv.h"
 #include "signal.h"
+#include "indicadoras.h"
 #include "bloqueo.h"
 #include "ruta.h"
 #include "deslizamiento.h"
@@ -15,6 +16,8 @@ extern std::map<id_elemento, cv*> cvs;
 extern std::map<id_elemento, cv_impl*> cv_impls;
 extern std::map<id_elemento, señal_fundamental*> señales;
 extern std::map<id_elemento, señal_impl*> señal_impls;
+extern std::map<id_elemento, señal_indicadora*> indicadoras;
+extern std::map<id_elemento, señal_avanzada_sin_parada*> avanzadas;
 extern std::map<id_elemento, bloqueo*> bloqueos;
 extern std::set<ruta*> rutas;
 extern std::map<id_elemento, maniobra_local*> maniobras_locales;

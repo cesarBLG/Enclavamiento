@@ -67,7 +67,7 @@ protected:
     aspecto_extendido aspecto_bloqueado = Aspecto::ViaLibre;
     std::map<id_elemento,std::map<aspecto_extendido, aspecto_extendido>> aspectos_maximos_anterior_señal;
 public:
-    señal_fundamental_impl(const id_elemento &id, const json &j, ClaseSeñal clase_defecto= ClaseSeñal::AbsolutaFocos);
+    señal_fundamental_impl(const id_elemento &id, const json &j, ClaseSeñal clase_defecto=ClaseSeñal::AbsolutaFocos);
 protected:
     static inline Aspecto get_aspecto_degradado(Aspecto asp)
     {
@@ -152,6 +152,7 @@ public:
             estado_pantalla[i] = pantalla == i - 1 ? EstadoFocoSeñal::Encendido : EstadoFocoSeñal::Apagado;
         }
     }
+    virtual RemotaSIG get_estado_remota_sig();
 };
 class señal_impl : public señal_fundamental_impl
 {
@@ -218,7 +219,7 @@ public:
         normalizar_fusion();
     }
     RespuestaMando mando(const std::string &cmd, int me);
-    RemotaSIG get_estado_remota_sig();
+    RemotaSIG get_estado_remota_sig() override;
     RemotaIMV get_estado_remota_imv();
     RemotaPV get_estado_remota_pv();
     estado_inicio_ruta get_estado_inicio();

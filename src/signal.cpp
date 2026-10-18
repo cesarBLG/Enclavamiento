@@ -671,7 +671,7 @@ ruta_deslizamiento *señal_impl::get_deslizamiento(movimiento *m)
     return it->second; 
 }
 #define SIG_FOCO(x) estado_foco_señal.contains(x) ? (estado_foco_señal[x] == EstadoFocoSeñal::Fundido ? 3 : 1) : 0
-RemotaSIG señal_impl::get_estado_remota_sig()
+RemotaSIG señal_fundamental_impl::get_estado_remota_sig()
 {
     RemotaSIG r;
     r.SIG_DAT = 1;
@@ -725,16 +725,23 @@ RemotaSIG señal_impl::get_estado_remota_sig()
     r.SIG_FOCO_AZ = SIG_FOCO(FocoSeñal::Az);
     r.SIG_FOCO_AM = SIG_FOCO(FocoSeñal::A);
     r.SIG_FOCO_V = SIG_FOCO(FocoSeñal::V);
+    r.SIG_ME = 0;
+    r.SIG_B = 0;
+    r.SIG_UIC = 0;
+    r.SIG_SA = 0;
+    r.SIG_FAI = 0;
+    r.SIG_GRP_ARS = 0;
+    return r;
+}
+RemotaSIG señal_impl::get_estado_remota_sig()
+{
+    RemotaSIG r = señal_fundamental_impl::get_estado_remota_sig();
     r.SIG_ME = me_pendiente ? 1 : 0;
     r.SIG_B = bloqueo_señal ? 1 : 0;
-    r.SIG_UIC = 0;
     r.SIG_SA = sucesion_automatica ? 1 : 0;
     if (ruta_fai != nullptr) {
         r.SIG_FAI = ruta_fai->get_estado_fai_remota();
-    } else {
-        r.SIG_FAI = 0;
     }
-    r.SIG_GRP_ARS = 0;
     return r;
 }
 RemotaIMV señal_impl::get_estado_remota_imv()
