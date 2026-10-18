@@ -63,7 +63,7 @@ protected:
     std::map<Aspecto, std::vector<std::map<FocoSeñal, EstadoFocoSeñal>>> combinaciones_focos;
     ReconocimientoAnuncioPrecaucion aprec_reconocido;
     señal_fundamental *sig_señal=nullptr;
-    señal_fundamental *señal_siguiente_aprec = nullptr;
+    señal_fundamental *sig_señal_focos = nullptr;
     aspecto_extendido aspecto_bloqueado = Aspecto::ViaLibre;
     std::map<id_elemento,std::map<aspecto_extendido, aspecto_extendido>> aspectos_maximos_anterior_señal;
 public:
@@ -129,10 +129,10 @@ protected:
         }
         return true;
     }
-    aspecto_extendido get_aspecto_anterior(aspecto_extendido asp, señal_fundamental *señal_sig)
+    aspecto_extendido get_aspecto_anterior(aspecto_extendido asp)
     {
         id_elemento id;
-        if (señal_sig != nullptr) id = señal_sig->id_señal_focos.id != "" ? señal_sig->id_señal_focos : señal_sig->id;
+        if (sig_señal_focos != nullptr) id = sig_señal_focos->id;
         if (aspectos_maximos_anterior_señal.find(id) == aspectos_maximos_anterior_señal.end()) id = id_elemento();
         return (--aspectos_maximos_anterior_señal[id].upper_bound(asp))->second;
     }

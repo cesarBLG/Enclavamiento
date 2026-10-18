@@ -49,6 +49,7 @@ indicadora_direccion::indicadora_direccion(const id_elemento &id, const json &j)
                 rc.rutas.push_back({id_elemento(r["Inicio"]),id_elemento(r["Destino"])});
             }
         }
+        aspectos.push_back(rc);
     }
     for (auto &rc : aspectos) {
         if (rc.destino_propio.id != "") destinos[rc.destino_propio] = estado_fin_ruta();

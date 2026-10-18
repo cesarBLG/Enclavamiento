@@ -172,6 +172,7 @@ void señal_impl::determinar_aspecto()
     EstadoCanton canton = EstadoCanton::Libre;
     // Señal siguiente, a continuación del canton
     sig_señal = nullptr;
+    sig_señal_focos = nullptr;
     // Condiciones que provocan el cierre de señal
     bool cerrar = false;
     // Condiciones que impiden abrir la señal, pero no la cierran si estaba abierta
@@ -191,7 +192,7 @@ void señal_impl::determinar_aspecto()
     if (ruta_activa != nullptr && ruta_activa->es_ruta && !((ruta*)ruta_activa)->deslizamiento_asegurado())
         cerrar = true;
     // Comprobamos todos los CVs hasta la señal siguiente o fin de movimiento
-    while (sec_act != nullptr) {
+    while (sec_act != nullptr && sig_señal == nullptr) {
         bool seccion_asegurada = ruta_activa != nullptr && sec_act->is_asegurada(ruta_activa);
         if (!seccion_asegurada && ruta_activa != nullptr && ruta_activa->tipo == TipoMovimiento::Maniobra) {
             break;
@@ -230,23 +231,31 @@ void señal_impl::determinar_aspecto()
         }
         agujas.update(sec_act->get_velocidad_agujas(lados<int>::from_directional(sec_act->get_in(sec_prv, dir), sec_act->get_out(next, dir), dir)));
 
-        if (sig_señal == nullptr) {
+        if (sig_señal_focos == nullptr) {
             auto &avs = sec_act->lista_señales(lado, pin, ClaseSeñal::Avanzada);
-            if (!avs.empty()) sig_señal = (señal_fundamental*)avs[0];
+            if (!avs.empty()) sig_señal_focos = (señal_fundamental*)avs[0];
         }
 
         sec_prv = sec_act;
         sec_act = next;
         if (sec_act == seccion) break;
-        if (sec_act != nullptr) {
-            auto *sig = sec_act->señal_inicio(dir, sec_prv);
-            if (sig != nullptr) {
-                if (sig_señal == nullptr) sig_señal = sig;
-                break;
-            }
-        }
+        if (sec_act != nullptr) sig_señal = sec_act->señal_inicio(dir, sec_prv);
     }
-    aspecto_extendido aspecto_requerido_siguiente = sig_señal != nullptr ? sig_señal->aspecto_maximo_anterior_señal : aspecto_extendido(Aspecto::ViaLibre);
+    if (sig_señal != nullptr && sig_señal_focos == nullptr) {
+        auto it = señales.find(sig_señal->id_señal_focos);
+        if (it != señales.end()) sig_señal_focos = it->second;
+        else if (sig_señal->id_señal_focos.id == "") sig_señal_focos = sig_señal;
+    }
+    aspecto_extendido aspecto_requerido_siguiente;
+    if (sig_señal == nullptr && sig_señal_focos == nullptr) {
+        aspecto_requerido_siguiente = Aspecto::AnuncioParada;
+    } else {
+        aspecto_requerido_siguiente = Aspecto::ViaLibre;
+        if (sig_señal != nullptr)
+            aspecto_requerido_siguiente = std::min(aspecto_requerido_siguiente, sig_señal->aspecto_maximo_anterior_señal);
+        if (sig_señal_focos != nullptr)
+            aspecto_requerido_siguiente = std::min(aspecto_requerido_siguiente, sig_señal_focos->aspecto_maximo_anterior_señal);
+    }
     // Condiciones que provocan el cierre de la señal en ruta de itinerario
     bool cerrar_itinerario = false;
     // Condiciones que impiden la apertura de señal en itinerario, pero no la cierran si estaba abierta
@@ -383,7 +392,7 @@ void señal_impl::determinar_aspecto()
         aspecto = Aspecto::Parada;
 
     // Indicar a la señal anterior el aspecto máximo que puede mostrar
-    aspecto_maximo_anterior_señal = get_aspecto_anterior(aspecto_virtual, sig_señal);
+    aspecto_maximo_anterior_señal = get_aspecto_anterior(aspecto_virtual);
 
     // Si se apaga una señal intermedia o avanzada, se cierra la señal anterior
     if ((tipo == TipoSeñal::Intermedia || tipo == TipoSeñal::Avanzada) && apagada && aspecto == Aspecto::Parada)
@@ -405,12 +414,7 @@ void señal_impl::determinar_aspecto()
     if (tipo == TipoSeñal::Maniobra || tipo == TipoSeñal::Retroceso || clase == ClaseSeñal::Virtual) {
         aspecto_maximo_anterior_señal = std::min(aspecto_maximo_anterior_señal, aspecto_requerido_siguiente);
         desviada_propagada = agujas;
-        if (sig_señal != nullptr) {
-            if (sig_señal->id_señal_focos.id != "") id_señal_focos = sig_señal->id_señal_focos;
-            else id_señal_focos = sig_señal->id;
-        } else {
-            id_señal_focos = id_elemento();
-        }
+        id_señal_focos = sig_señal_focos != nullptr ? sig_señal_focos->id : id_elemento();
     }
 }
 void señal_fundamental_impl::determinar_focos()
@@ -516,18 +520,13 @@ void señal_impl::update()
     unsigned int prev_mask = focos_mandados_mask;
     auto prev_aspecto = aspecto;
     estado_inicio_ruta prev_estado_inicio = estado_inicio;
+    señal_fundamental *anterior_sig_señal_focos = sig_señal_focos;
 
     proximidad_señal.construir();
 
     determinar_aspecto();
 
     // Gestionar reconocimiento de anuncio de precaución
-    señal_fundamental *nueva_señal_siguiente_aprec = nullptr;
-    if (sig_señal != nullptr) {
-        auto it = señales.find(sig_señal->id_señal_focos);
-        if (it != señales.end()) nueva_señal_siguiente_aprec = it->second;
-        else if (sig_señal->id_señal_focos.id == "") nueva_señal_siguiente_aprec = sig_señal;
-    }
     if (aspecto <= Aspecto::Parada)
         aprec_anterior_reconocido = ReconocimientoAnuncioPrecaucion::Inactivo;
     else if (aspecto < prev_aspecto && aprec_anterior_reconocido != ReconocimientoAnuncioPrecaucion::Inactivo)
@@ -556,16 +555,15 @@ void señal_impl::update()
     } else if (aprec_reconocido == ReconocimientoAnuncioPrecaucion::NoReconocido) {
         aprec_reconocido = ReconocimientoAnuncioPrecaucion::PerdidaReconocimiento;
     }
-    if (señal_siguiente_aprec == nullptr) señal_siguiente_aprec = nueva_señal_siguiente_aprec;
-    if (señal_siguiente_aprec != nullptr && nueva_señal_siguiente_aprec != señal_siguiente_aprec) {
+    if (anterior_sig_señal_focos == nullptr) anterior_sig_señal_focos = sig_señal_focos;
+    if (anterior_sig_señal_focos != nullptr && anterior_sig_señal_focos != sig_señal_focos) {
         if (aprec_reconocido == ReconocimientoAnuncioPrecaucion::Reconocido || aprec_reconocido == ReconocimientoAnuncioPrecaucion::NoReconocido)
             aprec_reconocido = ReconocimientoAnuncioPrecaucion::PerdidaReconocimiento;
     }
-    if (prev_rec != aprec_reconocido && señal_siguiente_aprec != nullptr && aprec_reconocido != ReconocimientoAnuncioPrecaucion::Inactivo) {
+    if (prev_rec != aprec_reconocido && anterior_sig_señal_focos != nullptr && aprec_reconocido != ReconocimientoAnuncioPrecaucion::Inactivo) {
         log(id, "anuncio de precaución " + to_string(aprec_reconocido), LOG_INFO);
-        send_message("signal/"+id_to_mqtt(señal_siguiente_aprec->id.id)+"/rec_aprec", json(aprec_reconocido).dump());
+        send_message("signal/"+id_to_mqtt(anterior_sig_señal_focos->id.id)+"/rec_aprec", json(aprec_reconocido).dump());
     }
-    señal_siguiente_aprec = nueva_señal_siguiente_aprec;
 
     if (clear_request && ruta_necesaria && ruta_activa == nullptr) clear_request = false;
     if (aspecto < prev_aspecto && (!sucesion_automatica || !paso_circulacion)) {
@@ -890,19 +888,19 @@ void señal_avanzada_sin_parada::determinar_aspecto()
     seccion_via *sec_act = seccion;
     Lado dir = lado;
     int in = pin;
-    while (sig_señal == nullptr && sec_act != nullptr) {
+    while (sig_señal_focos == nullptr && sec_act != nullptr) {
         auto &avs = sec_act->lista_señales(lado, pin, ClaseSeñal::Avanzada);
-        bool stop=false;
-        for (int i=0; i<avs.size(); i++) {
-            if (avs[i] == this) {
-                if (i+1<avs.size()) {
-                    sig_señal = (señal_fundamental*)avs[i+1];
-                    stop = true;
+        if (sec_act == seccion) {
+            for (int i=0; i<avs.size(); i++) {
+                if (avs[i] == this && i+1<avs.size()) {
+                    sig_señal_focos = (señal_fundamental*)avs[i+1];
+                    break;
                 }
-                break;
             }
+        } else if (!avs.empty()) {
+            sig_señal_focos = (señal_fundamental*)avs[0];
         }
-        if (stop) break;
+        if (sig_señal_focos != nullptr) break;
 
         Lado l = dir;
         seccion_via *next = sec_act->siguiente_seccion(in, dir);
@@ -914,12 +912,14 @@ void señal_avanzada_sin_parada::determinar_aspecto()
 
         señal_fundamental *sig = sec_act->señal_inicio(dir, in);
         if (sig != nullptr) {
-            sig_señal = sig;
+            auto it = señales.find(sig->id_señal_focos);
+            if (it != señales.end()) sig_señal_focos = it->second;
+            else if (sig->id_señal_focos.id == "") sig_señal_focos = sig;
             break;
         }
     }
     
-    aspecto_extendido aspecto_requerido_siguiente = sig_señal != nullptr ? sig_señal->aspecto_maximo_anterior_señal : aspecto_minimo;
+    aspecto_extendido aspecto_requerido_siguiente = sig_señal_focos != nullptr ? sig_señal_focos->aspecto_maximo_anterior_señal : aspecto_minimo;
     aspecto = std::max(aspecto_requerido_siguiente, aspecto_minimo);
 
     if (aspecto > aspecto_bloqueado) aspecto = aspecto_bloqueado;
@@ -936,11 +936,11 @@ void señal_avanzada_sin_parada::determinar_aspecto()
     determinar_focos();
 
     // Indicar a la señal anterior el aspecto máximo que puede mostrar
-    aspecto_maximo_anterior_señal = get_aspecto_anterior(aspecto, sig_señal);
+    aspecto_maximo_anterior_señal = get_aspecto_anterior(aspecto);
 
     // Propagar aspecto restrictivo a la señal anterior que ordene parada
-    if (aspecto_requerido_siguiente < aspecto)
-        aspecto_maximo_anterior_señal = aspecto_requerido_siguiente;
+    if (sig_señal_focos != nullptr && sig_señal_focos->aspecto_maximo_anterior_señal < aspecto)
+        aspecto_maximo_anterior_señal = std::min(aspecto_maximo_anterior_señal, sig_señal_focos->aspecto_maximo_anterior_señal);
 }
 void señal_avanzada_sin_parada::update()
 {
@@ -949,24 +949,42 @@ void señal_avanzada_sin_parada::update()
 
     determinar_aspecto();
 
-    if (sig_señal != nullptr && señal_siguiente_aprec == nullptr) {
-        auto it = señales.find(sig_señal->id_señal_focos);
-        if (it != señales.end()) señal_siguiente_aprec = it->second;
-    }
     ReconocimientoAnuncioPrecaucion prev_rec = aprec_reconocido;
     if (aspecto == Aspecto::AnuncioPrecaucion) {
-        if (aprec_reconocido != ReconocimientoAnuncioPrecaucion::Reconocido) {
-            if (prev_aspecto != aspecto && seccion->get_cv() != nullptr && cv_libre(seccion->get_cv()->get_state()))
-                aprec_reconocido = ReconocimientoAnuncioPrecaucion::Reconocido;
-            else
+        if (sig_señal_focos == nullptr) {
+            aprec_reconocido = ReconocimientoAnuncioPrecaucion::PerdidaReconocimiento;
+        } else if (aspecto != prev_aspecto) {
+            bool cvs_ocupados = false;
+            seccion_via *sec_act = seccion;
+            Lado dir = lado;
+            int in = pin;
+            while (sec_act != nullptr) {
+                if (sec_act->get_cv() != nullptr && !cv_libre(sec_act->get_cv()->get_state())) {
+                    cvs_ocupados = true;
+                    break;
+                }
+
+                Lado l = dir;
+                seccion_via *next = sec_act->siguiente_seccion(in, l);
+                if (next == nullptr) break;
+                in = next->get_in(sec_act, l);
+                sec_act = next;
+                dir = l;
+                if (sec_act == seccion || sec_act->señal_inicio(dir, in) == sig_señal_focos) break;
+            }
+            if (cvs_ocupados)
                 aprec_reconocido = ReconocimientoAnuncioPrecaucion::PerdidaReconocimiento;
+            else
+                aprec_reconocido = ReconocimientoAnuncioPrecaucion::Reconocido;
         }
-    } else {
+    } else if (aprec_reconocido == ReconocimientoAnuncioPrecaucion::Reconocido) {
+        aprec_reconocido = ReconocimientoAnuncioPrecaucion::PerdidaReconocimiento;
+    } else if (sig_señal_focos != nullptr && sig_señal_focos->aspecto <= Aspecto::Parada) {
         aprec_reconocido = ReconocimientoAnuncioPrecaucion::Inactivo;
     }
-    if (prev_rec != aprec_reconocido && señal_siguiente_aprec != nullptr && aprec_reconocido != ReconocimientoAnuncioPrecaucion::Inactivo) {
+    if (prev_rec != aprec_reconocido && sig_señal_focos != nullptr && aprec_reconocido != ReconocimientoAnuncioPrecaucion::Inactivo) {
         log(id, "anuncio de precaución " + to_string(aprec_reconocido), LOG_INFO);
-        send_message("signal/"+id_to_mqtt(señal_siguiente_aprec->id.id)+"/rec_aprec", json(aprec_reconocido).dump());
+        send_message("signal/"+id_to_mqtt(sig_señal_focos->id.id)+"/rec_aprec", json(aprec_reconocido).dump());
     }
 
     if (aspecto_bloqueado < Aspecto::ViaLibre && aspecto < aspecto_bloqueado) aspecto_bloqueado = Aspecto::ViaLibre;

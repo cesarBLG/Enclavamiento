@@ -240,6 +240,8 @@ void to_json(json &j, const CompatibilidadManiobra &comp);
 void from_json(const json &j, CompatibilidadManiobra &comp);
 void to_json(json &j, const TipoSeñal &tipo);
 void from_json(const json &j, TipoSeñal &tipo);
+void to_json(json &j, const TipoIndicadora &tipo);
+void from_json(const json &j, TipoIndicadora &tipo);
 void to_json(json &j, const ClaseSeñal &clase);
 void from_json(const json &j, ClaseSeñal &clase);
 void to_json(json &j, const Aspecto &asp);

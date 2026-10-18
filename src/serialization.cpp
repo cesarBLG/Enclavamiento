@@ -108,6 +108,15 @@ std::string to_string(TipoSeñal tipo)
     }
     return "";
 }
+std::string to_string(TipoIndicadora tipo)
+{
+    switch (tipo) {
+        case TipoIndicadora::Salida:     return "Salida";
+        case TipoIndicadora::Direccion:  return "Dirección";
+        case TipoIndicadora::Agujas:     return "Agujas";
+    }
+    return "";
+}
 std::string to_string(ClaseSeñal clase)
 {
     switch (clase) {
@@ -278,6 +287,16 @@ void from_json(const json &j, TipoSeñal &tipo)
     else if (j == "Retroceso") tipo = TipoSeñal::Retroceso;
     else if (j == "Intermedia") tipo = TipoSeñal::Intermedia;
     else if (j == "PostePuntoProtegido") tipo = TipoSeñal::PostePuntoProtegido;
+}
+void to_json(json &j, const TipoIndicadora &tipo)
+{
+    j = to_string(tipo);
+}
+void from_json(const json &j, TipoIndicadora &tipo)
+{
+    if (j == "Salida") tipo = TipoIndicadora::Salida;
+    else if (j == "Dirección") tipo = TipoIndicadora::Direccion;
+    else if (j == "Agujas") tipo = TipoIndicadora::Agujas;
 }
 void to_json(json &j, const ClaseSeñal &clase)
 {
