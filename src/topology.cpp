@@ -298,9 +298,14 @@ señal_fundamental *seccion_via::señal_inicio(Lado lado, int pin)
 seccion_via* seccion_via::siguiente_seccion(int in, Lado &dir, bool usar_ruta_asegurada)
 {
     int out;
-    // TODO: usar_ruta_asegurada en maniobra local
-    if (usar_ruta_asegurada) out = ruta_asegurada ? ruta_asegurada->outs[dir] : -1;
-    else out = active_outs[dir][in];
+    if (usar_ruta_asegurada) {
+        if (!ruta_asegurada) return nullptr;
+        if (ruta_asegurada->outs[opp_lado(dir)] >= 0 && ruta_asegurada->outs[opp_lado(dir)] != in) return nullptr;
+        if (ruta_asegurada->outs[dir] < 0) out = active_outs[dir][in];
+        else out = ruta_asegurada->outs[dir];
+    } else {
+        out = active_outs[dir][in];
+    }
     if (out < 0 || siguientes_secciones[dir].empty()) return nullptr;
     auto p = siguientes_secciones[dir][out];
     if (p.invertir_paridad) dir = opp_lado(dir);

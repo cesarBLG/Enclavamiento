@@ -14,6 +14,7 @@ std::map<id_elemento, bloqueo*> bloqueos;
 std::set<ruta*> rutas;
 std::map<id_elemento, maniobra_local*> maniobras_locales;
 std::map<id_elemento, destino_ruta*> destinos_ruta;
+std::map<id_elemento, estado_fin_ruta> estado_destinos_ruta;
 std::map<id_elemento, seccion_via*> secciones;
 std::map<id_elemento, aguja*> agujas;
 std::map<std::string, dependencia*> dependencias;
@@ -345,8 +346,10 @@ void handle_message(const std::string &topic, const std::string &payload)
     std::regex destinoStatePattern(R"(^destino/([a-zA-Z0-9_-]+/[a-zA-Z0-9_'-]+)/state$)");
     if (std::regex_match(topic, match, destinoStatePattern)) {
         id_elemento id = id_elemento(id_from_mqtt(match[1]));
+        estado_fin_ruta est = json::parse(payload);
+        estado_destinos_ruta[id] = est;
         for (auto &[_,ind] : indicadoras) {
-            if (ind->tipo == TipoIndicadora::Direccion) ((indicadora_direccion*)ind)->message_destino(id, json::parse(payload));
+            if (ind->tipo == TipoIndicadora::Direccion) ((indicadora_direccion*)ind)->message_destino(id, est);
         }
         return;
     }
@@ -376,10 +379,11 @@ void init_items_ordered(const json &j, std::string tipo)
 {
     for (auto &[estacion, jdep] : j.items()) {
         if (!jdep.contains(tipo)) continue;
+        bool estacion_ajena = dependencias.find(estacion) == dependencias.end();
         if (tipo == "CVs") {
             for (auto &[id, jcv] : jdep["CVs"].items()) {
                 id_elemento ic(estacion,id);
-                if (dependencias.find(estacion) == dependencias.end()) {
+                if (estacion_ajena) {
                     cvs[ic] = new cv(ic, TipoSeccion::Lineal);
                     subscribe("cv/"+id_to_mqtt(ic.id)+"/state");
                 } else if (jcv.contains("ContadoresEjes")) {
@@ -417,9 +421,9 @@ void init_items_ordered(const json &j, std::string tipo)
                 id_elemento is(estacion,id);
                 ClaseSeñal clase = js.value("Clase", ClaseSeñal::AbsolutaFocos);
                 if (clase == ClaseSeñal::Indicadora) {
-                    if (dependencias.find(estacion) == dependencias.end()) continue;
+                    if (estacion_ajena) continue;
                     indicadoras[is] = señal_indicadora::from_json(is, js);
-                } else if (dependencias.find(estacion) == dependencias.end()) {
+                } else if (estacion_ajena) {
                     auto *señ = new señal_fundamental(is, js, clase);
                     señales[is] = señ;
                     subscribe("signal/"+id_to_mqtt(is.id)+"/state");
@@ -434,18 +438,21 @@ void init_items_ordered(const json &j, std::string tipo)
                 }
             }
         }
-        if (dependencias.find(estacion) == dependencias.end()) continue;
+        if (tipo == "DestinosRuta") {
+            for (auto &[id, jdest] : jdep["DestinosRuta"].items()) {
+                id_elemento idd(estacion,id);
+                if (estacion_ajena)
+                    subscribe("destino/"+id_to_mqtt(idd.id)+"/state");
+                else
+                    destinos_ruta[idd] = new destino_ruta(idd, jdest);
+            }
+        }
+        if (estacion_ajena) continue;
         if (tipo == "Bloqueos") {
             for (auto &jb : jdep["Bloqueos"]) {
                 auto *b = new bloqueo(estacion, jb);
                 bloqueos[b->id] = b;
                 dependencias[estacion]->bloqueos[b->id] = b;
-            }
-        }
-        if (tipo == "DestinosRuta") {
-            for (auto &[id, jdest] : jdep["DestinosRuta"].items()) {
-                id_elemento idd(estacion,id);
-                destinos_ruta[idd] = new destino_ruta(idd, jdest);
             }
         }
         if (tipo == "Rutas") {

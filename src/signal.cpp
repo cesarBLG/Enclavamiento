@@ -130,7 +130,7 @@ señal_fundamental_impl::señal_fundamental_impl(const id_elemento &id, const js
     }
     subscribe("signal/"+id_to_mqtt(id.id)+"/field_state");
 }
-señal_impl::señal_impl(const id_elemento &id, const json &j) : señal_fundamental_impl(id, j), seccion_prev(seccion->get_seccion_in(lado, pin).first), lado_prev(seccion->get_seccion_in(lado, pin).second), topic_inicio("signal/"+id_to_mqtt(id.id)+"/inicio"), proximidad_señal(this)
+señal_impl::señal_impl(const id_elemento &id, const json &j) : señal_fundamental_impl(id, j), seccion_prev(seccion->get_seccion_in(lado, pin).first), lado_prev(seccion->get_seccion_in(lado, pin).second), topic_inicio("signal/"+id_to_mqtt(id.id)+"/inicio")
 {
     if (j.contains("AspectoCanton")) {
         for (auto &[est, asp] : j["AspectoCanton"].items()) {
@@ -140,11 +140,13 @@ señal_impl::señal_impl(const id_elemento &id, const json &j) : señal_fundamen
     if (aspecto_maximo_ocupacion.empty())
         aspecto_maximo_ocupacion[EstadoCanton::Libre] = tipo == TipoSeñal::Maniobra ? Aspecto::MovimientoAutorizado : (tipo == TipoSeñal::Retroceso ? Aspecto::IndicadoraDirecta : Aspecto::ViaLibre);
 
+    std::set<id_elemento> inicio_proximidad;
     if (j.contains("InicioProximidad")) {
         for (auto &jprox : j["InicioProximidad"]) {
-            proximidad_señal.cvs_inicio_proximidad.insert(id_elemento::from_default_dep(jprox.get<std::string>(), id.dependencia));
+            inicio_proximidad.insert(id_elemento::from_default_dep(jprox.get<std::string>(), id.dependencia));
         }
     }
+    proximidad_señal = proximidad(this, inicio_proximidad);
     if (j.contains("Deslizamiento")) {
         auto *d = new ruta_deslizamiento(this, j["Deslizamiento"]);
         deslizamientos[TipoMovimiento::Itinerario] = d;
@@ -530,7 +532,7 @@ void señal_impl::update()
     estado_inicio_ruta prev_estado_inicio = estado_inicio;
     señal_fundamental *anterior_sig_señal_focos = sig_señal_focos;
 
-    proximidad_señal.construir();
+    proximidad_señal.update();
 
     determinar_aspecto();
 
@@ -833,63 +835,55 @@ cv* señal_impl::get_cv_inicio()
     }
     return nullptr;
 }
-void proximidad::construir0(seccion_via *next, seccion_via *sec, Lado dir)
+nodo_proximidad::nodo_proximidad(seccion_via *seccion, seccion_via *siguiente, Lado dir, const std::set<id_elemento> &cvs_inicio_proximidad) : seccion(seccion), siguiente(siguiente), dir(dir)
 {
-    if (sec == nullptr) return;
-    if (sec->get_cv() != nullptr) {
-        proximidad0[sec] = {dir, next};
-    } else {
-        std::vector<std::pair<seccion_via *, Lado>> prev;
-        sec->prev_secciones(next, dir, prev, true);
-        for (auto &[sec2, dir2] : prev) {
-            if (sec->señal_inicio(dir, sec2) != nullptr) continue;
-            construir0(sec, sec2, dir2);
-        }
+    if (cvs_inicio_proximidad.empty()) return;
+    std::vector<std::pair<seccion_via *, Lado>> prev;
+    seccion->prev_secciones(siguiente, dir, prev, false);
+    bool end = cvs_inicio_proximidad.find(seccion->id_cv) != cvs_inicio_proximidad.end();
+    for (auto &[sec, l] : prev) {
+        if (end && cvs_inicio_proximidad.find(sec->id_cv) == cvs_inicio_proximidad.end())
+            continue;
+        prev_nodos.push_back(std::make_unique<nodo_proximidad>(sec, seccion, l, cvs_inicio_proximidad));
     }
 }
-void proximidad::construir()
+void nodo_proximidad::update(int estado)
 {
-    proximidad0.clear();
-    proximidad1.clear();
-    construir0(señal_inicio->seccion, señal_inicio->seccion_prev, señal_inicio->lado_prev);
-    for (auto &[sec, props] : proximidad0) {
-        auto &[dir, next] = props;
-        seccion_via *act = sec;
-        movimiento *ruta_actual = nullptr;
-        bool trayecto = false;
-        señal_fundamental *sig = señal_inicio;
-        while (act != nullptr) {
-
-            Lado dir_opp = opp_lado(dir);
-            auto prev = act->siguiente_seccion(next, dir_opp, true);
-            if (prev == nullptr) prev = act->siguiente_seccion(next, dir_opp);
-
-            if (sig != nullptr) {
-                if (sig != señal_inicio && sig->aspecto <= Aspecto::Parada) break;
-                auto sig_impl = señal_impls.find(sig->id);
-                if (sig_impl == señal_impls.end() || (prev != nullptr && prev->is_trayecto())) {
-                    ruta_actual = nullptr;
-                    trayecto = true;
-                } else if (ruta_actual == nullptr || (prev != nullptr && !prev->is_asegurada(ruta_actual))) {
-                    ruta_actual = sig_impl->second->ruta_fin;
-                    trayecto = false;
-                    if (ruta_actual != nullptr && ruta_actual->tipo != TipoMovimiento::Itinerario) ruta_actual = nullptr;
-                }
-            }
-
-            if (act->get_cv() != nullptr) proximidad1[act] = {dir, next};
-
-            bool afecta_anteriores = trayecto || (ruta_actual != nullptr && act->is_asegurada(ruta_actual));
-            if (!afecta_anteriores || cvs_inicio_proximidad.empty() || cvs_inicio_proximidad.find(act->id_cv) != cvs_inicio_proximidad.end()) {
-                break;
-            }
-
-            dir = opp_lado(dir_opp);
-            sig = act->señal_inicio(dir, prev);
-            next = act;
-            act = prev;
+    prev_activo = nullptr;
+    this->estado = estado;
+    if (estado == 0) {
+        for (auto &n : prev_nodos) {
+            n->update(0);
         }
     }
+    bool fallback = true;
+    for (auto &n : prev_nodos) {
+        Lado l = dir;
+        auto *sig = seccion->siguiente_seccion(n->seccion, l, true);
+        if (sig != nullptr) {
+            if (sig == siguiente) prev_activo = n.get();
+            fallback = false;
+            break;
+        }
+    }
+    if (fallback) {
+        for (auto &n : prev_nodos) {
+            Lado l = dir;
+            if (siguiente == seccion->siguiente_seccion(n->seccion, l)) {
+                prev_activo = n.get();
+                break;
+            }
+        }
+    }
+    for (auto &n : prev_nodos) {
+        n->update(n.get() != prev_activo ? 0 : (estado == 1 && seccion->get_cv() == nullptr ? 1 : 2));
+    }
+}
+proximidad::proximidad(señal_impl *señal_inicio, const std::set<id_elemento> &cvs_inicio_proximidad) : 
+    señal_fin(señal_inicio),
+    cvs_inicio_proximidad(cvs_inicio_proximidad),
+    root(std::make_unique<nodo_proximidad>(señal_inicio->seccion_prev, señal_inicio->seccion, señal_inicio->lado_prev, cvs_inicio_proximidad))
+{
 }
 void señal_avanzada_sin_parada::determinar_aspecto()
 {

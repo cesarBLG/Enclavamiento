@@ -7,19 +7,27 @@ class ruta;
 class frontera;
 class señal_impl;
 class bloqueo;
+struct nodo_proximidad
+{
+    seccion_via *seccion;
+    seccion_via *siguiente;
+    Lado dir;
+    std::vector<std::unique_ptr<nodo_proximidad>> prev_nodos;
+    nodo_proximidad *prev_activo = nullptr;
+    int estado = 0;
+    nodo_proximidad(seccion_via *seccion, seccion_via *siguiente, Lado dir, const std::set<id_elemento> &cvs_inicio_proximidad);
+    void update(int estado=0);
+};
 struct proximidad
 {
-    señal_impl *señal_inicio;
-    std::map<seccion_via*,std::pair<Lado,seccion_via*>> proximidad0;
-    std::map<seccion_via*,std::pair<Lado,seccion_via*>> proximidad1;
+    señal_impl *señal_fin;
+    std::unique_ptr<nodo_proximidad> root;
     std::set<id_elemento> cvs_inicio_proximidad;
-    proximidad(señal_impl *señal_inicio) : señal_inicio(señal_inicio) {}
-    void construir();
-    void construir0(seccion_via *next, seccion_via *sec, Lado dir);
-    const std::map<seccion_via*,std::pair<Lado,seccion_via*>> &get(TipoMovimiento tipo)
+    proximidad() = default;
+    proximidad(señal_impl *señal_inicio, const std::set<id_elemento> &cvs_inicio_proximidad);
+    void update()
     {
-        if (tipo == TipoMovimiento::Maniobra || tipo == TipoMovimiento::Rebase) return proximidad0;
-        return proximidad1;
+        root->update(1);
     }
 };
 struct señal

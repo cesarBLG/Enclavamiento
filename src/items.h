@@ -22,6 +22,7 @@ extern std::map<id_elemento, bloqueo*> bloqueos;
 extern std::set<ruta*> rutas;
 extern std::map<id_elemento, maniobra_local*> maniobras_locales;
 extern std::map<id_elemento, destino_ruta*> destinos_ruta;
+extern std::map<id_elemento, estado_fin_ruta> estado_destinos_ruta;
 extern std::set<std::string> managed_topics;
 extern std::map<id_elemento, seccion_via*> secciones;
 extern std::map<id_elemento, aguja*> agujas;

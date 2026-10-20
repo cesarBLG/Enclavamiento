@@ -237,7 +237,7 @@ void bloqueo::message_cv(const id_elemento &id, estado_cv ecv)
     if (cv_libre(ecv.estado_previo) && !cv_libre(ecv.estado) && estado == bloqueo_receptor && señal_entrada != nullptr) {
         // Soneria proximidad
         auto &prox = señal_entrada->proximidad_señal.cvs_inicio_proximidad;
-        if (prox.find(id) != prox.end())
+        if (prox.find(id) != prox.end() || (prox.empty() && index == 0))
             sonerias[TipoSoneria::OcupacionProximidad] = get_milliseconds();
     }
 
