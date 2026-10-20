@@ -22,7 +22,7 @@ señal_fundamental_impl::señal_fundamental_impl(const id_elemento &id, const js
         if (asps.empty())
             asps[aspecto_extendido(Aspecto::ParadaDiferida)] = Aspecto::ViaLibre;
         if (asps.upper_bound(aspecto_extendido(Aspecto::Parada)) == asps.begin()) {
-            asps[aspecto_extendido(Aspecto::Parada)] = Aspecto::AnuncioParada;
+            asps[aspecto_extendido(Aspecto::Parada)] = clase == ClaseSeñal::Virtual ? Aspecto::ParadaSelectiva : Aspecto::AnuncioParada;
         }
     }
     if (j.contains("Aspectos")) aspectos_disponibles = j["Aspectos"].get<std::set<Aspecto>>();
@@ -140,9 +140,9 @@ señal_impl::señal_impl(const id_elemento &id, const json &j) : señal_fundamen
     if (aspecto_maximo_ocupacion.empty())
         aspecto_maximo_ocupacion[EstadoCanton::Libre] = tipo == TipoSeñal::Maniobra ? Aspecto::MovimientoAutorizado : (tipo == TipoSeñal::Retroceso ? Aspecto::IndicadoraDirecta : Aspecto::ViaLibre);
 
-    if (j.contains("LímiteProximidad")) {
-        for (auto &jprox : j["LímiteProximidad"]) {
-            proximidad_señal.ultimos_cvs_proximidad.insert(id_elemento::from_default_dep(jprox.get<std::string>(), id.dependencia));
+    if (j.contains("InicioProximidad")) {
+        for (auto &jprox : j["InicioProximidad"]) {
+            proximidad_señal.cvs_inicio_proximidad.insert(id_elemento::from_default_dep(jprox.get<std::string>(), id.dependencia));
         }
     }
     if (j.contains("Deslizamiento")) {
@@ -291,11 +291,10 @@ void señal_impl::determinar_aspecto()
     }
     // Cerrar señal con el cantón ocupado en sentido contrario
     cerrar_itinerario |= canton == EstadoCanton::Ocupado;
-    cerrar |= aspecto_requerido_siguiente <= Aspecto::Parada;
-    cerrar_itinerario |= aspecto_requerido_siguiente <= Aspecto::RebaseAutorizadoDestellos;
 
     if (sig_señal != nullptr) agujas.update(sig_señal->desviada_propagada);
 
+    bool depende_sig_señal = false;
     // Señal en parada si
     // - No se permite la apertura y no había abierto previamente
     // - Las condiciones no permiten mantener abierta la señal
@@ -305,11 +304,17 @@ void señal_impl::determinar_aspecto()
         cerrar || !clear_request || aspecto_bloqueado <= Aspecto::Parada ||
         (ruta_necesaria && (ruta_activa == nullptr || !ruta_activa->is_formada()))) {
         aspecto = Aspecto::Parada;
+    } else if (aspecto_requerido_siguiente <= Aspecto::Parada) {
+        aspecto = Aspecto::Parada;
+        depende_sig_señal = true;
     } else if (ruta_activa != nullptr && ruta_activa->tipo == TipoMovimiento::Maniobra) {
         aspecto = Aspecto::RebaseAutorizado;
     // Señal en parada si no se cumplen las condiciones para apertura en itinerario
     } else if (cerrar_itinerario || (prohibir_abrir_itinerario && (prev_aspecto <= Aspecto::Parada || !ruta_necesaria))) {
         aspecto = Aspecto::Parada;
+    } else if (aspecto_requerido_siguiente <= Aspecto::RebaseAutorizado) {
+        aspecto = Aspecto::Parada;
+        depende_sig_señal = true;
     } else {
         // Permitir o no la apertura con cantón ocupado en el mismo sentido, o en prenormalización
         // En rebase, abrir señal incluso con cantón ocupado
@@ -398,6 +403,13 @@ void señal_impl::determinar_aspecto()
     if ((tipo == TipoSeñal::Intermedia || tipo == TipoSeñal::Avanzada) && apagada && aspecto == Aspecto::Parada)
         aspecto_maximo_anterior_señal = Aspecto::Parada;
     
+    // Restringir apertura señal anterior si los circuitos de deslizamiento no están libres
+    if ((tipo == TipoSeñal::Intermedia || tipo == TipoSeñal::Avanzada) && deslizamientos.find(TipoMovimiento::Itinerario) != deslizamientos.end()) {
+        auto *desliz = deslizamientos[TipoMovimiento::Itinerario];
+        if (!desliz->cv_libres())
+            aspecto_maximo_anterior_señal = std::min(aspecto_maximo_anterior_señal, aspecto_extendido(Aspecto::ParadaSelectivaDestellos));
+    }
+    
     if (frontera_salida != nullptr) {
         aspecto_maximo_anterior_señal = std::min(aspecto_maximo_anterior_señal, aspecto);
     }
@@ -405,10 +417,6 @@ void señal_impl::determinar_aspecto()
     if (agujas.velocidad < 200 && aprec_anterior && tipo != TipoSeñal::Maniobra && tipo != TipoSeñal::Retroceso && clase != ClaseSeñal::Virtual) {
         aspecto_maximo_anterior_señal = std::min(aspecto_maximo_anterior_señal, {Aspecto::AnuncioPrecaucion, agujas});
     }
-
-    // En caso de pantallas cerradas, las señal anterior puede ordenar como máximo parada selectiva
-    if (clase == ClaseSeñal::Virtual && aspecto <= Aspecto::Parada)
-        aspecto_maximo_anterior_señal = std::min(aspecto_maximo_anterior_señal, aspecto_extendido(Aspecto::ParadaSelectiva));
 
     // Las señales de retroceso, maniobra y pantallas virtuales propagan el aspecto máximo de apertura requerido por la siguiente señal siguiente
     if (tipo == TipoSeñal::Maniobra || tipo == TipoSeñal::Retroceso || clase == ClaseSeñal::Virtual) {
@@ -872,7 +880,7 @@ void proximidad::construir()
             if (act->get_cv() != nullptr) proximidad1[act] = {dir, next};
 
             bool afecta_anteriores = trayecto || (ruta_actual != nullptr && act->is_asegurada(ruta_actual));
-            if (!afecta_anteriores || ultimos_cvs_proximidad.empty() || ultimos_cvs_proximidad.find(act->id_cv) != ultimos_cvs_proximidad.end()) {
+            if (!afecta_anteriores || cvs_inicio_proximidad.empty() || cvs_inicio_proximidad.find(act->id_cv) != cvs_inicio_proximidad.end()) {
                 break;
             }
 

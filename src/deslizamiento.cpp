@@ -304,3 +304,13 @@ void ruta_deslizamiento::update()
         }
     }
 }
+bool nodo_deslizamiento::cv_libres()
+{
+    if (seccion->get_cv() != nullptr && !cv_libre(seccion->get_cv()->get_state()))
+        return false;
+    for (auto &n : next) {
+        if (!n->cv_libres())
+            return false;
+    }
+    return true;
+}

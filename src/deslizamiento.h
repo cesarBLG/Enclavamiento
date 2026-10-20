@@ -23,6 +23,7 @@ struct nodo_deslizamiento
     void cambio_activacion(bool accesible, bool acceso_impedido);
     bool is_asegurado(int id_deslizamiento);
     bool invade_galibo(std::optional<std::pair<Lado,int>> pin_causa, int id_deslizamiento);
+    bool cv_libres();
 };
 struct ruta_deslizamiento
 {
@@ -43,6 +44,10 @@ struct ruta_deslizamiento
         if (!root->is_asegurado(id_orig) && (id_orig == deslizamiento_activo || !root->is_asegurado(deslizamiento_activo)))
             return false;
         return true;
+    }
+    bool cv_libres()
+    {
+        return root->cv_libres();
     }
     void update();
 };

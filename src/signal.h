@@ -12,7 +12,7 @@ struct proximidad
     señal_impl *señal_inicio;
     std::map<seccion_via*,std::pair<Lado,seccion_via*>> proximidad0;
     std::map<seccion_via*,std::pair<Lado,seccion_via*>> proximidad1;
-    std::set<id_elemento> ultimos_cvs_proximidad;
+    std::set<id_elemento> cvs_inicio_proximidad;
     proximidad(señal_impl *señal_inicio) : señal_inicio(señal_inicio) {}
     void construir();
     void construir0(seccion_via *next, seccion_via *sec, Lado dir);
