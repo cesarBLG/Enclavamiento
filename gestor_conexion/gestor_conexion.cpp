@@ -1,13 +1,14 @@
 #include <mosquitto.h>
 #include <string>
 #include <vector>
+#include <set>
 #include <map>
 #include <iostream>
 #include <sstream>
 #include <thread>
 #include <chrono>
 mosquitto *mosq;
-std::map<std::string, std::vector<std::string>> handled_topics;
+std::map<std::string, std::set<std::string>> handled_topics;
 bool connected;
 void on_connect(struct mosquitto *mosq, void *userdata, int rc)
 {
@@ -45,9 +46,24 @@ void on_message(struct mosquitto *mosq, void *obj, const struct mosquitto_messag
         for (auto &t : tops) {
             mosquitto_publish(mosq, nullptr, t.c_str(), 13, "\"desconexion\"", 0, false);
         }
-    } else if (topic.size() > 12 && topic.substr(0, 11) == "desconexion") {
+    } else if (topic.size() > 12 && topic.substr(0, 12) == "desconexion/") {
         std::string cl = topic.substr(12);
-        handled_topics[cl] = split(payload, '\n');
+        size_t pos = cl.find_first_of('/');
+        std::string action;
+        if (pos != std::string::npos)
+        {
+            action = cl.substr(pos+1);
+            cl = cl.substr(0, pos);
+        }
+        if (action == "add") {
+            handled_topics[cl].insert(payload);
+        } else if (action == "remove") {
+            handled_topics[cl].erase(payload);
+        } else {
+            auto v = split(payload, '\n');
+            handled_topics[cl].clear();
+            handled_topics[cl].insert(v.begin(), v.end());
+        }
     }
 }
 

@@ -235,7 +235,6 @@ public:
     bool is_rebasada() { return rebasada; }
     void set_reconocimiento_aprec(ReconocimientoAnuncioPrecaucion rec)
     {
-        // FIXME: el topic no está incluido en el gestor de conexiones, por lo que no es seguro si se pierde la comunicación con la señal anterior.
         aprec_anterior_reconocido = rec;
     }
 };

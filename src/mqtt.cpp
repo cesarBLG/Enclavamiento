@@ -11,7 +11,7 @@
 mosquitto *mosq;
 std::string name;
 
-std::map<std::string, std::vector<std::string>> handled_topics;
+std::map<std::string, std::set<std::string>> handled_topics;
 std::set<std::string> managed_topics;
 std::set<std::string> subscribed_topics;
 bool connected = false;
@@ -40,6 +40,16 @@ void send_message(const std::string &topic, const std::string &payload, int qos,
     mosquitto_publish(mosq, nullptr, topic.c_str(), payload.size(), payload.c_str(), qos, retain);
     handle_message(topic, payload);
 }
+void start_managing_topic(const std::string &topic)
+{
+    if (managed_topics.insert(topic).second)
+        mosquitto_publish(mosq, nullptr, ("desconexion/"+name+"/add").c_str(), topic.size(), topic.c_str(), 0, false);
+}
+void stop_managing_topic(const std::string &topic)
+{
+    if (managed_topics.erase(topic))
+        mosquitto_publish(mosq, nullptr, ("desconexion/"+name+"/remove").c_str(), topic.size(), topic.c_str(), 0, false);
+}
 
 void on_message(struct mosquitto *mosq, void *obj, const struct mosquitto_message *message)
 {
@@ -62,9 +72,24 @@ void on_message(struct mosquitto *mosq, void *obj, const struct mosquitto_messag
                 }
             }
         }
-    } else if (topic.size() > 12 && topic.substr(0, 11) == "desconexion") {
+    } else if (topic.size() > 12 && topic.substr(0, 12) == "desconexion/") {
         std::string cl = topic.substr(12);
-        handled_topics[cl] = split(payload, '\n');
+        size_t pos = cl.find_first_of('/');
+        std::string action;
+        if (pos != std::string::npos)
+        {
+            action = cl.substr(pos+1);
+            cl = cl.substr(0, pos);
+        }
+        if (action == "add") {
+            handled_topics[cl].insert(payload);
+        } else if (action == "remove"){
+            handled_topics[cl].erase(payload);
+        } else {
+            auto v = split(payload, '\n');
+            handled_topics[cl].clear();
+            handled_topics[cl].insert(v.begin(), v.end());
+        }
     } else if (gestor_conectado) {
         handle_message(topic, payload);
     }

@@ -565,6 +565,10 @@ void señal_impl::update()
     } else if (aprec_reconocido == ReconocimientoAnuncioPrecaucion::NoReconocido) {
         aprec_reconocido = ReconocimientoAnuncioPrecaucion::PerdidaReconocimiento;
     }
+    if (anterior_sig_señal_focos != sig_señal_focos) {
+        if (anterior_sig_señal_focos != nullptr) stop_managing_topic("signal/"+id_to_mqtt(anterior_sig_señal_focos->id.id)+"/rec_aprec");
+        if (sig_señal_focos != nullptr) start_managing_topic("signal/"+id_to_mqtt(sig_señal_focos->id.id)+"/rec_aprec");
+    }
     if (anterior_sig_señal_focos == nullptr) anterior_sig_señal_focos = sig_señal_focos;
     if (anterior_sig_señal_focos != nullptr && anterior_sig_señal_focos != sig_señal_focos) {
         if (aprec_reconocido == ReconocimientoAnuncioPrecaucion::Reconocido || aprec_reconocido == ReconocimientoAnuncioPrecaucion::NoReconocido)
