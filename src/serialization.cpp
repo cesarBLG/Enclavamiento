@@ -457,6 +457,7 @@ void to_json(json &j, const estado_mando &estado)
 }
 void from_json(const json &j, estado_mando &estado)
 {
+    if (j == "desconexion") return;
     estado.central = j["Central"];
     estado.puesto = j["Puesto"];
     if (j.contains("Cedido")) estado.cedido = j["Cedido"];
@@ -498,6 +499,7 @@ void to_json(json &j, const estado_inicio_ruta &estado)
 }
 void from_json(const json &j, estado_inicio_ruta &estado)
 {
+    if (j == "desconexion") return;
     estado.tipo = j.value("Tipo", TipoMovimiento::Ninguno);
     estado.rebasada = j.value("Rebasada", false);
     estado.ocupada_diferimetro = j.value("OcupadaDiferimetro", false);
@@ -520,6 +522,7 @@ void to_json(json &j, const estado_fin_ruta &estado)
 }
 void from_json(const json &j, estado_fin_ruta &estado)
 {
+    if (j == "desconexion") return;
     estado.tipo = j.value("Tipo", TipoMovimiento::Ninguno);
     estado.supervisada = j.value("Supervisada", false);
     estado.bloqueo_destino = j.value("BloqueoDestino", false);
@@ -620,7 +623,7 @@ void to_json(json &j, const velocidad_agujas &vel)
 }
 void from_json(const json &j, velocidad_agujas &vel)
 {
-    if (j == "") {
+    if (j == "" || j == "desconexion") {
         vel = velocidad_agujas();
         return;
     } else if (j == "R") {

@@ -310,6 +310,13 @@ void handle_message(const std::string &topic, const std::string &payload)
         if (it != señales.end()) it->second->message_señal(json::parse(payload));
         return;
     }
+    std::regex inicioRutaPattern(R"(^signal/([a-zA-Z0-9_-]+/[a-zA-Z0-9_'-]+)/inicio$)");
+    if (std::regex_match(topic, match, inicioRutaPattern)) {
+        id_elemento id = id_elemento(id_from_mqtt(match[1]));
+        auto it = señales.find(id);
+        if (it != señales.end()) it->second->message_inicio(json::parse(payload));
+        return;
+    }
     std::regex signalRecPattern(R"(^signal/([a-zA-Z0-9_-]+/[a-zA-Z0-9_'-]+)/rec_aprec$)");
     if (std::regex_match(topic, match, signalRecPattern)) {
         id_elemento id = id_elemento(id_from_mqtt(match[1]));
@@ -427,6 +434,8 @@ void init_items_ordered(const json &j, std::string tipo)
                     auto *señ = new señal_fundamental(is, js, clase);
                     señales[is] = señ;
                     subscribe("signal/"+id_to_mqtt(is.id)+"/state");
+                    if (clase == ClaseSeñal::AbsolutaFocos || clase == ClaseSeñal::Virtual)
+                        subscribe("signal/"+id_to_mqtt(is.id)+"/inicio");
                 } else if (clase == ClaseSeñal::Avanzada) {
                     auto *señ = new señal_avanzada_sin_parada(is, js);
                     señales[is] = señ;

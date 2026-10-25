@@ -147,6 +147,7 @@ señal_impl::señal_impl(const id_elemento &id, const json &j) : señal_fundamen
         }
     }
     proximidad_señal = proximidad(this, inicio_proximidad);
+    proximidad_señal.forzar_zona_2 = j.value("ForzarZona2Proximidad", true);
     if (j.contains("Deslizamiento")) {
         auto *d = new ruta_deslizamiento(this, j["Deslizamiento"]);
         deslizamientos[TipoMovimiento::Itinerario] = d;
@@ -177,6 +178,7 @@ void señal_impl::determinar_aspecto()
     sig_señal_focos = nullptr;
     // Condiciones que provocan el cierre de señal
     bool cerrar = false;
+    bool cerrar_sl = false;
     // Condiciones que impiden abrir la señal, pero no la cierran si estaba abierta
     bool prohibir_abrir = false;
     // Ruta a desviada
@@ -224,7 +226,7 @@ void señal_impl::determinar_aspecto()
         }
         for (auto &[d, r] : sec_act->get_deslizamiento()) {
             if (!d->asegurado && !d->acceso_impedido)
-                cerrar = true;
+                cerrar_sl = true;
         }
         if (sec_act->is_asegurada() && !seccion_asegurada) cerrar = true;
         if (sec_act->bloqueo_asociado) {
@@ -250,7 +252,7 @@ void señal_impl::determinar_aspecto()
     }
     aspecto_extendido aspecto_requerido_siguiente;
     if (sig_señal == nullptr && sig_señal_focos == nullptr) {
-        aspecto_requerido_siguiente = Aspecto::AnuncioParada;
+        aspecto_requerido_siguiente = sec_prv != nullptr && sec_prv->is_trayecto() ? Aspecto::ViaLibre : Aspecto::AnuncioParada;
     } else {
         aspecto_requerido_siguiente = Aspecto::ViaLibre;
         if (sig_señal != nullptr)
@@ -325,7 +327,7 @@ void señal_impl::determinar_aspecto()
         aspecto = it == aspecto_maximo_ocupacion.end() ? aspecto_extendido(Aspecto::Parada) : it->second;
         if (rebase && aspecto > Aspecto::RebaseAutorizadoDestellos) aspecto = Aspecto::RebaseAutorizadoDestellos;
         // Itinerarios ERTMS pueden abrir como máximo en parada selectiva
-        if (ruta_activa != nullptr && ruta_activa->ertms && aspecto > Aspecto::ParadaSelectivaDestellos) aspecto = Aspecto::ParadaSelectivaDestellos;
+        if (((ruta_activa != nullptr && ruta_activa->ertms) || cerrar_sl) && aspecto > Aspecto::ParadaSelectivaDestellos) aspecto = Aspecto::ParadaSelectivaDestellos;
         // Aspecto máximo permitido para cumplir las órdenes de la señal siguiente
         aspecto = std::min(aspecto, aspecto_requerido_siguiente);
         // Itinerarios por vía desviada

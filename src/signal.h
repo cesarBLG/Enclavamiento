@@ -23,6 +23,7 @@ struct proximidad
     señal_impl *señal_fin;
     std::unique_ptr<nodo_proximidad> root;
     std::set<id_elemento> cvs_inicio_proximidad;
+    bool forzar_zona_2;
     proximidad() = default;
     proximidad(señal_impl *señal_inicio, const std::set<id_elemento> &cvs_inicio_proximidad);
     void update()
@@ -46,6 +47,7 @@ public:
     const std::optional<id_elemento> bloqueo_asociado;
     const TipoSeñal tipo;
     frontera *frontera_entrada=nullptr;
+    estado_inicio_ruta estado_inicio;
     señal_fundamental(const id_elemento &id, const json &j, ClaseSeñal clase_defecto);
     aspecto_extendido get_state()
     {
@@ -54,6 +56,10 @@ public:
     virtual void message_señal(estado_señal est)
     {
         *((estado_señal*)this) = est;
+    }
+    virtual void message_inicio(estado_inicio_ruta est)
+    {
+        estado_inicio = est;
     }
 };
 class señal_fundamental_impl : public señal_fundamental
@@ -148,6 +154,7 @@ protected:
     bool normalizar_fusion();
 public:
     void message_señal(estado_señal est) override {}
+    void message_inicio(estado_inicio_ruta est) override {}
     void message_señal_campo(unsigned int focos_mask)
     {
         for (auto &[foco, estado] : estado_foco_señal) {
@@ -182,8 +189,6 @@ protected:
     int64_t ultimo_paso_abierta;
     bool paso_circulacion = false;
 
-    estado_inicio_ruta estado_inicio;
-
     bool itinerarios_desviada = false;
     ReconocimientoAnuncioPrecaucion aprec_anterior_reconocido = ReconocimientoAnuncioPrecaucion::Inactivo;
     int64_t inicio_aprec = 0;
@@ -212,7 +217,7 @@ public:
     void send_state(bool aspecto=true, bool inicio=true)
     {
         if (aspecto) send_message(topic, json(*(estado_señal*)this).dump());
-        if (inicio) send_message(topic_inicio, json(estado_inicio).dump());
+        if (inicio && tipo != TipoSeñal::Avanzada && tipo != TipoSeñal::Intermedia) send_message(topic_inicio, json(estado_inicio).dump());
     }
     void determinar_aspecto();
 public:

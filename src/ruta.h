@@ -120,14 +120,8 @@ protected:
     int64_t temporizador_dai2;
     int64_t temporizador_dei;
     int64_t temporizador_deslizamiento;
-    enum struct EstadoProximidad
-    {
-        Inexistente,
-        Libre,
-        Zona1,
-        Zona2
-    };
-    EstadoProximidad proximidad_ocupada = EstadoProximidad::Inexistente;
+    int num_zonas_proximidad = 0;
+    int zona_proximidad = 0;
 
     seccion_via *seccion_inicio_temporizador_deslizamiento = nullptr;
 

@@ -177,6 +177,7 @@ public:
         return deslizamiento_potencial;
     }
     TipoMovimiento get_tipo_movimiento();
+    std::optional<Lado> get_lado_movimiento();
     bool is_bloqueo_seccion() { return bloqueo_seccion; }
     bool is_me_pendiente() { return me_pendiente; }
     bool is_trayecto() { return trayecto; }

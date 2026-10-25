@@ -209,6 +209,18 @@ TipoMovimiento seccion_via::get_tipo_movimiento()
     }
     return TipoMovimiento::Ninguno;
 }
+std::optional<Lado> seccion_via::get_lado_movimiento()
+{
+    if (ruta_asegurada)
+        return ruta_asegurada->lado;
+    if (bloqueo_asociado) {
+        if (bloqueo_act.estado == EstadoBloqueo::BloqueoImpar)
+            return Lado::Impar;
+        if (bloqueo_act.estado == EstadoBloqueo::BloqueoPar)
+            return Lado::Impar;
+    }
+    return {};
+}
 void seccion_via::message_cv(const id_elemento &id, estado_cv ev)
 {
     if (id != id_cv) return;
