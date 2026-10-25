@@ -4,7 +4,7 @@
 #define MAX_ACTIVATION_TIME_MS 5
 #define MAX_WHEELSET_INTERVAL_MS 2000
 #define MAX_TRAIN_INTERVAL_MS 10000
-#define DEBUG_CEJES
+//#define DEBUG_CEJES
 struct Event
 {
   bool isB;
@@ -142,7 +142,7 @@ public:
 
     return axleCount;
   }
-  void processTrain()
+  void processTrain(bool delayed=false)
   {
     if (eventBuffer.empty()) return;
     int dir = getDirection(true);
@@ -152,11 +152,12 @@ public:
       client->publish(topic.c_str(), "Error");
     } else {
       int num = countAxles(dir == 0);
-      client->publish(topic.c_str(), ((dir == 1 ? "Nominal:" : "Reverse:")+String(num)).c_str());
+      client->publish(topic.c_str(), ((dir == 1 ? (delayed ? "DelayedNominal:" : "Nominal:") : (delayed ? "DelayedReverse:" : "Reverse:"))+String(num)).c_str());
     }
     eventBuffer.clear();
   }
   void loop() override {
+    bool ev = false;
     if (pinA >= 0 && !digitalRead(pinA)) {
       if (Aon == 0 && millis() - prevA > MIN_DEACTIVATION_TIME_MS) {
         Aon = 1;
@@ -164,6 +165,7 @@ public:
       } else if (Aon == 1 && millis() - firstAon > MAX_ACTIVATION_TIME_MS) {
         Aon = 2;
         addSecuencia(false);
+        ev = true;
       }
       prevA = millis();
     } else {
@@ -176,13 +178,14 @@ public:
       } else if (Bon == 1 && millis() - firstBon > MAX_ACTIVATION_TIME_MS) {
         Bon = 2;
         addSecuencia(true);
+        ev = true;
       }
       prevB = millis();
     } else {
       Bon = 0;
     }
     unsigned long timeSinceLast = millis() - ultimaActivacion;
-    if (!eventBuffer.empty()) {
+    if (ev) {
       if (eventBuffer.size() > 3) {
         int dir = getDirection(true);
         if (dir >= 0) {
@@ -193,9 +196,11 @@ public:
         int dir = getDirection(false);
         if (dir == dirTren) processTrain();
       }
-      if (timeSinceLast > MAX_TRAIN_INTERVAL_MS) processTrain();
     }
-    if (dirTren >= 0 && timeSinceLast > MAX_TRAIN_INTERVAL_MS) dirTren = -1;
+    if (timeSinceLast > MAX_TRAIN_INTERVAL_MS) {
+      if (!eventBuffer.empty()) processTrain(true);
+      dirTren = -1;
+    }
 
     if (ultimoMensaje == 0 || millis() - ultimoMensaje > 30000) {
       client->publish(topic.c_str(), "conexion");

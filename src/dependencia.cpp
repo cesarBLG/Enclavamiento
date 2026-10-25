@@ -227,7 +227,6 @@ bool dependencia::set_servicio_intermitente(bool cerrar)
                 if (cerrar) sig->clear_request |= clear;
                 else sig->clear_request &= clear;
             }
-            sig->cierre_stick = !cerrar;
         }
     }
     cerrada = cerrar;

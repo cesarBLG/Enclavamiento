@@ -19,7 +19,7 @@ bool gestor_conectado = true;
 void on_connect(struct mosquitto *mosq, void *userdata, int rc)
 {
     if (rc == 0) {
-        log("mqtt", "connected", LOG_DEBUG);
+        log(name, "connected", LOG_DEBUG);
         connected = true;
         mosquitto_subscribe(mosq, nullptr, "gestor_conexion", 0);
         mosquitto_subscribe(mosq, nullptr, "desconexion/+", 0);
@@ -27,7 +27,7 @@ void on_connect(struct mosquitto *mosq, void *userdata, int rc)
             mosquitto_subscribe(mosq, nullptr, t.c_str(), 0);
         }
     } else {
-        log("mqtt", "connection failed", LOG_DEBUG);
+        log(name, "connection failed", LOG_DEBUG);
     }
 }
 void subscribe(const std::string &topic)

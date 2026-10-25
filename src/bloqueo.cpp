@@ -23,6 +23,7 @@ tipo(j.value("Tipo", TipoBloqueo::BAU)), bloqueo_emisor(lado == Lado::Impar ? Es
             }
         }
     }
+    normalizacion_escape_auto = j.value("NormalizaciónEscapeAutomática", false);
     deslizamiento_bloqueo = j.value("Deslizamiento", parametros.deslizamiento_bloqueo);
 
     subscribe("bloqueo/"+id_to_mqtt(id.id)+"/colateral");
@@ -196,14 +197,12 @@ void bloqueo::message_cv(const id_elemento &id, estado_cv ecv)
     bool liberar = false;
 
     // Desbloqueo si se produce liberación del último CV de trayecto
-    if (estado == bloqueo_receptor && index == 0 && cv_libre(est_cv)
+    if (estado == bloqueo_receptor && index == 0 && cv_libre(est_cv) && !cv_libre(prev_est)
          && (prev_est != (lado == Lado::Impar ? EstadoCV::OcupadoImpar : EstadoCV::OcupadoPar))
          && (!ecv.evento || ecv.evento->lado == lado))
             liberar = true;
 
-    for (auto *sec : cvs) {
-        estado_cvs[sec->id.id] = sec->get_cv()->get_state();
-    }
+    estado_cvs[cvs[index]->id.id] = est_cv;
     calcular_ocupacion();
 
     // Gestión de bloqueo en estaciones cerradas
@@ -350,7 +349,7 @@ void bloqueo::update()
         estado_objetivo = estado;
         log(id, "solicitud cancelada, bloqueo no posible", LOG_DEBUG);
     }
-    if (colateral.escape && (bloqueo_vinculado == nullptr || !bloqueo_vinculado->escape) && dependencias[estacion]->cerrada) {
+    if (colateral.escape && (bloqueo_vinculado == nullptr || !bloqueo_vinculado->escape) && (dependencias[estacion]->cerrada || normalizacion_escape_auto)) {
         normalizar_escape = true;
     }
     if (normalizar_escape && (!colateral.escape || !desbloqueo_permitido())) {

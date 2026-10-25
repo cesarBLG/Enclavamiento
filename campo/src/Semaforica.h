@@ -8,11 +8,11 @@ class Semaforica : public mqtt_device
     int pinTestigo;
     int pinFarol;
     bool farol;
-    estado_señal estado;
+    Aspecto aspecto;
 public:
     const char *id;
     std::string topic;
-    Semaforica(const char *id, mqtt_client *client, int pin, int pinTestigo=-1, int pinFarol=-1) : mqtt_device(client), pin(pin), pinTestigo(pinTestigo), pinFarol(pinFarol), farol(false), estado({Aspecto::Parada, Aspecto::Parada, false}), id(id)
+    Semaforica(const char *id, mqtt_client *client, int pin, int pinTestigo=-1, int pinFarol=-1) : mqtt_device(client), pin(pin), pinTestigo(pinTestigo), pinFarol(pinFarol), farol(false), aspecto(Aspecto::Parada), id(id)
     {
         topic = std::string("signal/")+id+"/state";
     }
@@ -20,11 +20,9 @@ public:
     {
         if (this->topic == topic) {
             estado_señal e = json::parse(payload);
-            if (e.aspecto != estado.aspecto) {
-            estado = e;
-            update_semaforo();
-            } else {
-            estado = e;
+            if (aspecto != e.aspecto.aspecto) {
+                aspecto = e.aspecto.aspecto;
+                update_semaforo();
             }
         } else if (topic == "luz") {
             if (payload == "día") farol = false;
@@ -52,7 +50,7 @@ public:
             if (!farol) {
                 digitalWrite(pinFarol, LOW);
             } else {
-                switch (estado.aspecto)
+                switch (aspecto)
                 {
                     default:
                         digitalWrite(pinFarol, HIGH);
@@ -66,7 +64,7 @@ public:
     }
     void update_semaforo()
     {
-        switch (estado.aspecto)
+        switch (aspecto)
         {
             default:
                 servo.write(90);

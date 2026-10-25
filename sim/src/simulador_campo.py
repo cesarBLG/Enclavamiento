@@ -56,14 +56,13 @@ client = mqtt.Client()
 client.on_connect = on_connect
 client.on_message = on_message
 
-client.connect(BROKER, PORT)
-
 cejes = []
 cvs = []
 agujas = []
 for filename in sys.argv[1:]:
     with open(filename, "r", encoding="utf-8") as f:
         data = json.load(f)
+        BROKER = data["MQTT"]["Host"]
         for dep_id, dependencia in data["Dependencias"].items():
             if dependencia.get("Controlada") is False or not dependencia.get("CVs"):
                 continue
@@ -77,6 +76,8 @@ for filename in sys.argv[1:]:
             for id, sec in dependencia["Secciones"].items():
                 if sec.get("Tipo") == "Aguja":
                     agujas.append(f"{dep_id}/{id}")
+
+client.connect(BROKER, PORT)
 # Start loop
 client.loop_start()
 time.sleep(2)

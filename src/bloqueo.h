@@ -22,6 +22,7 @@ public:
     const std::string topic_colateral;
     señal_impl *señal_entrada = nullptr;
     bool deslizamiento_bloqueo;
+    bool normalizacion_escape_auto = false;
 protected:
     Lado sentido_preferente;
     EstadoBloqueo estado_inicial;

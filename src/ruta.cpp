@@ -721,7 +721,7 @@ void ruta::update()
         // Si la ruta no protege ninguna sección (e.g. salida directamente al bloqueo), se disuelve con el cierre de señal
         if (señal_inicio->ruta_activa != this && secciones.empty()) disolver();
     }
-    if (ocupada && señal_inicio->ruta_activa == this) {
+    if (ocupada && señal_inicio->ruta_activa == this && !secciones.empty()) {
         bool libre = true;
         for (int i=0; i<secciones.size(); i++) {
             if (secciones[i].seccion->get_cv() != nullptr && !cv_libre(secciones[i].seccion->get_cv()->get_state())) {

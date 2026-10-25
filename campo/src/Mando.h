@@ -59,6 +59,13 @@ class LedRGB
   int pinG;
   int pinB;
   public:
+  LedRGB(int pinR=-1, int pinG=-1, int pinB=-1) : pinR(pinR), pinG(pinG), pinB(pinB) {}
+  void setup()
+  {
+    if (pinR >= 0) pinMode(pinR, OUTPUT);
+    if (pinG >= 0) pinMode(pinG, OUTPUT);
+    if (pinB >= 0) pinMode(pinB, OUTPUT);
+  }
   void set(bool r, bool g, bool b, int blink=0)
   {
     if (((millis()/500)%2)+1 == blink) r = g = b = false;

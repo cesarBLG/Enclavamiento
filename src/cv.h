@@ -242,6 +242,7 @@ public:
         } else {
             std::string msg;
             int num;
+            bool delayed = false;
             size_t pos = payload.find(':');
             if (pos != std::string::npos) { // if ':' was found
                 msg = payload.substr(0, pos);
@@ -250,11 +251,17 @@ public:
                 msg = payload;
                 num = 1;
             }
+            if (msg.starts_with("Delayed")) {
+                delayed = true;
+                msg = msg.substr(7);
+            }
             Lado lado = it->second.lado;
             if (it->second.reverse != (lado == Lado::Par)) {
                 if (msg == "Nominal") msg = "Reverse";
                 else if (msg == "Reverse") msg = "Nominal";
             }
+            if (msg == "Nominal" && delayed && num_ejes[lado] > 0) evento = {};
+            else evento = {lado, msg == "Nominal", it->second.seccion, it->second.pin};
             it->second.averia = it->second.desconexion = false;
             bool averia = is_averia();
             auto now = get_milliseconds();
@@ -273,11 +280,11 @@ public:
                                 }
                             }
                         }
-                        if (now - ultimo_eje[lado] < tiempo_auto_prenormalizacion_tren) arr.pop_back();
+                        if (now - ultimo_eje[lado] < 15000 || delayed) arr.pop_back();
                     }
                     ++num_ejes[lado];
                     arr.push_back(num_ejes[lado]);
-                    ultimo_eje[lado] = now;
+                    if (!delayed) ultimo_eje[lado] = now;
                 } else if (msg == "Reverse" && it->second.liberar) {
                     if (num_ejes[lado] > 0) {
                         --num_ejes[lado];
@@ -306,7 +313,7 @@ public:
                                         n -= val0;
                                     }
                                     ultimo_tren_liberado[opLado] = {get_milliseconds(), val0};
-                                } else if (get_milliseconds() - ultimo_tren_liberado[opLado].first < 15000 && diff < ultimo_tren_liberado[opLado].second * (1 - fraccion_ejes_prenormalizacion)) {
+                                } else if ((get_milliseconds() - ultimo_tren_liberado[opLado].first < 15000 || delayed) && diff < ultimo_tren_liberado[opLado].second * (1 - fraccion_ejes_prenormalizacion)) {
                                     for (int &n : arr) {
                                         n -= diff;
                                     }
@@ -333,7 +340,6 @@ public:
                 }, tiempo_auto_prenormalizacion);
             }
             set_timer_auto_prenormalizacion_tren();
-            evento = {lado, msg == "Nominal", it->second.seccion, it->second.pin};
             update();
         }
     }
