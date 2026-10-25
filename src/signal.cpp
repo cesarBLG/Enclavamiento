@@ -295,6 +295,10 @@ void señal_impl::determinar_aspecto()
     }
     // Cerrar señal con el cantón ocupado en sentido contrario
     cerrar_itinerario |= canton == EstadoCanton::Ocupado;
+    // Cerrar señal si el CV de señal se ha ocupado recientemente
+    cv *cv_inicio = get_cv_inicio();
+    if (cv_inicio != nullptr && !cv_libre(cv_inicio->get_state()) && ultimo_paso != 0 && get_milliseconds() - ultimo_paso < 15000)
+        cerrar_itinerario = true;
 
     if (sig_señal != nullptr) agujas.update(sig_señal->desviada_propagada);
 
@@ -811,6 +815,7 @@ void señal_impl::message_cv(const id_elemento &id, estado_cv ev)
                 if (sig->ruta_activa == ruta_activa) break;
             }
         }
+        ultimo_paso = get_milliseconds();
         if (ev.evento && (ev.evento->seccion.id == "" || (ev.evento->seccion == seccion->id && ev.evento->pin == pin))) {
             // Si la señal estaba cerrada, es un rebase de señal
             if (aspecto <= Aspecto::Parada) {
@@ -827,6 +832,7 @@ void señal_impl::message_cv(const id_elemento &id, estado_cv ev)
             paso_circulacion = true;
         }
     }
+    if (cv_libre(ev.estado)) ultimo_paso = 0;
 }
 cv* señal_impl::get_cv_inicio()
 {
@@ -888,7 +894,7 @@ void nodo_proximidad::update(int estado)
 proximidad::proximidad(señal_impl *señal_inicio, const std::set<id_elemento> &cvs_inicio_proximidad) : 
     señal_fin(señal_inicio),
     cvs_inicio_proximidad(cvs_inicio_proximidad),
-    root(std::make_unique<nodo_proximidad>(señal_inicio->seccion_prev, señal_inicio->seccion, señal_inicio->lado_prev, cvs_inicio_proximidad))
+    root(señal_inicio->seccion_prev != nullptr ? std::make_unique<nodo_proximidad>(señal_inicio->seccion_prev, señal_inicio->seccion, señal_inicio->lado_prev, cvs_inicio_proximidad) : nullptr)
 {
 }
 void señal_avanzada_sin_parada::determinar_aspecto()

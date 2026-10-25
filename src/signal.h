@@ -28,7 +28,7 @@ struct proximidad
     proximidad(señal_impl *señal_inicio, const std::set<id_elemento> &cvs_inicio_proximidad);
     void update()
     {
-        root->update(1);
+        if (root != nullptr) root->update(1);
     }
 };
 struct señal
@@ -187,6 +187,7 @@ protected:
     bool rebasada;
 
     int64_t ultimo_paso_abierta;
+    int64_t ultimo_paso;
     bool paso_circulacion = false;
 
     bool itinerarios_desviada = false;
