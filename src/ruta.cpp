@@ -407,9 +407,9 @@ bool ruta::establecer(bool msg)
         log(id, "re-mandada", LOG_DEBUG);
         return true;
     }
-    destino->ruta_activa = this;
+    if (destino->ruta_activa == nullptr) destino->ruta_activa = this;
     if (!movimiento::establecer(msg)) {
-        destino->ruta_activa = nullptr;
+        if (destino->ruta_activa == this) destino->ruta_activa = nullptr;
         return false;
     }
     clear_timer(diferimetro_dei);

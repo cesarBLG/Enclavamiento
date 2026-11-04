@@ -10,13 +10,17 @@ Tramo de vía en el que se realiza la detección del tren. Un CV puede estar:
 - Ocupado: sentido de ocupación desconocido, u ocupado en ambos sentidos
 
 La lógica del CV está gestionada por la clase *cv_impl*, que recibe mensajes del sistema
-de detección en campo (contadores de ejes). El funcionamiento es el siguiente:
+de detección en campo. Para circuitos de vía de contadores de ejes *cv_impl_cejes*,
+el funcionamiento es el siguiente:
 - El mensaje recibido de un contador de ejes incrementa o disminuye un contador
   que incluye el número de ejes en el CV.
 - Dos mensajes se asignan al mismo tren si transcurren menos de 15 segundos entre ellos
 - Se establece un margen de fiabilidad que prenormaliza de forma automática el cantón tras la liberación
   de. al menos, el 75% (configurable) de los ejes de cada tren.
 - Se establece un temporizador que prenormaliza de forma automática e incondicional el cantón (desactivado por defecto)
+- Los mensajes con el prefijo "Delayed" corresponden a ejes para los que no se ha podido
+determinar con fiabilidad el sentido de paso, pero compatibles con el paso reciente (menor de 15 segundos)
+de un tren con sentido determinado.
 
 Cada CV debe estar gestionado por un único enclavamiento, que deberá crear una clase *cv_impl*
 por cada CV que gestione. El resto de enclavamientos podrán acceder al estado de dicho CV usando
@@ -77,12 +81,15 @@ movimientos incompatibles. Pueden ser de itinerario (para circulación de trenes
   estar libres (u ocupados en el mismo sentido, si se permite), no debe haber rutas incompatibles
   ya establecidas, las secciones de vía a recorrer no están reservadas para otra ruta y el bloqueo
   no puede estar establecido en sentido contrario (salvo maniobras compatibles con el bloqueo).
+- Itinerario diferido (ID): si no se dan las condiciones, se mantiene la petición hasta que se cumplen
+  y la señal abre.
 - Disolución normal: conforme se produce la secuencia de ocupación y liberación de los CVs, las
   secciones de vía se van desenclavando, hasta que la ruta completa queda libre.
 - Disolución artificial (DAI): ejecutada por el operador cuando no hay trenes en la ruta. Cierra la
   señal inmediatamente, pero la ruta no se libera hasta que transcurre un temporizador (diferímetro).
   Si la ruta se ocupa mientras actúa el temporizador, ésta no se libera. De esta forma, se mantiene
-  la ruta asegurada si el tren no tuviera tiempo a reaccionar al cierre de la señal.
+  la ruta asegurada si el tren no tuviera tiempo a reaccionar al cierre de la señal. El mando DAB
+  adicionalmente anula también el bloqueo.
 - Disolución de emergencia (DEI): ejecutada por el operador para disolver la ruta estando ocupada.
   Sólo se libera la ruta tras la actuación de un diferímetro.
 - Sucesión automática (SA): desactiva el cierre en stick de las señales, y la ruta no se desenclava

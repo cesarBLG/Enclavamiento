@@ -233,12 +233,18 @@ void bloqueo::message_cv(const id_elemento &id, estado_cv ecv)
     // Gestionar desbloqueo
     if (liberar && desbloqueo_permitido()) estado_objetivo = EstadoBloqueo::Desbloqueo;
 
-    if (cv_libre(ecv.estado_previo) && !cv_libre(ecv.estado) && estado == bloqueo_receptor && señal_entrada != nullptr) {
-        // Soneria proximidad
+    // Soneria proximidad
+    if (señal_entrada != nullptr) {
         auto &prox = señal_entrada->proximidad_señal.cvs_inicio_proximidad;
-        if (prox.find(id) != prox.end() || (prox.empty() && index == 0))
-            sonerias[TipoSoneria::OcupacionProximidad] = get_milliseconds();
+        if (prox.find(id) != prox.end() || (prox.empty() && index == 0)) {
+            if (cv_libre(ecv.estado_previo) && !cv_libre(ecv.estado) && ((!ecv.evento  && estado == bloqueo_receptor) || (ecv.evento && ecv.evento->ocupacion && ecv.evento->lado == opp_lado(lado))) && señal_entrada != nullptr) {
+                sonerias[TipoSoneria::OcupacionProximidad] = get_milliseconds();
+            } else if (cv_libre(ecv.estado)) {
+                sonerias.erase(TipoSoneria::OcupacionProximidad);
+            }
+        }
     }
+    
 
     update();
 }

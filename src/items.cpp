@@ -40,19 +40,7 @@ RespuestaMando mando(const std::vector<std::string> &ordenes, int me)
 {
     std::string cmd = ordenes[0];
     if (comandos_cv.find(cmd) != comandos_cv.end()) {
-        id_elemento id;
-        if (ordenes.size() == 3) {
-            id = id_elemento(ordenes[1], ordenes[2]);
-        } else if (ordenes.size() == 4) {
-            std::string colat = ordenes[3];
-            for (auto &[idd, dest] : destinos_ruta) {
-                if (dest->tipo != TipoDestino::Colateral) continue;
-                if (idd.id.starts_with(ordenes[1]+":"+colat)) {
-                    id = id_elemento(colat, ordenes[2]);
-                    break;
-                }
-            }
-        }
+        id_elemento id(ordenes[1], ordenes[2]);
         auto it = cvs.find(id);
         if (it != cvs.end()) return it->second->mando(ordenes[0], me);
     }
@@ -400,6 +388,8 @@ void init_items_ordered(const json &j, std::string tipo)
                     cv_impls[ic] = new cv_impl_cv(ic, jcv);
                     cvs[ic] = cv_impls[ic];
                 }
+                if (jcv.contains("Alias"))
+                    cvs[id_elemento::from_default_dep(jcv["Alias"], estacion)] = cvs[ic];
             }
         }
         if (tipo == "Secciones") {

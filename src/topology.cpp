@@ -206,6 +206,10 @@ TipoMovimiento seccion_via::get_tipo_movimiento()
     if (bloqueo_asociado) {
         if (bloqueo_act.estado != EstadoBloqueo::Desbloqueo && bloqueo_act.estado != EstadoBloqueo::SinDatos)
             return TipoMovimiento::Itinerario;
+        for (auto l : {Lado::Impar, Lado::Par}) {
+            if (bloqueo_act.ruta[l] == TipoMovimiento::Maniobra && bloqueo_act.maniobra_compatible[l] == CompatibilidadManiobra::Incompatible)
+                return TipoMovimiento::Maniobra;
+        }
     }
     return TipoMovimiento::Ninguno;
 }
@@ -379,23 +383,37 @@ int seccion_via::get_out(seccion_via* next, Lado dir)
 }
 RemotaCV seccion_via::get_estado_remota()
 {
-    auto cv_it = cvs.find(id_cv);
-    if (cv_it != cvs.end()) return cv_it->second->get_estado_remota();
-
     RemotaCV r;
+    EstadoCV estado = EstadoCV::Libre;
     TipoMovimiento tipo = get_tipo_movimiento();
-    r.CV_DAT = 1;
+    auto cv_it = cvs.find(id_cv);
+    if (cv_it != cvs.end()) {
+        r = cv_it->second->get_estado_remota();
+        estado = cv_it->second->get_state();
+    } else {
+        r.CV_DAT = 1;
+        r.CV_ME = 0;
+        r.CV_BV = 0;
+        r.CV_OCUP_TIPO = 0;
+        r.CV_CEJES_AV = 0;
+        r.CV_CEJES_PREN = 0;
+        r.CV_UC = 0;
+        r.CV_NSEC = 0;
+    }
+    if (me_pendiente) r.CV_ME = 1;
+    if (bloqueo_seccion) r.CV_BV = 1;
     r.CV_ME = me_pendiente ? 1 : 0;
     r.CV_BV = bloqueo_seccion? 1 : 0;
-    r.CV_OCUP_TIPO = 0;
-    if (tipo == TipoMovimiento::Maniobra) r.CV_EST = 2;
+    if (estado > EstadoCV::Prenormalizado) r.CV_EST = 3;
+    else if (tipo == TipoMovimiento::Maniobra) r.CV_EST = 2;
     else if (tipo == TipoMovimiento::Itinerario || tipo == TipoMovimiento::Rebase) r.CV_EST = 1;
+    else if (estado == EstadoCV::Prenormalizado) r.CV_EST = 3;
     else r.CV_EST = 0;
     r.CV_DES = 0;
-    r.CV_CEJES_AV = 0;
-    r.CV_CEJES_PREN = 0;
-    r.CV_UC = 0;
-    r.CV_NSEC = 0;
+    for (auto &[_, mov] : deslizamiento) {
+        if (mov->tipo != TipoMovimiento::Maniobra) r.CV_DES = 1;
+        else if (r.CV_DES == 0) r.CV_DES = 2;
+    }
     return r;
 }
 RemotaCVX cruzamiento::get_estado_remota()

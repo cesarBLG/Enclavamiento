@@ -8,24 +8,13 @@ bool cv_libre(EstadoCV estado)
 RemotaCV cv::get_estado_remota()
 {
     RemotaCV r;
-    seccion_via *seccion = secciones.size() == 1 ? *secciones.begin() : nullptr;
-    TipoMovimiento tipo = seccion != nullptr ? seccion->get_tipo_movimiento() : TipoMovimiento::Ninguno;
     r.CV_DAT = 1;
-    r.CV_ME = me_pendiente || (seccion != nullptr && seccion->is_me_pendiente()) ? 1 : 0;
-    r.CV_BV = ((seccion != nullptr && seccion->is_bloqueo_seccion()) || btv) ? 1 : 0;
+    r.CV_ME = me_pendiente ? 1 : 0;
+    r.CV_BV = btv ? 1 : 0;
     r.CV_OCUP_TIPO = ocupacion_intempestiva ? 1 : 0;
-    if (estado > EstadoCV::Prenormalizado) r.CV_EST = 3;
-    else if (tipo == TipoMovimiento::Maniobra) r.CV_EST = 2;
-    else if (tipo == TipoMovimiento::Itinerario || tipo == TipoMovimiento::Rebase) r.CV_EST = 1;
-    else if (estado == EstadoCV::Prenormalizado) r.CV_EST = 3;
+    if (estado >= EstadoCV::Prenormalizado) r.CV_EST = 3;
     else r.CV_EST = 0;
     r.CV_DES = 0;
-    if (seccion != nullptr) {
-        for (auto &[_, mov] : seccion->get_deslizamiento()) {
-            if (mov->tipo != TipoMovimiento::Maniobra) r.CV_DES = 1;
-            else if (r.CV_DES == 0) r.CV_DES = 2;
-        }
-    }
     r.CV_CEJES_AV = averia ? 1 : 0;
     r.CV_CEJES_PREN = estado == EstadoCV::Prenormalizado ? 1 : 0;
     r.CV_UC = 0;

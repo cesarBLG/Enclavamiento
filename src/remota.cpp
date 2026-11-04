@@ -119,7 +119,7 @@ void update_remota()
             } else if (sec->tipo == TipoSeccion::Cruzamiento) {
                 push(j, {ElementoRemota::CVX, id}, json(((cruzamiento*)sec)->get_estado_remota()));
             } else {
-                if (cvs.find(sec->id_cv) != cvs.end() && cv_impls.find(sec->id_cv) == cv_impls.end()) continue;
+                if (cvs.find(sec->id_cv) != cvs.end() && dependencias.find(sec->id_cv.dependencia) == dependencias.end()) continue;
                 push(j, {ElementoRemota::CV, id}, json(sec->get_estado_remota()));
             }
         }
