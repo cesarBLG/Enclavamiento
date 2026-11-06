@@ -90,7 +90,7 @@ public:
     const id_elemento id;
     const std::optional<id_elemento> bloqueo_asociado;
     const TipoSeccion tipo;
-    const id_elemento id_cv;
+    id_elemento id_cv;
 
     std::set<pn_enclavado*> pns;
     lados<std::map<int,std::set<int>>> all_outs;
@@ -114,7 +114,7 @@ protected:
 
     std::vector<flanco*> proteccion_flanco;
 
-    lados<int> ocupacion_outs;
+    lados<int> ocupacion_outs = {-1, -1};
 
     bool me_pendiente = false;
     bool bloqueo_seccion = false;

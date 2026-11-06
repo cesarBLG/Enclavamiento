@@ -405,6 +405,8 @@ void init_items_ordered(const json &j, std::string tipo)
                 } else {
                     secciones[is] = new seccion_via(is, jsec, tipo);
                 }
+                if (jsec.contains("Alias"))
+                    secciones[id_elemento::from_default_dep(jsec["Alias"], estacion)] = secciones[is];
             }
         }
         if (tipo == "PNs") {

@@ -41,7 +41,7 @@ public:
     void construir_cv_agujas(seccion_via *sec, seccion_via *prev, Lado dir, std::vector<elemento_ruta> &r);
     void send_state();
     bool bloqueo_permitido(bool emisor);
-    bool desbloqueo_permitido();
+    bool desbloqueo_permitido(bool normalizar_escape=false);
     void calcular_ocupacion()
     {
         // Distinción de ocupación por sentido
@@ -134,7 +134,7 @@ public:
                 estado_objetivo = EstadoBloqueo::Desbloqueo;
                 aceptado = RespuestaMando::Aceptado;
             }
-            if (colateral.escape && desbloqueo_permitido()) {
+            if (colateral.escape && desbloqueo_permitido(true)) {
                 normalizar_escape = true;
                 aceptado = RespuestaMando::Aceptado;
             }

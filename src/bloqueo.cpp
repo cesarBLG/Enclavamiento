@@ -83,7 +83,7 @@ bool bloqueo::bloqueo_permitido(bool emisor)
     }
     return false;
 }
-bool bloqueo::desbloqueo_permitido()
+bool bloqueo::desbloqueo_permitido(bool normalizar_escape)
 {
     // Condiciones para el desbloqueo de un sentido:
     // - No está establecido el itinerario de salida
@@ -91,7 +91,8 @@ bool bloqueo::desbloqueo_permitido()
     // - No está establecido el cierre de señales por la colateral
     // - Si no existe posibilidad de cruce en la estación emisora (estación cerrada sin agujas talonables),
     //   esta estación no puede ser receptora de otro bloqueo
-    if (ruta == TipoMovimiento::Itinerario || colateral.ruta == TipoMovimiento::Itinerario || ocupado.par || ocupado.impar) return false;
+    if ((ruta == TipoMovimiento::Itinerario || colateral.ruta == TipoMovimiento::Itinerario) && (!normalizar_escape || !normalizacion_escape_auto)) return false;
+    if (ocupado.par || ocupado.impar) return false;
     if (escape && cv_entrada != nullptr && !cv_libre(cv_entrada->get_state())) return false;
     if (tipo == TipoBloqueo::BAD || tipo == TipoBloqueo::BLAD) return false;
     if (estado == bloqueo_emisor) {
@@ -134,7 +135,7 @@ void bloqueo::message_cv(const id_elemento &id, estado_cv ecv)
 {
     int index = -1;
     for (int i=0; i<cvs.size(); i++) {
-        if (cvs[i]->id == id) {
+        if (cvs[i]->id_cv == id) {
             index = i;
             break;
         }
@@ -358,10 +359,10 @@ void bloqueo::update()
     if (colateral.escape && (bloqueo_vinculado == nullptr || !bloqueo_vinculado->escape) && (dependencias[estacion]->cerrada || normalizacion_escape_auto)) {
         normalizar_escape = true;
     }
-    if (normalizar_escape && (!colateral.escape || !desbloqueo_permitido())) {
+    if (normalizar_escape && (!colateral.escape || !desbloqueo_permitido(true))) {
         normalizar_escape = false;
     }
-    if (colateral.normalizar_escape && escape && desbloqueo_permitido()) {
+    if (colateral.normalizar_escape && escape && desbloqueo_permitido(true)) {
         escape = false;
         dependencias[estacion]->set_alarma(TipoAlarma::EM, this, 0);
         log(id, "escape emisor normalizado", LOG_INFO);

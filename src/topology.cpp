@@ -2,7 +2,7 @@
 #include "ruta.h"
 #include "items.h"
 #include "pn_enclavado.h"
-seccion_via::seccion_via(const id_elemento &id, const json &j, TipoSeccion tipo) : id(id), bloqueo_asociado(j.contains("Bloqueo") ? std::optional<id_elemento>(id_elemento::from_default_dep(j["Bloqueo"], id.dependencia)) : std::nullopt), tipo(tipo), id_cv(id_elemento::from_default_dep(j.value("CV", id.id), id.dependencia))
+seccion_via::seccion_via(const id_elemento &id, const json &j, TipoSeccion tipo) : id(id), bloqueo_asociado(j.contains("Bloqueo") ? std::optional<id_elemento>(id_elemento::from_default_dep(j["Bloqueo"], id.dependencia)) : std::nullopt), tipo(tipo)
 {
     if (tipo == TipoSeccion::Lineal || tipo == TipoSeccion::Cruzamiento) {
         for (int i=0; i<(tipo == TipoSeccion::Cruzamiento ? 2 : 1); i++) {
@@ -12,9 +12,11 @@ seccion_via::seccion_via(const id_elemento &id, const json &j, TipoSeccion tipo)
             }
         }
     }
+    id_cv = id_elemento::from_default_dep(j.value("CV", id.id), id.dependencia);
     auto cv_it = cvs.find(id_cv);
     if (cv_it != cvs.end()) {
         cv_seccion = cvs[id_cv];
+        id_cv = cv_seccion->id;
         cv_seccion->secciones.insert(this);
     } else {
         cv_seccion = nullptr;
@@ -248,13 +250,13 @@ void seccion_via::message_cv(const id_elemento &id, estado_cv ev)
                 intempestiva = true;
             } else if (ev.evento && ev.evento->seccion == this->id) {
                 // Si se conoce el punto de entrada de la ocupación, comprobar que corresponde al de la ruta asegurada
-                if (!ruta_asegurada || ruta_asegurada->outs[opp_lado(ev.evento->lado)] != ev.evento->pin)
+                if (!ruta_asegurada || ruta_asegurada->outs[opp_lado(ev.evento->lado)] != ev.evento->pin || ruta_asegurada->lado == opp_lado(ev.evento->lado))
                     intempestiva = true;
             } else if (ruta_asegurada && ruta_asegurada->lado) {
                 // Comprobar que el CV anterior está ocupado
                 Lado opp = opp_lado(*ruta_asegurada->lado);
                 int in = ruta_asegurada->outs[opp];
-                if (in >= 0 && siguientes_secciones[opp][in].id.id != "") {
+                if (in >= 0 && siguientes_secciones[opp].size() > in && siguientes_secciones[opp][in].id.id != "") {
                     auto *sec = secciones[siguientes_secciones[opp][in].id];
                     if (sec->ruta_asegurada && sec->ruta_asegurada->ruta_asegurada == ruta_asegurada->ruta_asegurada && sec->get_cv() != nullptr && sec->get_cv() != cv_seccion && cv_libre(sec->get_cv()->get_state()))
                         intempestiva = true;
