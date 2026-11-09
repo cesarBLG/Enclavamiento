@@ -10,7 +10,7 @@ from xml.etree import ElementTree
 from rich_click import group
 from tomlkit import item
 
-from items import Aguja, CvLineal, Item, Point, Señal, Topera
+from items import Aguja, Cruzamiento, CvLineal, Item, Point, Señal, Topera
 from label_positions import (
 	SIGNAL_ICON_HEIGHT, SIGNAL_ICON_WIDTH, label_anchor, label_angle,
 	label_background_width,
@@ -22,6 +22,7 @@ if str(INKEX_UTILS_PATH) not in sys.path:
 	sys.path.insert(0, str(INKEX_UTILS_PATH))
 from svg.generate_track import generate_track_svg  # pyright: ignore[reportMissingImports]
 from svg.generate_junction import generate_junction  # pyright: ignore[reportMissingImports]
+from svg.generate_crossing import generate_crossing  # pyright: ignore[reportMissingImports]
 
 
 class Symbol:
@@ -175,6 +176,27 @@ def _signal_group(item: Señal) -> tuple[ElementTree.Element, list[Point]]:
 	return group, absolute
 
 
+def _crossing_group(item: Cruzamiento):
+	group = ElementTree.Element("{http://www.w3.org/2000/svg}g", {
+		"transform": (
+			f"translate({item.position.x:.15g} {item.position.y:.15g}) "
+			f"rotate({degrees(item.rotation.angle):.15g})"
+		),
+		"{http://www.inkscape.org/namespaces/inkscape}label": item.id.id,
+	})
+	for child in generate_crossing(radians(item.angulo)):
+		group.append(child)
+	for points, label in (
+		(item.points_p1, "p1"), (item.points_p2, "p2"),
+		(item.points_p3, "p3"), (item.points_p4, "p4"),
+	):
+		group.append(generate_track_svg(
+			[point for point in points], name=label,
+		))
+	_add_item_label(group, item.id.id_corto, 0, 0)
+	return group
+
+
 def _topera_group(item: Topera):
 	angle = item.rotation.angle
 	ux, uy = cos(angle), sin(angle)
@@ -202,7 +224,7 @@ def export_svg(items: Iterable[Item]) -> str:
 	locales a las coordenadas del layout antes de formar su ``path``.
 	Elementos aún no soportados se omiten.
 	"""
-	layers = {"CVs": [], "Agujas": [], "Señales": [], "Toperas": []}
+	layers = {"CVs": [], "Agujas": [], "Cruzamientos": [], "Señales": [], "Toperas": []}
 	bounds = [None,None,None,None]
 	def update_bounds(points):
 		if isinstance(points, Point):
@@ -234,6 +256,13 @@ def export_svg(items: Iterable[Item]) -> str:
 			                          + item.points_invertida[1:])]
 			update_bounds(absolute)
 			layers["Agujas"].append(_junction_group(item))
+		elif isinstance(item, Cruzamiento):
+			absolute = [item.position + point.get_rotated(item.rotation)
+			            for points in (item.points_p1, item.points_p2,
+			                           item.points_p3, item.points_p4)
+			            for point in points]
+			update_bounds(absolute)
+			layers["Cruzamientos"].append(_crossing_group(item))
 		elif isinstance(item, CvLineal):
 			absolute = [item.position + point.get_rotated(item.rotation) for point in item.points]
 			update_bounds(absolute)

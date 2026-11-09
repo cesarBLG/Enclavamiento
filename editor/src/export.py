@@ -1,7 +1,7 @@
 """Exporta el grafo geométrico de vías al formato de enclavamiento."""
 
 from typing import List
-from items import Aguja, CvLineal, Lado, Señal, SeccionVia
+from items import Aguja, Cruzamiento, CvLineal, Lado, Señal, SeccionVia
 
 def conectados(first, second):
     p1, a1 = first
@@ -173,4 +173,19 @@ def generar_config_ence(itemlist: List[SeccionVia]):
             get_config(item.id.dep, "Secciones")[item.id.id_corto] = sec
             if item.get_cv() is not None:
                 get_config(item.id.dep, "CVs")[item.get_cv().id_corto] = {}
+        elif isinstance(item, Cruzamiento):
+            sec = {"Tipo": "Cruzamiento"}
+            if item.get_cv() is not None:
+                sec["CV"] = item.get_cv().id
+            sec["Conexiones"] = {
+                lado.name: serialize_connections(
+                    get_siguientes_secciones(item, lado, secciones, conexiones)
+                )
+                for lado in (Lado.Impar, Lado.Par)
+            }
+            get_config(item.id.dep, "Secciones")[item.id.id_corto] = sec
+            if item.get_cv() is not None:
+                get_config(item.id.dep, "CVs")[item.get_cv().id_corto] = {
+                    "Tipo": "Cruzamiento"
+                }
     return config

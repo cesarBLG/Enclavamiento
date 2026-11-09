@@ -10,13 +10,14 @@ import math
 from pathlib import Path
 from typing import Dict, List, Tuple
 
+GEOMETRY_TOLERANCE = 1e-5
+
 class TipoElemento(Enum):
     CV_LINEAL = 1
     AGUJA = 2
     CRUZAMIENTO = 3
     TOPERA = 4
     SEÑAL = 5
-
 
 class Lado(Enum):
     Par = 0
@@ -69,7 +70,7 @@ class Point:
     def __eq__(self, other):
         return isinstance(other, Point) and self.close_to(other)
 
-    def close_to(self, other: "Point", tol=1e-6):
+    def close_to(self, other: "Point", tol=GEOMETRY_TOLERANCE):
         return abs(self.x - other.x) <= tol and abs(self.y - other.y) <= tol
 
     def serialize(self):
@@ -116,7 +117,7 @@ class Angle:
     def opposite(self) -> Angle:
         return Angle(self.angle+math.pi)
 
-    def close_to(self, other: "Angle", tol=1e-6):
+    def close_to(self, other: "Angle", tol=GEOMETRY_TOLERANCE):
         diff = abs(self.angle - other.angle) % (2 * math.pi)
         return min(diff, 2 * math.pi - diff) <= tol
 
@@ -194,6 +195,7 @@ class Item:
             raise ValueError("Cada elemento debe ser un objeto JSON.")
         constructors = {"CvLineal": CvLineal.deserialize,
                         "Aguja": Aguja.deserialize,
+                        "Cruzamiento": Cruzamiento.deserialize,
                         "Señal": Señal.deserialize,
                         "Topera": Topera.deserialize}
         kind = data.get("tipo")
@@ -236,8 +238,7 @@ class CvLineal(SeccionVia):
         self.tipo_cv = None
         self.offset = self.length() / 2
 
-    @staticmethod
-    def get_connections():
+    def get_connections(self):
         return [(0, 1)]
 
     def get_oriented_connections(self, reverse):
@@ -333,8 +334,7 @@ class Aguja(SeccionVia):
         self.lado = None
         self.cv = None
 
-    @staticmethod
-    def get_connections():
+    def get_connections(self):
         return [(0, 2), (1, 2)]
 
     def get_oriented_connections(self, reverse):
@@ -370,6 +370,76 @@ class Aguja(SeccionVia):
                    [Point.deserialize(p) for p in data.get("points_punta", [])],
                    [Point.deserialize(p) for p in data.get("points_normal", [])],
                    [Point.deserialize(p) for p in data.get("points_invertida", [])],
+                   data["angulo"] if "angulo" in data else None)
+        cv = data.get("cv")
+        if cv:
+            item.cv = IdElemento(cv, dependency)
+        side = data.get("lado")
+        if side is not None:
+            try:
+                item.lado = Lado[side]
+            except (KeyError, TypeError):
+                raise ValueError(f"Lado inválido para {ident.id}.") from None
+        return item
+
+class Cruzamiento(SeccionVia):
+    def __init__(self, id: IdElemento, position: Point, rotation: Angle = None, tipo: int = 0,
+                 p1: List[Point] = None, p2: List[Point] = None,
+                 p3: List[Point] = None, p4: List[Point] = None, angulo: float = None):
+        super().__init__(id, TipoElemento.CRUZAMIENTO, position, rotation)
+        if angulo is None or not isinstance(angulo, (int, float)) or not math.isfinite(angulo):
+            raise ValueError(f"Falta el ángulo del cruzamiento {id.id}.")
+        self.angulo = float(angulo)
+        self.points_p1 = p1
+        self.points_p2 = p2
+        self.points_p3 = p3
+        self.points_p4 = p4
+        self.tipo_cruzamiento = tipo
+        self.lado = None
+        self.cv = None
+
+    def get_connections(self):
+        if self.tipo_cruzamiento == 1:
+            return [(0, 2), (1, 3), (0, 3), (1, 2)]
+        else:
+            return [(0, 2), (1, 3)]
+
+    def get_oriented_connections(self, reverse):
+        if reverse:
+            return [2,3]
+        else:
+            return [0,1]
+
+    def get_outs(self):
+        outs = []
+        for path in (self.points_p1, self.points_p2, self.points_p3, self.points_p4):
+            points = [point.get_rotated(self.rotation) for point in path]
+            outs.append((self.position + points[-1],
+                         get_angle(points[-2], points[-1])))
+        return outs
+
+    def get_cv(self):
+        return self.cv
+
+    def serialize(self):
+        return {**super().serialize(), "tipo": "Cruzamiento",
+                "points_p1": [p.serialize() for p in self.points_p1],
+                "points_p2": [p.serialize() for p in self.points_p2],
+                "points_p3": [p.serialize() for p in self.points_p3],
+                "points_p4": [p.serialize() for p in self.points_p4],
+                "angulo": self.angulo,
+                "tipo_cruzamiento": self.tipo_cruzamiento,
+                "cv": self.cv.id if self.cv else None,
+                "lado": self.lado.name if self.lado else None}
+
+    @classmethod
+    def deserialize(cls, data, dependency):
+        ident, position, rotation = Item._base(data, dependency)
+        item = cls(ident, position, rotation, data.get("tipo_cruzamiento", 0),
+                   [Point.deserialize(p) for p in data.get("points_p1", [])],
+                   [Point.deserialize(p) for p in data.get("points_p2", [])],
+                   [Point.deserialize(p) for p in data.get("points_p3", [])],
+                   [Point.deserialize(p) for p in data.get("points_p4", [])],
                    data["angulo"] if "angulo" in data else None)
         cv = data.get("cv")
         if cv:

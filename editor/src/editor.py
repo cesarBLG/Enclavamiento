@@ -39,7 +39,7 @@ except ImportError:
     LEFT_BUTTON = Qt.LeftButton
 
 from items import (
-    Aguja, Angle, CvLineal, Direccion, IdElemento, Lado, Point, Señal, TipoSeñal,
+    Aguja, Angle, Cruzamiento, CvLineal, Direccion, GEOMETRY_TOLERANCE, IdElemento, Lado, Point, Señal, TipoSeñal,
     Topera, deserialize_layout, serialize_layout,
 )
 from export import generar_config_ence
@@ -49,6 +49,7 @@ from label_positions import (
 )
 from svg.svg_export import export_svg
 from svg.generate_junction import get_junction_bounds
+from svg.generate_crossing import get_crossing_bounds
 
 
 GRID_WIDTH = 170/2
@@ -60,6 +61,7 @@ PICK_TOLERANCE = 5.0
 GRID_EXTENSION_TRIGGER = 2
 GRID_EXTENSION_CELLS = 10
 SIGNAL_ICON_PATH = Path(__file__).resolve().parent.parent / "symbols" / "señal.svg"
+SECTION_TYPES = (CvLineal, Aguja, Cruzamiento)
 
 
 class SignalIcon:
@@ -92,6 +94,8 @@ def item_kind_name(item):
         return "Tramo de vía"
     if isinstance(item, Aguja):
         return "Cambio de agujas"
+    if isinstance(item, Cruzamiento):
+        return "Cruzamiento"
     if isinstance(item, Señal):
         return "Señal"
     if isinstance(item, Topera):
@@ -124,6 +128,8 @@ class AddItemCommand:
             cv = item.get_cv().id if item.get_cv() else ""
             side = item.lado.name if item.lado else "None"
             self.text = f"Aguja {item.id.id} {cv} {side}"
+        elif isinstance(item, Cruzamiento):
+            self.text = f"Cruzamiento {item.id.id}"
         elif isinstance(item, Topera):
             self.text = f"Topera {item.id.id}"
         else:
@@ -647,6 +653,8 @@ class GridView(QGraphicsView):
                 local_paths = (item.points,)
             elif isinstance(item, Aguja):
                 local_paths = (item.points_normal, item.points_invertida, item.points_punta)
+            elif isinstance(item, Cruzamiento):
+                local_paths = (item.points_p1, item.points_p2, item.points_p3, item.points_p4)
             else:
                 return None
             paths = [
@@ -662,7 +670,7 @@ class GridView(QGraphicsView):
 
         hits = []
         for item in candidates:
-            if isinstance(item, (CvLineal, Aguja)):
+            if isinstance(item, SECTION_TYPES):
                 distance = track_distance(item)
                 if distance <= PICK_TOLERANCE:
                     hits.append((distance, item))
@@ -779,12 +787,12 @@ class GridView(QGraphicsView):
             self.preview_delta = delta
             self.editor._moving_sections = {
                 item for item in self.drag_items
-                if isinstance(item, (CvLineal, Aguja))
+                if isinstance(item, SECTION_TYPES)
             }
             signals_moving_with_track = {
                 item for item in self.drag_items
                 if isinstance(item, Señal) and any(
-                    isinstance(other, (CvLineal, Aguja))
+                    isinstance(other, SECTION_TYPES)
                     and self.editor.signal_matches_section(item, other)
                     for other in self.drag_items
                 )
@@ -792,7 +800,7 @@ class GridView(QGraphicsView):
             topes_moving_with_track = {
                 item for item in self.drag_items
                 if isinstance(item, Topera) and any(
-                    isinstance(other, (CvLineal, Aguja))
+                    isinstance(other, SECTION_TYPES)
                     and self.editor.topera_matches_section(item, other)
                     for other in self.drag_items
                 )
@@ -800,7 +808,7 @@ class GridView(QGraphicsView):
             signal_tracks = {
                 signal: next(
                     (item for item in self.drag_items
-                     if isinstance(item, (CvLineal, Aguja))
+                     if isinstance(item, SECTION_TYPES)
                      and self.editor.signal_matches_section(signal, item)),
                     None,
                 )
@@ -809,7 +817,7 @@ class GridView(QGraphicsView):
             topera_tracks = {
                 topera: next(
                     (item for item in self.drag_items
-                     if isinstance(item, (CvLineal, Aguja))
+                     if isinstance(item, SECTION_TYPES)
                      and self.editor.topera_matches_section(topera, item)),
                     None,
                 )
@@ -918,6 +926,15 @@ class GridView(QGraphicsView):
                                 visible_points = [
                                     item.position + path_point.get_rotated(item.rotation)
                                     for path_point in item.points
+                                ]
+                            elif isinstance(item, Cruzamiento):
+                                visible_points = [
+                                    item.position + path_point.get_rotated(item.rotation)
+                                    for path in (
+                                        item.points_p1, item.points_p2,
+                                        item.points_p3, item.points_p4,
+                                    )
+                                    for path_point in path
                                 ]
                             else:
                                 visible_points = [
@@ -1053,6 +1070,14 @@ class TrackEditor(QMainWindow):
         self.junction_button.clicked.connect(self.generate_junction_selected)
         self.junction_button.setEnabled(False)
         tools.addWidget(self.junction_button)
+        self.crossing_button = QToolButton(self)
+        self.crossing_button.setIcon(self.make_icon("crossing"))
+        self.crossing_button.setIconSize(QSize(36, 36))
+        self.crossing_button.setFixedSize(46, 42)
+        self.crossing_button.setToolTip("Generar cruzamiento entre dos vías seleccionadas")
+        self.crossing_button.clicked.connect(self.generate_crossing_selected)
+        self.crossing_button.setEnabled(False)
+        tools.addWidget(self.crossing_button)
         self.delete_button = QToolButton(self)
         self.delete_button.setIcon(self.make_icon("delete"))
         self.delete_button.setIconSize(QSize(36, 36))
@@ -1225,6 +1250,9 @@ class TrackEditor(QMainWindow):
                 segment(endpoint(dirs[0]), center)
                 segment(endpoint(dirs[1]), center)
                 segment(endpoint(tip), center)
+        elif kind == "crossing":
+            segment(QPointF(8, 8), QPointF(40, 40))
+            segment(QPointF(40, 8), QPointF(8, 40))
         elif kind == "extend":
             segment(QPointF(8, 24), QPointF(40, 24))
             segment(QPointF(32, 16), QPointF(40, 24))
@@ -1345,20 +1373,17 @@ class TrackEditor(QMainWindow):
                 self.switch_dependency()
         self.selected_items = selection
         self.selected = selection[0] if len(selection) == 1 else None
+        section_selection = bool(selection) and all(
+            isinstance(item, SECTION_TYPES) for item in selection
+        )
         if hasattr(self, "delete_button"):
             self.delete_button.setEnabled(bool(selection))
         if hasattr(self, "merge_button"):
-            self.merge_button.setEnabled(
-                len(selection) == 2
-                and all(isinstance(item, (CvLineal, Aguja)) for item in selection)
-                and selection[0].id.dep == selection[1].id.dep
-            )
+            self.merge_button.setEnabled(section_selection)
         if hasattr(self, "junction_button"):
-            self.junction_button.setEnabled(
-                len(selection) == 2
-                and all(isinstance(item, (CvLineal, Aguja)) for item in selection)
-                and selection[0].id.dep == selection[1].id.dep
-            )
+            self.junction_button.setEnabled(section_selection)
+        if hasattr(self, "crossing_button"):
+            self.crossing_button.setEnabled(section_selection)
         if hasattr(self, "config_panel"):
             self.config_panel.set_item(self.selected if len(selection) == 1 else None)
         self.draw_items()
@@ -1368,7 +1393,7 @@ class TrackEditor(QMainWindow):
         index = 0
         while index < len(result):
             item = result[index]
-            if isinstance(item, (CvLineal, Aguja)):
+            if isinstance(item, SECTION_TYPES):
                 related_types = (Señal, Topera)
             else:
                 related_types = ()
@@ -1386,13 +1411,13 @@ class TrackEditor(QMainWindow):
 
     @staticmethod
     def signal_matches_section(signal, section):
-        if not isinstance(signal, Señal) or not isinstance(section, (CvLineal, Aguja)):
+        if not isinstance(signal, Señal) or not isinstance(section, SECTION_TYPES):
             return False
         return section.matches(signal.position, signal.rotation + Angle(pi))
 
     @staticmethod
     def topera_matches_section(topera, section):
-        if not isinstance(topera, Topera) or not isinstance(section, (CvLineal, Aguja)):
+        if not isinstance(topera, Topera) or not isinstance(section, SECTION_TYPES):
             return False
         return section.matches(topera.position, topera.rotation)
 
@@ -1451,8 +1476,11 @@ class TrackEditor(QMainWindow):
         if isinstance(item, CvLineal):
             geometry = (item.position, list(item.points), item.rotation)
         elif isinstance(item, Aguja):
-            geometry = (item.position, list(item.points_normal),
-                        list(item.points_invertida), list(item.points_punta), item.rotation)
+            paths = tuple(
+                list(getattr(item, name))
+                for name in ("points_normal", "points_invertida", "points_punta")
+            )
+            geometry = (item.position, *paths, item.rotation)
         else:
             geometry = (item.position, item.rotation)
         signal_state = ((signal.position, signal.rotation) if signal is not None else None)
@@ -1466,6 +1494,9 @@ class TrackEditor(QMainWindow):
         elif isinstance(item, Aguja):
             (item.position, item.points_normal, item.points_invertida,
              item.points_punta, item.rotation) = geometry
+        elif isinstance(item, Cruzamiento):
+            (item.position, item.points_p1, item.points_p2,
+             item.points_p3, item.points_p4, item.rotation) = geometry
         else:
             item.position, item.rotation = geometry
         if signal is not None:
@@ -1501,10 +1532,10 @@ class TrackEditor(QMainWindow):
     def rotate_geometry(self, item, steps, signal=None):
         if isinstance(item, Topera):
             return False
-        before = self.capture_rotation_state(item, signal) if isinstance(item, Aguja) else None
+        before = self.capture_rotation_state(item, signal) if isinstance(item, (Aguja, Cruzamiento)) else None
         if isinstance(item, Señal):
             track = next((candidate for candidate in self.items_by_dependency.get(item.id.dep, [])
-                          if isinstance(candidate, (CvLineal, Aguja))
+                          if isinstance(candidate, SECTION_TYPES)
                           and self.signal_matches_section(item, candidate)), None)
             if track is None:
                 return
@@ -1579,7 +1610,9 @@ class TrackEditor(QMainWindow):
             else:
                 self.restore_rotation_state(item, signal, before)
                 return False
-        if isinstance(item, (CvLineal, Aguja)):
+        elif isinstance(item, Cruzamiento):
+            item.rotation = self.next_allowed_rotation(item, steps)
+        if isinstance(item, SECTION_TYPES):
             if not isinstance(item, Aguja):
                 self.snap_section_to_connection(item, rotate=False)
         if signal is not None:
@@ -1775,13 +1808,18 @@ class TrackEditor(QMainWindow):
         return [
             item for values in self.items_by_dependency.values()
             for item in values
-            if isinstance(item, (CvLineal, Aguja)) and item not in excluded
+            if isinstance(item, SECTION_TYPES) and item not in excluded
         ]
 
     @staticmethod
     def capture_geometry_state(item):
         if isinstance(item, CvLineal):
             return item.position, list(item.points)
+        if isinstance(item, Cruzamiento):
+            return (
+                item.position, list(item.points_p1), list(item.points_p2),
+                list(item.points_p3), list(item.points_p4),
+            )
         return (
             item.position,
             list(item.points_normal),
@@ -1793,6 +1831,9 @@ class TrackEditor(QMainWindow):
     def restore_geometry_state(item, state):
         if isinstance(item, CvLineal):
             item.position, item.points = state
+        elif isinstance(item, Cruzamiento):
+            (item.position, item.points_p1, item.points_p2,
+             item.points_p3, item.points_p4) = state
         else:
             (item.position, item.points_normal, item.points_invertida,
              item.points_punta) = state
@@ -1814,7 +1855,7 @@ class TrackEditor(QMainWindow):
 
     @staticmethod
     def merge_order(first, second):
-        if isinstance(first, CvLineal) and isinstance(second, Aguja):
+        if isinstance(first, CvLineal) and isinstance(second, (Aguja, Cruzamiento)):
             return second, first
         return first, second
 
@@ -1827,6 +1868,10 @@ class TrackEditor(QMainWindow):
         if isinstance(item, CvLineal):
             path = TrackEditor._world_path(item, item.points)
             return path if port_index == 0 else list(reversed(path))
+        if isinstance(item, Cruzamiento):
+            return list(reversed(TrackEditor._world_path(
+                item, (item.points_p1, item.points_p2, item.points_p3, item.points_p4)[port_index]
+            )))
         paths = (item.points_normal, item.points_invertida, item.points_punta)
         return list(reversed(TrackEditor._world_path(item, paths[port_index])))
 
@@ -1884,7 +1929,13 @@ class TrackEditor(QMainWindow):
             ]
             self.normalize_cv_points(destination)
             return True
-        paths = [destination.points_normal, destination.points_invertida, destination.points_punta]
+        if isinstance(destination, Cruzamiento):
+            paths = [
+                destination.points_p1, destination.points_p2,
+                destination.points_p3, destination.points_p4,
+            ]
+        else:
+            paths = [destination.points_normal, destination.points_invertida, destination.points_punta]
         destination_path = self._world_path(destination, paths[destination_port])
         destination_path[-1] = intersection
         merged_path = destination_path + source_path[1:]
@@ -1893,7 +1944,12 @@ class TrackEditor(QMainWindow):
             for point in merged_path
         ]
         paths[destination_port] = local_path
-        destination.points_normal, destination.points_invertida, destination.points_punta = paths
+        if isinstance(destination, Cruzamiento):
+            (destination.points_p1, destination.points_p2,
+             destination.points_p3, destination.points_p4) = paths
+        else:
+            (destination.points_normal, destination.points_invertida,
+             destination.points_punta) = paths
         return True
 
     def merge_sections(self, destination, source):
@@ -1908,11 +1964,11 @@ class TrackEditor(QMainWindow):
             self.statusBar().showMessage("Selecciona dos secciones de vía para unirlas.")
             return
         first, second = self.selected_items
-        if not all(isinstance(item, (CvLineal, Aguja)) for item in self.selected_items):
-            self.statusBar().showMessage("Solo se pueden unir CV y agujas.")
+        if not all(isinstance(item, (CvLineal, Aguja, Cruzamiento)) for item in self.selected_items):
+            self.statusBar().showMessage("Solo se pueden unir CV, agujas y cruzamientos.")
             return
-        if first.id.dep != second.id.dep:
-            self.statusBar().showMessage("Las dos secciones deben pertenecer a la misma dependencia.")
+        if not any(isinstance(item, CvLineal) for item in self.selected_items):
+            self.statusBar().showMessage("La unión debe incluir una CV lineal.")
             return
         destination, source = self.merge_order(first, second)
         if self._line_join_point(
@@ -1933,9 +1989,6 @@ class TrackEditor(QMainWindow):
             self.statusBar().showMessage("Selecciona dos secciones de vía.")
             return
         first, second = self.selected_items
-        if first.id.dep != second.id.dep:
-            self.statusBar().showMessage("Las dos rectas deben pertenecer a la misma dependencia.")
-            return
 
         first_outs, second_outs = first.get_outs(), second.get_outs()
         _, first_port_index, second_port_index = min(
@@ -1992,6 +2045,68 @@ class TrackEditor(QMainWindow):
         )
         self.run_command(AddItemCommand(self, item))
 
+    def generate_crossing_selected(self):
+        if len(self.selected_items) != 2 or not all(
+            isinstance(item, SECTION_TYPES) for item in self.selected_items
+        ):
+            self.statusBar().showMessage("Selecciona dos secciones de vía.")
+            return
+        first, second = self.selected_items
+        first_outs, second_outs = first.get_outs(), second.get_outs()
+        _, first_port_index, second_port_index = min(
+            (
+                (first_output[0].x - second_output[0].x) ** 2
+                + (first_output[0].y - second_output[0].y) ** 2,
+                first_index,
+                second_index,
+            )
+            for first_index, first_output in enumerate(first_outs)
+            for second_index, second_output in enumerate(second_outs)
+        )
+        first_port = first_outs[first_port_index]
+        second_port = second_outs[second_port_index]
+        intersection = self._line_intersection(
+            first_port[0], first_port[1], second_port[0], second_port[1]
+        )
+        if intersection is None:
+            self.statusBar().showMessage("Las rectas seleccionadas son paralelas.")
+            return
+        crossing_angle = abs((first_port[1].angle - second_port[1].angle) % pi)
+        crossing_angle = min(crossing_angle, pi - crossing_angle)
+        if crossing_angle <= 1e-6:
+            self.statusBar().showMessage("Las rectas seleccionadas son paralelas.")
+            return
+        base_angles = (0, crossing_angle, pi, crossing_angle + pi)
+        rotation = None
+        best_error = float("inf")
+        for first_index, first_base_angle in enumerate(base_angles):
+            candidate_rotation = first_port[1] - Angle(first_base_angle)
+            for second_base_angle in base_angles:
+                candidate_angle = (candidate_rotation + Angle(second_base_angle)).angle
+                error = abs((candidate_angle - second_port[1].angle) % (2 * pi))
+                error = min(error, 2 * pi - error)
+                if error < best_error:
+                    best_error = error
+                    rotation = candidate_rotation
+        bounds = [Point(*point) for point in get_crossing_bounds(crossing_angle)]
+        paths = []
+        for bound in bounds:
+            length = sqrt(bound.x ** 2 + bound.y ** 2)
+            direction = bound * (8 / length)
+            paths.append([bound, bound + direction])
+        dependency = first.id.dep
+        suffix = 1
+        while any(
+            item.id.id == f"{dependency}:X{suffix}"
+            for item in self.items_by_dependency.get(dependency, [])
+        ):
+            suffix += 1
+        item = Cruzamiento(
+            IdElemento(f"X{suffix}", dependency), intersection, rotation, 0,
+            *paths, degrees(crossing_angle),
+        )
+        self.run_command(AddItemCommand(self, item))
+
     def begin_extend(self, point):
         point_x = point.x() if callable(point.x) else point.x
         point_y = point.y() if callable(point.y) else point.y
@@ -2029,7 +2144,11 @@ class TrackEditor(QMainWindow):
                 + 1.0
             )
         else:
-            attributes = ("points_normal", "points_invertida", "points_punta")
+            attributes = (
+                ("points_p1", "points_p2", "points_p3", "points_p4")
+                if isinstance(item, Cruzamiento)
+                else ("points_normal", "points_invertida", "points_punta")
+            )
             path = getattr(item, attributes[port_index])
             previous = item.position + path[-2].get_rotated(item.rotation)
             minimum = (
@@ -2063,13 +2182,17 @@ class TrackEditor(QMainWindow):
                     for world_point in world_points
                 ]
             return
-        attributes = ("points_normal", "points_invertida", "points_punta")
+        attributes = (
+            ("points_p1", "points_p2", "points_p3", "points_p4")
+            if isinstance(item, Cruzamiento)
+            else ("points_normal", "points_invertida", "points_punta")
+        )
         path = list(getattr(item, attributes[port_index]))
         path[-1] = (target - item.position).get_rotated(-item.rotation.angle)
         setattr(item, attributes[port_index], path)
 
     def snap_section_to_grid_corners(self, item, anchor=None):
-        if not isinstance(item, (CvLineal, Aguja)):
+        if not isinstance(item, SECTION_TYPES):
             return False
         if anchor is not None:
             anchor = Point(
@@ -2114,7 +2237,9 @@ class TrackEditor(QMainWindow):
                     continue
                 offset_x = other_position.x - output_position.x
                 offset_y = other_position.y - output_position.y
-                if abs(offset_x * normal_x + offset_y * normal_y) > 1e-6:
+                offset_length = sqrt(offset_x ** 2 + offset_y ** 2)
+                line_error = abs(offset_x * normal_x + offset_y * normal_y)
+                if line_error > GEOMETRY_TOLERANCE * max(1.0, offset_length):
                     continue
                 distance = sqrt(
                     (other_position.x - target.x) ** 2
@@ -2136,13 +2261,14 @@ class TrackEditor(QMainWindow):
         return path + [endpoint + direction * (length / magnitude)]
 
     def extend_section(self, item):
+        extension_length = GRID_WIDTH
         if isinstance(item, CvLineal):
             first, last = item.points[0], item.points[-1]
             axis = last - first
             magnitude = sqrt(axis.x ** 2 + axis.y ** 2)
             if magnitude <= 1e-9:
                 return
-            factor = (magnitude + 2 * length) / magnitude
+            factor = (magnitude + 2 * extension_length) / magnitude
             midpoint = (first + last) / 2
             extended = [midpoint + (point - midpoint) * factor for point in item.points]
             new_first = extended[0]
@@ -2150,14 +2276,19 @@ class TrackEditor(QMainWindow):
             item.points = [point - new_first for point in extended]
             return
         if isinstance(item, Aguja):
-            item.points_normal = self._extend_path(item.points_normal, length)
-            item.points_invertida = self._extend_path(item.points_invertida, length)
-            item.points_punta = self._extend_path(item.points_punta, length)
+            item.points_normal = self._extend_path(item.points_normal, extension_length)
+            item.points_invertida = self._extend_path(item.points_invertida, extension_length)
+            item.points_punta = self._extend_path(item.points_punta, extension_length)
+        elif isinstance(item, Cruzamiento):
+            item.points_p1 = self._extend_path(item.points_p1, extension_length)
+            item.points_p2 = self._extend_path(item.points_p2, extension_length)
+            item.points_p3 = self._extend_path(item.points_p3, extension_length)
+            item.points_p4 = self._extend_path(item.points_p4, extension_length)
 
     def snap_section_to_connection(
         self, item, anchor=None, exclude=(), rotate=True, port_indices=None
     ):
-        if not isinstance(item, (CvLineal, Aguja)):
+        if not isinstance(item, SECTION_TYPES):
             return False
         if anchor is not None:
             anchor = Point(
@@ -2193,7 +2324,7 @@ class TrackEditor(QMainWindow):
 
     def snap_group_to_grid(self, items, mouse_position):
         moving_sections = [
-            item for item in items if isinstance(item, (CvLineal, Aguja))
+            item for item in items if isinstance(item, SECTION_TYPES)
         ]
         if not moving_sections:
             return False
@@ -2265,7 +2396,7 @@ class TrackEditor(QMainWindow):
             else:
                 center = item.position
         others = [other for values in self.items_by_dependency.values() for other in values
-                  if isinstance(other, (CvLineal, Aguja))]
+                  if isinstance(other, SECTION_TYPES)]
         best_rotation, best_score = 0, -1
         if isinstance(item, CvLineal):
             local_midpoint = (item.points[0] + item.points[-1]) / 2
@@ -2375,7 +2506,7 @@ class TrackEditor(QMainWindow):
             return
         selected_set = set(items)
         for item in items:
-            if isinstance(item, (CvLineal, Aguja)) and any(
+            if isinstance(item, SECTION_TYPES) and any(
                 isinstance(other, Señal) and self.signal_matches_section(other, item)
                 and other not in selected_set
                 for other in self.items_by_dependency.get(item.id.dep, [])
@@ -2385,7 +2516,7 @@ class TrackEditor(QMainWindow):
                     "Incluye o elimina primero la señal asociada a esta vía.",
                 )
                 return
-            if isinstance(item, (CvLineal, Aguja)) and any(
+            if isinstance(item, SECTION_TYPES) and any(
                 isinstance(other, Topera) and self.topera_matches_section(other, item)
                 and other not in selected_set
                 for other in self.items_by_dependency.get(item.id.dep, [])
@@ -2654,7 +2785,7 @@ class TrackEditor(QMainWindow):
 
     @staticmethod
     def _grid_item_positions(item):
-        if isinstance(item, (CvLineal, Aguja)):
+        if isinstance(item, SECTION_TYPES):
             return [position for position, _ in item.get_outs()]
         return [item.position]
 
@@ -2715,6 +2846,20 @@ class TrackEditor(QMainWindow):
                 if item.lado is not None:
                     arrow_dir = (branch_ends[0][0] - center[0], branch_ends[0][1] - center[1]) if item.lado == Lado.Impar else (branch_ends[2][0] - center[0], branch_ends[2][1] - center[1])
                     self.item_graphics.extend(self.add_arrow_vector(branch_ends[2], arrow_dir, color))
+            elif isinstance(item, Cruzamiento):
+                label_center = item_screen_point(item.position)
+                for path_points in (
+                    item.points_p1, item.points_p2, item.points_p3, item.points_p4
+                ):
+                    transformed = [
+                        item.position + point.get_rotated(item.rotation.angle)
+                        for point in path_points
+                    ]
+                    screen_points = [item_screen_point(point) for point in transformed]
+                    path = QPainterPath(QPointF(*screen_points[0]))
+                    for point in screen_points[1:]:
+                        path.lineTo(QPointF(*point))
+                    self.item_graphics.append(self.scene.addPath(path, pen))
             elif isinstance(item, Señal):
                 angle = item.rotation.angle
                 ux, uy = cos(angle), sin(angle)
