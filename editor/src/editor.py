@@ -10,47 +10,55 @@ import sys
 import json
 import traceback
 from copy import deepcopy
-from math import cos, degrees, pi, sin, sqrt, tan, radians
+from math import atan2, cos, degrees, isfinite, pi, sin, sqrt, tan, radians
 from pathlib import Path
 
 try:
     from PyQt6.QtCore import QPointF, QRectF, QSize, Qt
-    from PyQt6.QtGui import QBrush, QColor, QIcon, QKeySequence, QPainter, QPainterPath, QPen, QPixmap, QPolygonF, QShortcut
+    from PyQt6.QtGui import QBrush, QColor, QFont, QIcon, QKeySequence, QPainter, QPainterPath, QPen, QPixmap, QPolygonF, QShortcut
     from PyQt6.QtSvg import QSvgRenderer
     from PyQt6.QtWidgets import (
-        QApplication, QComboBox, QFormLayout,
-        QFileDialog, QGraphicsScene, QGraphicsView, QHBoxLayout,
+        QApplication, QCheckBox, QComboBox, QFormLayout,
+        QFileDialog, QGraphicsItemGroup, QGraphicsRectItem, QGraphicsScene,
+        QGraphicsTextItem, QGraphicsView, QHBoxLayout,
         QLabel, QLineEdit, QMainWindow, QMessageBox,
-        QPushButton, QSplitter, QToolButton, QVBoxLayout, QWidget,
+        QListWidget, QPushButton, QSplitter, QToolButton, QVBoxLayout, QWidget,
     )
     LEFT_BUTTON = Qt.MouseButton.LeftButton
 except ImportError:
     from PyQt5.QtCore import QPointF, QRectF, QSize, Qt
-    from PyQt5.QtGui import QBrush, QColor, QIcon, QKeySequence, QPainter, QPainterPath, QPen, QPixmap, QPolygonF
+    from PyQt5.QtGui import QBrush, QColor, QFont, QIcon, QKeySequence, QPainter, QPainterPath, QPen, QPixmap, QPolygonF
     from PyQt5.QtSvg import QSvgRenderer
     from PyQt5.QtWidgets import (
-        QApplication, QComboBox, QFormLayout,
-        QFileDialog, QGraphicsScene, QGraphicsView, QHBoxLayout,
+        QApplication, QCheckBox, QComboBox, QFormLayout,
+        QFileDialog, QGraphicsItemGroup, QGraphicsRectItem, QGraphicsScene,
+        QGraphicsTextItem, QGraphicsView, QHBoxLayout,
         QLabel, QLineEdit, QMainWindow, QMessageBox,
-        QPushButton, QShortcut, QSplitter, QToolButton, QVBoxLayout, QWidget,
+        QListWidget, QPushButton, QShortcut, QSplitter, QToolButton, QVBoxLayout, QWidget,
     )
     LEFT_BUTTON = Qt.LeftButton
 
 from items import (
     Aguja, Angle, CvLineal, Direccion, IdElemento, Lado, Point, Señal, TipoSeñal,
-    deserialize_layout, serialize_layout,
+    Topera, deserialize_layout, serialize_layout,
 )
 from export import generar_config_ence
+from label_positions import (
+    SIGNAL_ICON_HEIGHT, SIGNAL_ICON_WIDTH, label_anchor, label_angle,
+    label_background_width, signal_foot_position, signal_label_anchor,
+)
 from svg.svg_export import export_svg
 from svg.generate_junction import get_junction_bounds
 
 
-GRID_WIDTH = 170
+GRID_WIDTH = 170/2
 GRID_HEIGHT = 85
 COLS = 24
 ROWS = 16
 SNAP_DISTANCE = 10
 PICK_TOLERANCE = 5.0
+GRID_EXTENSION_TRIGGER = 2
+GRID_EXTENSION_CELLS = 10
 SIGNAL_ICON_PATH = Path(__file__).resolve().parent.parent / "symbols" / "señal.svg"
 
 
@@ -61,11 +69,11 @@ class SignalIcon:
 
     @property
     def width(self):
-        return self.size.width()
+        return SIGNAL_ICON_WIDTH
 
     @property
     def height(self):
-        return self.size.height()
+        return SIGNAL_ICON_HEIGHT
 
     def pixmap(self):
         pixmap = QPixmap(self.size)
@@ -86,6 +94,8 @@ def item_kind_name(item):
         return "Cambio de agujas"
     if isinstance(item, Señal):
         return "Señal"
+    if isinstance(item, Topera):
+        return "Topera"
     return None
 
 
@@ -102,13 +112,6 @@ def item_screen_point(point):
     return point.x, point.y
 
 
-def signal_foot_position(item):
-    normal_x = sin(item.rotation.angle)
-    normal_y = -cos(item.rotation.angle)
-    return Point(item.position.x + normal_x * item.offset_pie,
-                 item.position.y + normal_y * item.offset_pie)
-
-
 class AddItemCommand:
     def __init__(self, editor, item):
         self.editor = editor
@@ -121,6 +124,8 @@ class AddItemCommand:
             cv = item.get_cv().id if item.get_cv() else ""
             side = item.lado.name if item.lado else "None"
             self.text = f"Aguja {item.id.id} {cv} {side}"
+        elif isinstance(item, Topera):
+            self.text = f"Topera {item.id.id}"
         else:
             self.text = f"Señal {item.tipo_señal.name} {item.id.id}"
 
@@ -149,7 +154,9 @@ class RotateCommand:
         self.text = f"{'RotCW' if amount > 0 else 'RotCCW'} {x} {y}"
 
     def execute(self):
-        self.editor.rotate_geometry(self.item, self.amount, self.linked_signal)
+        if self.editor.rotate_geometry(self.item, self.amount, self.linked_signal) is False:
+            self.after = self.before
+            return False
         self.after = self.editor.capture_rotation_state(self.item, self.linked_signal)
         self.editor.set_selection([self.item])
 
@@ -320,25 +327,33 @@ class EditItemCommand:
 
     @staticmethod
     def capture(item):
-        state = {"id": item.id}
+        state = {"id": item.id, "position": Point(item.position.x, item.position.y)}
         if isinstance(item, CvLineal):
             state["lado"] = item.lado
+            state.update(tipo_cv=item.tipo_cv, offset=item.offset)
         elif isinstance(item, Aguja):
             state["cv"] = item.cv
             state["lado"] = item.lado
         elif isinstance(item, Señal):
             state["tipo_señal"] = item.tipo_señal
+            state["focos"] = list(item.focos)
+            state["aspectos_pantalla"] = list(item.aspectos_pantalla)
         return state
 
     def apply(self, state):
         self.item.id = state["id"]
+        self.item.position = state["position"]
         if isinstance(self.item, CvLineal):
             self.item.lado = state["lado"]
+            self.item.tipo_cv = state["tipo_cv"]
+            self.item.offset = state["offset"]
         elif isinstance(self.item, Aguja):
             self.item.cv = state["cv"]
             self.item.lado = state["lado"]
         elif isinstance(self.item, Señal):
             self.item.tipo_señal = state["tipo_señal"]
+            self.item.focos = list(state["focos"])
+            self.item.aspectos_pantalla = list(state["aspectos_pantalla"])
         self.editor.set_selection([self.item])
 
     def execute(self):
@@ -355,9 +370,16 @@ class ItemConfigPanel(QWidget):
         self.current_item = None
         self.current_kind = None
         self.name_edit = None
+        self.position_x_edit = None
+        self.position_y_edit = None
         self.cv_edit = None
         self.signal_type = None
         self.side_combo = None
+        self.cv_type = None
+        self.cv_offset = None
+        self.signal_lamps = {}
+        self.speed_list = None
+        self.speed_edit = None
 
         layout = QVBoxLayout(self)
         self.title_label = QLabel("Configuración del elemento", self)
@@ -379,6 +401,7 @@ class ItemConfigPanel(QWidget):
         layout.addWidget(self.apply_button)
 
         self.setMinimumWidth(320)
+        self.setFixedWidth(350)
         self.set_item(None)
 
     def clear_form(self):
@@ -388,9 +411,16 @@ class ItemConfigPanel(QWidget):
             if widget is not None:
                 widget.deleteLater()
         self.name_edit = None
+        self.position_x_edit = None
+        self.position_y_edit = None
         self.cv_edit = None
         self.signal_type = None
         self.side_combo = None
+        self.cv_type = None
+        self.cv_offset = None
+        self.signal_lamps = {}
+        self.speed_list = None
+        self.speed_edit = None
         self.current_kind = None
 
     def build_form(self, kind):
@@ -403,6 +433,17 @@ class ItemConfigPanel(QWidget):
         else:
             self.form_layout.addRow("Nombre:", self.name_edit)
 
+        position_widget = QWidget(self)
+        position_layout = QHBoxLayout(position_widget)
+        position_layout.setContentsMargins(0, 0, 0, 0)
+        self.position_x_edit = QLineEdit(position_widget)
+        self.position_x_edit.setPlaceholderText("X")
+        self.position_y_edit = QLineEdit(position_widget)
+        self.position_y_edit.setPlaceholderText("Y")
+        position_layout.addWidget(self.position_x_edit)
+        position_layout.addWidget(self.position_y_edit)
+        self.form_layout.addRow("Posición (X, Y):", position_widget)
+
         if kind == "Cambio de agujas":
             self.cv_edit = QLineEdit(self)
             self.form_layout.addRow("Circuito de vía:", self.cv_edit)
@@ -414,11 +455,55 @@ class ItemConfigPanel(QWidget):
             self.side_combo.addItem("Impar", "Impar")
             self.form_layout.addRow("Lado:", self.side_combo)
 
+        if kind == "Tramo de vía":
+            self.cv_type = QComboBox(self)
+            self.cv_type.addItem("Sin tipo", None)
+            self.cv_type.addItem("Estacionamiento", "Estacionamiento")
+            self.cv_type.addItem("Trayecto", "Trayecto")
+            self.form_layout.addRow("Tipo de CV:", self.cv_type)
+            self.cv_offset = QLineEdit(self)
+            self.cv_offset.setToolTip("Distancia desde la entrada del CV; desplaza juntas sus etiquetas y símbolos.")
+            self.form_layout.addRow("Offset desde la entrada:", self.cv_offset)
+
         if kind == "Señal":
             self.signal_type = QComboBox(self)
             for signal_type in TipoSeñal:
                 self.signal_type.addItem(signal_type.name, signal_type)
             self.form_layout.addRow("Tipo de señal:", self.signal_type)
+            lamp_widget = QWidget(self)
+            lamp_layout = QVBoxLayout(lamp_widget)
+            lamp_layout.setContentsMargins(0, 0, 0, 0)
+            for code, label in (("V", "Verde"), ("R", "Rojo"), ("B", "Blanco"), ("Az", "Azul"), ("A", "Amarillo")):
+                checkbox = QCheckBox(label, lamp_widget)
+                self.signal_lamps[code] = checkbox
+                lamp_layout.addWidget(checkbox)
+            self.form_layout.addRow("Focos:", lamp_widget)
+            self.speed_list = QListWidget(self)
+            self.form_layout.addRow("Velocidades pantalla:", self.speed_list)
+            speed_controls = QWidget(self)
+            speed_layout = QHBoxLayout(speed_controls)
+            speed_layout.setContentsMargins(0, 0, 0, 0)
+            self.speed_edit = QLineEdit(speed_controls)
+            self.speed_edit.setPlaceholderText("I60, D30 o 90")
+            add_speed = QPushButton("Añadir", speed_controls)
+            remove_speed = QPushButton("Quitar", speed_controls)
+            add_speed.clicked.connect(self.add_screen_speed)
+            remove_speed.clicked.connect(lambda: self.speed_list.takeItem(self.speed_list.currentRow()) if self.speed_list.currentRow() >= 0 else None)
+            speed_layout.addWidget(self.speed_edit)
+            speed_layout.addWidget(add_speed)
+            speed_layout.addWidget(remove_speed)
+            self.form_layout.addRow("Editar velocidades:", speed_controls)
+
+    def add_screen_speed(self):
+        value = self.speed_edit.text().strip().upper() if self.speed_edit else ""
+        if not value or not (value.isdigit() or (value[0] in "ID" and value[1:].isdigit())):
+            QMessageBox.warning(self, "Velocidad inválida", "Usa una velocidad como I60, D30 o 90.")
+            return
+        if self.speed_list.findItems(value, Qt.MatchFlag.MatchExactly if hasattr(Qt, "MatchFlag") else Qt.MatchExactly):
+            QMessageBox.warning(self, "Velocidad repetida", "Esa velocidad ya está en la lista.")
+            return
+        self.speed_list.addItem(value)
+        self.speed_edit.clear()
 
     def set_item(self, item):
         self.current_item = item
@@ -435,11 +520,16 @@ class ItemConfigPanel(QWidget):
         self.summary_label.setText(f"Editando {kind.lower()} {item.id.id} en {item.id.dep}.")
         self.apply_button.setEnabled(True)
         self.name_edit.setText(item.id.id_corto)
+        self.position_x_edit.setText(repr(item.position.x))
+        self.position_y_edit.setText(repr(item.position.y))
 
         if isinstance(item, (CvLineal, Aguja)) and self.side_combo is not None:
             index = self.side_combo.findData(item.lado.name if item.lado else "")
             if index >= 0:
                 self.side_combo.setCurrentIndex(index)
+        if isinstance(item, CvLineal):
+            self.cv_type.setCurrentIndex(max(0, self.cv_type.findData(item.tipo_cv)))
+            self.cv_offset.setText(str(item.offset))
 
         if isinstance(item, Aguja) and self.cv_edit is not None:
             self.cv_edit.setText(item.get_cv().id_corto if item.get_cv() else "")
@@ -448,17 +538,48 @@ class ItemConfigPanel(QWidget):
             index = self.signal_type.findData(item.tipo_señal)
             if index >= 0:
                 self.signal_type.setCurrentIndex(index)
+            for code, checkbox in self.signal_lamps.items():
+                checkbox.setChecked(code in item.focos)
+            self.speed_list.clear()
+            self.speed_list.addItems(item.aspectos_pantalla)
 
     def apply_changes(self):
         item = self.current_item
         if item is None:
             return
         short_id = self.name_edit.text().strip() if self.name_edit else ""
+        try:
+            position = Point(
+                float(self.position_x_edit.text().strip().replace(",", ".")),
+                float(self.position_y_edit.text().strip().replace(",", ".")),
+            )
+        except ValueError:
+            QMessageBox.warning(self, "Posición inválida", "Las coordenadas deben ser numéricas.")
+            return
+        if not (isfinite(position.x) and isfinite(position.y)):
+            QMessageBox.warning(self, "Posición inválida", "Las coordenadas deben ser finitas.")
+            return
         cv_name = self.cv_edit.text().strip() if self.cv_edit else ""
         signal_type = self.signal_type.currentData() if self.signal_type is not None else None
         side_value = self.side_combo.currentData() if self.side_combo is not None else ""
         side = Lado[side_value] if side_value else None
-        self.editor.apply_item_configuration(item, short_id, cv_name, signal_type, side)
+        focos = [code for code, checkbox in self.signal_lamps.items() if checkbox.isChecked()]
+        velocidades = [self.speed_list.item(i).text() for i in range(self.speed_list.count())] if self.speed_list else []
+        cv_options = None
+        if isinstance(item, CvLineal):
+            try:
+                offset = float(self.cv_offset.text().strip())
+            except ValueError:
+                QMessageBox.warning(self, "Offset inválido", "El offset debe ser numérico.")
+                return
+            if not 0 <= offset <= item.length():
+                QMessageBox.warning(self, "Offset inválido", "El offset debe estar entre la entrada y la salida del CV.")
+                return
+            cv_options = (self.cv_type.currentData(), offset)
+        self.editor.apply_item_configuration(
+            item, short_id, cv_name, signal_type, side, focos, velocidades,
+            cv_options, position,
+        )
 
 
 class GridView(QGraphicsView):
@@ -547,6 +668,17 @@ class GridView(QGraphicsView):
                     hits.append((distance, item))
                 continue
             if not isinstance(item, Señal):
+                if isinstance(item, Topera):
+                    angle = item.rotation.angle
+                    ux, uy = cos(angle), sin(angle)
+                    center_x = item.position.x + ux * 2
+                    center_y = item.position.y + uy * 2
+                    along = ((point.x() - center_x) * ux
+                             + (point.y() - center_y) * uy)
+                    across = ((point.x() - center_x) * -uy
+                              + (point.y() - center_y) * ux)
+                    if abs(along) <= PICK_TOLERANCE and abs(across) <= 10 + PICK_TOLERANCE:
+                        hits.append((0, item))
                 continue
             angle = item.rotation.angle
             ux, uy = cos(angle), sin(angle)
@@ -559,11 +691,9 @@ class GridView(QGraphicsView):
                     and -SIGNAL_ICON.height <= local_y <= 0):
                 hits.append((0, item))
                 continue
-            center_x = anchor_x + ux * SIGNAL_ICON.width / 2 + uy * SIGNAL_ICON.height / 2
-            center_y = anchor_y + uy * SIGNAL_ICON.width / 2 - ux * SIGNAL_ICON.height / 2
-            left_x, left_y = -uy, ux
-            label_dx, label_dy = point.x() - (center_x + left_x * 12), point.y() - (center_y + left_y * 12)
-            if abs(label_dx) <= text_half_width and abs(label_dy) <= 8:
+            label_anchor = signal_label_anchor(item)
+            label_dx, label_dy = point.x() - label_anchor[0], point.y() - label_anchor[1]
+            if 0 <= label_dx <= 2 * text_half_width and abs(label_dy) <= SIGNAL_ICON.height / 2:
                 hits.append((0, item))
         return min(hits, key=lambda hit: hit[0])[1] if hits else None
 
@@ -641,6 +771,7 @@ class GridView(QGraphicsView):
         current_col = int(point.x() // GRID_WIDTH)
         current_row = int(point.y() // GRID_HEIGHT)
         delta = (current_col - start_col, current_row - start_row)
+        group_drag = len(self.editor.selected_items) > 1
         signal_only_drag = self.drag_items and all(
             isinstance(item, Señal) for item in self.drag_items
         )
@@ -658,6 +789,14 @@ class GridView(QGraphicsView):
                     for other in self.drag_items
                 )
             }
+            topes_moving_with_track = {
+                item for item in self.drag_items
+                if isinstance(item, Topera) and any(
+                    isinstance(other, (CvLineal, Aguja))
+                    and self.editor.topera_matches_section(item, other)
+                    for other in self.drag_items
+                )
+            }
             signal_tracks = {
                 signal: next(
                     (item for item in self.drag_items
@@ -667,12 +806,26 @@ class GridView(QGraphicsView):
                 )
                 for signal in signals_moving_with_track
             }
+            topera_tracks = {
+                topera: next(
+                    (item for item in self.drag_items
+                     if isinstance(item, (CvLineal, Aguja))
+                     and self.editor.topera_matches_section(topera, item)),
+                    None,
+                )
+                for topera in topes_moving_with_track
+            }
             for item, state in self.drag_before.items():
-                move_port = item in signals_moving_with_track
+                move_port = group_drag or item in signals_moving_with_track or item in topes_moving_with_track
                 fine_delta = (point.x() - self.press_scene.x(),
                               point.y() - self.press_scene.y())
-                self.editor.preview_move(item, state, delta, move_port, fine_delta)
-            for signal in signals_moving_with_track:
+                self.editor.preview_move(
+                    item, state, delta, move_port, fine_delta,
+                    snap=not group_drag,
+                )
+            if group_drag:
+                self.editor.snap_group_to_grid(self.drag_items, point)
+            for signal in () if group_drag else signals_moving_with_track:
                 track = signal_tracks[signal]
                 if track is None:
                     continue
@@ -685,6 +838,27 @@ class GridView(QGraphicsView):
                 )
                 signal.position = port
                 signal.rotation = angle - Angle(pi)
+            for topera in () if group_drag else topes_moving_with_track:
+                track = topera_tracks[topera]
+                if track is None:
+                    continue
+                port, angle = min(
+                    track.get_outs(),
+                    key=lambda candidate: (
+                        (candidate[0].x - topera.position.x) ** 2
+                        + (candidate[0].y - topera.position.y) ** 2
+                    ),
+                )
+                topera.position = port
+                topera.rotation = angle
+            if not group_drag and any(
+                isinstance(item, Aguja)
+                and not self.editor.aguja_has_connection(item, self.editor._moving_sections)
+                for item in self.drag_items
+            ):
+                for item, state in self.drag_before.items():
+                    self.editor.restore_move_state(item, state)
+                self.preview_delta = (0, 0)
             self.editor._moving_sections = set()
             self.editor.draw_items()
         else:
@@ -734,6 +908,12 @@ class GridView(QGraphicsView):
                         for item in items:
                             if isinstance(item, Señal):
                                 visible_points = [item.position]
+                            elif isinstance(item, Topera):
+                                angle = item.rotation.angle
+                                ux, uy = cos(angle), sin(angle)
+                                center = item.position + Point(ux * 2, uy * 2)
+                                perpendicular = Point(-uy * 10, ux * 10)
+                                visible_points = [center - perpendicular, center + perpendicular]
                             elif isinstance(item, CvLineal):
                                 visible_points = [
                                     item.position + path_point.get_rotated(item.rotation)
@@ -747,12 +927,14 @@ class GridView(QGraphicsView):
                                     for path_point in path
                                 ]
                             bounds = QRectF(
-                                min(point.x for point in visible_points),
-                                min(point.y for point in visible_points),
+                                min(point.x for point in visible_points) - PICK_TOLERANCE,
+                                min(point.y for point in visible_points) - PICK_TOLERANCE,
                                 max(point.x for point in visible_points)
-                                - min(point.x for point in visible_points),
+                                - min(point.x for point in visible_points)
+                                + 2 * PICK_TOLERANCE,
                                 max(point.y for point in visible_points)
-                                - min(point.y for point in visible_points),
+                                - min(point.y for point in visible_points)
+                                + 2 * PICK_TOLERANCE,
                             )
                             if rect.intersects(bounds):
                                 selected.append(item)
@@ -808,8 +990,14 @@ class TrackEditor(QMainWindow):
         }
         self.layout_path = None
         self.is_dirty = False
+        self.grid_left = 0
+        self.grid_right = COLS
         self.scene = QGraphicsScene(self)
-        self.scene.setSceneRect(0, 0, COLS * GRID_WIDTH, ROWS * GRID_HEIGHT)
+        self.scene.setSceneRect(
+            self.grid_left * GRID_WIDTH, 0,
+            (self.grid_right - self.grid_left) * GRID_WIDTH,
+            ROWS * GRID_HEIGHT,
+        )
         self.grid_graphics = []
         self.view = GridView(self.scene, self)
         self.config_panel = ItemConfigPanel(self, self)
@@ -848,6 +1036,7 @@ class TrackEditor(QMainWindow):
         self.add_tool(tools, "Aguja a derechas", "switch", -1)
         self.add_tool(tools, "Alargar vía", "extend", None)
         self.add_tool(tools, "Señal", "signal", None)
+        self.add_tool(tools, "Topera", "topera", None)
         self.merge_button = QToolButton(self)
         self.merge_button.setIcon(self.make_icon("merge"))
         self.merge_button.setIconSize(QSize(36, 36))
@@ -856,6 +1045,14 @@ class TrackEditor(QMainWindow):
         self.merge_button.clicked.connect(self.merge_selected)
         self.merge_button.setEnabled(False)
         tools.addWidget(self.merge_button)
+        self.junction_button = QToolButton(self)
+        self.junction_button.setIcon(self.make_icon("switch"))
+        self.junction_button.setIconSize(QSize(36, 36))
+        self.junction_button.setFixedSize(46, 42)
+        self.junction_button.setToolTip("Generar junction entre dos vías seleccionadas")
+        self.junction_button.clicked.connect(self.generate_junction_selected)
+        self.junction_button.setEnabled(False)
+        tools.addWidget(self.junction_button)
         self.delete_button = QToolButton(self)
         self.delete_button.setIcon(self.make_icon("delete"))
         self.delete_button.setIconSize(QSize(36, 36))
@@ -1035,6 +1232,9 @@ class TrackEditor(QMainWindow):
             segment(QPointF(16, 16), QPointF(16, 32))
             segment(QPointF(10, 22), QPointF(16, 16))
             segment(QPointF(22, 22), QPointF(16, 16))
+        elif kind == "topera":
+            segment(QPointF(14, 10), QPointF(14, 38))
+            segment(QPointF(14, 24), QPointF(38, 24))
         elif kind == "merge":
             segment(QPointF(8, 15), QPointF(24, 24))
             segment(QPointF(8, 33), QPointF(24, 24))
@@ -1153,22 +1353,32 @@ class TrackEditor(QMainWindow):
                 and all(isinstance(item, (CvLineal, Aguja)) for item in selection)
                 and selection[0].id.dep == selection[1].id.dep
             )
+        if hasattr(self, "junction_button"):
+            self.junction_button.setEnabled(
+                len(selection) == 2
+                and all(isinstance(item, (CvLineal, Aguja)) for item in selection)
+                and selection[0].id.dep == selection[1].id.dep
+            )
         if hasattr(self, "config_panel"):
             self.config_panel.set_item(self.selected if len(selection) == 1 else None)
         self.draw_items()
 
     def movable_selection(self, items):
-        result = list(items)
+        result = [item for item in items if not isinstance(item, Topera)]
         index = 0
         while index < len(result):
             item = result[index]
             if isinstance(item, (CvLineal, Aguja)):
-                related_types = (Señal,)
+                related_types = (Señal, Topera)
             else:
                 related_types = ()
             for candidate in self.items_by_dependency.get(item.id.dep, []):
-                if (isinstance(candidate, related_types)
-                        and self.signal_matches_section(candidate, item)
+                matches = (
+                    self.signal_matches_section(candidate, item)
+                    if isinstance(candidate, Señal)
+                    else self.topera_matches_section(candidate, item)
+                )
+                if (isinstance(candidate, related_types) and matches
                         and candidate not in result):
                     result.append(candidate)
             index += 1
@@ -1179,6 +1389,12 @@ class TrackEditor(QMainWindow):
         if not isinstance(signal, Señal) or not isinstance(section, (CvLineal, Aguja)):
             return False
         return section.matches(signal.position, signal.rotation + Angle(pi))
+
+    @staticmethod
+    def topera_matches_section(topera, section):
+        if not isinstance(topera, Topera) or not isinstance(section, (CvLineal, Aguja)):
+            return False
+        return section.matches(topera.position, topera.rotation)
 
     def signal_for_section(self, section):
         return next((item for item in self.items_by_dependency.get(section.id.dep, [])
@@ -1195,12 +1411,18 @@ class TrackEditor(QMainWindow):
         else:
             item.position = state
 
-    def preview_move(self, item, state, delta, move_port=False, fine_delta=None):
+    def preview_move(
+        self, item, state, delta, move_port=False, fine_delta=None, snap=True
+    ):
         dx, dy = delta[0] * GRID_WIDTH, delta[1] * GRID_HEIGHT
         if isinstance(item, Señal):
             item.position, old_offset = state
             if move_port:
-                item.position = Point(item.position.x + dx, item.position.y + dy)
+                move_delta = fine_delta if fine_delta is not None else (dx, dy)
+                item.position = Point(
+                    item.position.x + move_delta[0],
+                    item.position.y + move_delta[1],
+                )
                 item.offset_pie = old_offset
             else:
                 if fine_delta is None:
@@ -1216,12 +1438,13 @@ class TrackEditor(QMainWindow):
                 )
             else:
                 item.position = Point(state.x + dx, state.y + dy)
-            self.snap_section_to_grid_corners(item)
-            self.snap_section_to_connection(
-                item,
-                exclude=getattr(self, "_moving_sections", set()) | {item},
-                rotate=False,
-            )
+            if snap:
+                self.snap_section_to_grid_corners(item)
+                self.snap_section_to_connection(
+                    item,
+                    exclude=getattr(self, "_moving_sections", set()) | {item},
+                    rotate=False,
+                )
 
     @staticmethod
     def capture_rotation_state(item, signal=None):
@@ -1276,6 +1499,9 @@ class TrackEditor(QMainWindow):
         return rotations[(current + (1 if direction > 0 else -1)) % len(rotations)]
 
     def rotate_geometry(self, item, steps, signal=None):
+        if isinstance(item, Topera):
+            return False
+        before = self.capture_rotation_state(item, signal) if isinstance(item, Aguja) else None
         if isinstance(item, Señal):
             track = next((candidate for candidate in self.items_by_dependency.get(item.id.dep, [])
                           if isinstance(candidate, (CvLineal, Aguja))
@@ -1323,17 +1549,73 @@ class TrackEditor(QMainWindow):
             ]
             item.rotation = new_rotation
         elif isinstance(item, Aguja):
-            self.set_aguja_rotation(item, self.next_allowed_rotation(item, steps))
+            rotations = self.allowed_rotations()
+            connections = self.aguja_connections(item)
+            connected_ports = {connection[0] for connection in connections}
+            candidate_ports = set(range(len(item.get_outs()))) - connected_ports
+            if not candidate_ports:
+                candidate_ports = set(range(len(item.get_outs())))
+            current = min(
+                range(len(rotations)),
+                key=lambda index: min(
+                    (item.rotation.angle - rotations[index].angle) % (2 * pi),
+                    (rotations[index].angle - item.rotation.angle) % (2 * pi),
+                ),
+            )
+            for offset in range(1, len(rotations)):
+                candidate = rotations[(current + (1 if steps > 0 else -1) * offset) % len(rotations)]
+                item.rotation = candidate
+                candidate_connections = [
+                    (target, target_angle, port)
+                    for _, target, target_angle in connections
+                    for new_port_index, (port, port_angle) in enumerate(item.get_outs())
+                    if new_port_index in candidate_ports
+                    if port_angle.close_to(target_angle + Angle(pi))
+                ]
+                if candidate_connections:
+                    target, _, port = candidate_connections[0]
+                    item.position = target - (port - item.position)
+                    break
+            else:
+                self.restore_rotation_state(item, signal, before)
+                return False
         if isinstance(item, (CvLineal, Aguja)):
-            self.snap_section_to_connection(item, rotate=False)
+            if not isinstance(item, Aguja):
+                self.snap_section_to_connection(item, rotate=False)
         if signal is not None:
             if signal_port_index is not None:
                 new_port = item.get_outs()[signal_port_index]
                 signal.position = new_port[0]
                 signal.rotation = new_port[1] - Angle(pi)
+        if isinstance(item, Aguja) and not self.aguja_has_connection(item):
+            self.restore_rotation_state(item, signal, before)
+            return False
+        return True
 
     def can_move_items(self, items, before, delta):
         return True
+
+    def aguja_has_connection(self, item, exclude=()):
+        """Return whether an aguja output reaches another track section."""
+        return bool(self.aguja_connections(item, exclude))
+
+    def aguja_connection_ports(self, item, exclude=()):
+        """Return the output indexes currently connected to another section."""
+        return tuple({connection[0] for connection in self.aguja_connections(item, exclude)})
+
+    def aguja_connections(self, item, exclude=()):
+        """Return connected output indexes and their target geometry."""
+        if not isinstance(item, Aguja):
+            return []
+        excluded = set(exclude) | {item}
+        return [
+            (port_index, target, target_angle)
+            for port_index, (port, port_angle) in enumerate(item.get_outs())
+            for other in self._section_items(excluded)
+            for target, target_angle in other.get_outs()
+            if sqrt((port.x - target.x) ** 2 + (port.y - target.y) ** 2) <= SNAP_DISTANCE
+            and port_angle.close_to(target_angle + Angle(pi))
+        ]
 
     def point_clicked(self, scene_point):
         kind, value = self.mode
@@ -1373,6 +1655,48 @@ class TrackEditor(QMainWindow):
             if tracks[0].id.dep != self.current_dependency:
                 self.dependency.setCurrentText(tracks[0].id.dep)
                 self.switch_dependency()
+        if kind == "topera":
+            connection = min(
+                (
+                    (sqrt((port.x - scene_point.x()) ** 2
+                          + (port.y - scene_point.y()) ** 2), track, port, angle)
+                    for track in self._section_items()
+                    for port, angle in track.get_outs()
+                ),
+                key=lambda candidate: candidate[0],
+                default=None,
+            )
+            if connection is None or connection[0] > SNAP_DISTANCE:
+                QMessageBox.warning(
+                    self, "Vía necesaria",
+                    "Coloca la topera sobre un puerto libre de una sección de vía.",
+                )
+                return
+            _, track, port, angle = connection
+            if any(
+                isinstance(other, Topera)
+                and self.topera_matches_section(other, track)
+                for other in self.items_by_dependency.get(track.id.dep, [])
+            ):
+                QMessageBox.warning(
+                    self, "Puerto ocupado",
+                    "Ese puerto ya tiene una topera.",
+                )
+                return
+            if track.id.dep != self.current_dependency:
+                self.dependency.setCurrentText(track.id.dep)
+                self.switch_dependency()
+            suffix = 1
+            while any(
+                item.id.id == f"{track.id.dep}:T{suffix}"
+                for item in self.items_by_dependency.get(track.id.dep, [])
+            ):
+                suffix += 1
+            item = Topera(
+                IdElemento(f"FV{suffix}", track.id.dep), port, angle
+            )
+            self.run_command(AddItemCommand(self, item))
+            return
         dependency = self.dependency.currentText().strip()
         if not dependency:
             QMessageBox.warning(self, "Falta la dependencia", "Indica el nombre de la estación antes de añadir elementos.")
@@ -1602,6 +1926,72 @@ class TrackEditor(QMainWindow):
             return
         self.run_command(MergeSectionsCommand(self, first, second))
 
+    def generate_junction_selected(self):
+        if len(self.selected_items) != 2 or not all(
+            isinstance(item, (CvLineal, Aguja)) for item in self.selected_items
+        ):
+            self.statusBar().showMessage("Selecciona dos secciones de vía.")
+            return
+        first, second = self.selected_items
+        if first.id.dep != second.id.dep:
+            self.statusBar().showMessage("Las dos rectas deben pertenecer a la misma dependencia.")
+            return
+
+        first_outs, second_outs = first.get_outs(), second.get_outs()
+        _, first_port_index, second_port_index = min(
+            (
+                (first_output[0].x - second_output[0].x) ** 2
+                + (first_output[0].y - second_output[0].y) ** 2,
+                first_index,
+                second_index,
+            )
+            for first_index, first_output in enumerate(first_outs)
+            for second_index, second_output in enumerate(second_outs)
+        )
+        first_port = first_outs[first_port_index]
+        second_port = second_outs[second_port_index]
+        intersection = self._line_intersection(
+            first_port[0], first_port[1], second_port[0], second_port[1]
+        )
+        if intersection is None:
+            self.statusBar().showMessage("Las rectas seleccionadas son paralelas.")
+            return
+        rotation = Angle(atan2(
+            first_port[0].y - intersection.y,
+            first_port[0].x - intersection.x,
+        ))
+        local_second = (second_port[0] - intersection).get_rotated(-rotation.angle)
+        junction_angle = abs((first_port[1].angle - second_port[1].angle) % pi)
+        junction_angle = min(junction_angle, pi - junction_angle)
+        if junction_angle <= 1e-6:
+            self.statusBar().showMessage("Las rectas seleccionadas son paralelas.")
+            return
+
+        dependency = first.id.dep
+        suffix = 1
+        while any(
+            item.id.id == f"{dependency}:A{suffix}"
+            for item in self.items_by_dependency.get(dependency, [])
+        ):
+            suffix += 1
+        ident = IdElemento(f"A{suffix}", dependency)
+
+        cut1, bounds = get_junction_bounds(junction_angle)
+        cut1 = Point(*cut1)
+        bounds = [Point(*point) - cut1 for point in bounds]
+        punta = [bounds[2], bounds[2] + Point(-8, 0)]
+        normal_target = (first_port[0] - intersection).get_rotated(-rotation.angle)
+        normal = [bounds[0], bounds[0] + Point(8, 0), normal_target]
+        branch_start_distance = sqrt(bounds[1].x ** 2 + bounds[1].y ** 2)
+        branch_target_distance = sqrt(local_second.x ** 2 + local_second.y ** 2)
+        branch_start = local_second * (branch_start_distance / branch_target_distance)
+        invertida = [branch_start, local_second]
+        item = Aguja(
+            ident, intersection, rotation, punta, normal, invertida,
+            degrees(junction_angle),
+        )
+        self.run_command(AddItemCommand(self, item))
+
     def begin_extend(self, point):
         point_x = point.x() if callable(point.x) else point.x
         point_y = point.y() if callable(point.y) else point.y
@@ -1764,7 +2154,9 @@ class TrackEditor(QMainWindow):
             item.points_invertida = self._extend_path(item.points_invertida, length)
             item.points_punta = self._extend_path(item.points_punta, length)
 
-    def snap_section_to_connection(self, item, anchor=None, exclude=(), rotate=True):
+    def snap_section_to_connection(
+        self, item, anchor=None, exclude=(), rotate=True, port_indices=None
+    ):
         if not isinstance(item, (CvLineal, Aguja)):
             return False
         if anchor is not None:
@@ -1777,6 +2169,8 @@ class TrackEditor(QMainWindow):
         for other in self._section_items(excluded):
             for target, target_angle in other.get_outs():
                 for port_index, (port, port_angle) in enumerate(item.get_outs()):
+                    if port_indices is not None and port_index not in port_indices:
+                        continue
                     if not port_angle.close_to(target_angle + Angle(pi)):
                         continue
                     if anchor is None:
@@ -1795,6 +2189,34 @@ class TrackEditor(QMainWindow):
         if rotate:
             item.rotation = item.rotation + rotation_delta
         item.position = position
+        return True
+
+    def snap_group_to_grid(self, items, mouse_position):
+        moving_sections = [
+            item for item in items if isinstance(item, (CvLineal, Aguja))
+        ]
+        if not moving_sections:
+            return False
+        mouse_x = mouse_position.x() if callable(mouse_position.x) else mouse_position.x
+        mouse_y = mouse_position.y() if callable(mouse_position.y) else mouse_position.y
+        ports = [
+            port
+            for item in moving_sections
+            for port, _ in item.get_outs()
+        ]
+        port = min(
+            ports,
+            key=lambda candidate: (
+                (candidate.x - mouse_x) ** 2
+                + (candidate.y - mouse_y) ** 2
+            ),
+        )
+        corner = self.snap_point_to_grid_corner(port)
+        if corner is port:
+            return False
+        correction = corner - port
+        for item in items:
+            item.position = item.position + correction
         return True
 
     def orient_section_for_connection(self, item, anchor):
@@ -1871,11 +2293,11 @@ class TrackEditor(QMainWindow):
             item.position = center
             self.set_aguja_rotation(item, best_rotation)
 
-    def apply_item_configuration(self, item, short_id, cv_name, signal_type, side):
+    def apply_item_configuration(self, item, short_id, cv_name, signal_type, side, focos=None, velocidades=None, cv_options=None, position=None):
         if item is None:
             return False
         item_dependency = item.id.dep
-        if not short_id or (isinstance(item, Aguja) and not cv_name):
+        if not short_id:
             QMessageBox.warning(
                 self,
                 "Datos incompletos",
@@ -1898,20 +2320,27 @@ class TrackEditor(QMainWindow):
                 f"Ya existe un elemento de este tipo con id {new_id.id}.",
             )
             return False
-        new_state = {"id": new_id}
+        new_state = {"id": new_id, "position": position or item.position}
         if isinstance(item, CvLineal):
             new_state["lado"] = side
+            cv_type, offset = cv_options or (item.tipo_cv, item.offset)
+            new_state.update(tipo_cv=cv_type, offset=offset)
         elif isinstance(item, Aguja):
             new_state["cv"] = new_cv
             new_state["lado"] = side
         elif isinstance(item, Señal):
             new_state["tipo_señal"] = signal_type
+            new_state["focos"] = list(focos or [])
+            new_state["aspectos_pantalla"] = list(velocidades or [])
         self.run_command(EditItemCommand(self, item, new_state, f"Configurar {item.id.id}"))
         return True
 
     def rotate_selected(self, amount):
         if self.selected is None or len(self.selected_items) != 1:
             self.statusBar().showMessage("Selecciona primero un elemento.")
+            return
+        if isinstance(self.selected, Topera):
+            self.statusBar().showMessage("La topera está fijada al puerto de su sección de vía.")
             return
         if isinstance(self.selected, Señal):
             track = next((item for item in self.items_by_dependency.get(self.selected.id.dep, [])
@@ -1956,10 +2385,21 @@ class TrackEditor(QMainWindow):
                     "Incluye o elimina primero la señal asociada a esta vía.",
                 )
                 return
+            if isinstance(item, (CvLineal, Aguja)) and any(
+                isinstance(other, Topera) and self.topera_matches_section(other, item)
+                and other not in selected_set
+                for other in self.items_by_dependency.get(item.id.dep, [])
+            ):
+                QMessageBox.warning(
+                    self, "La vía tiene una topera",
+                    "Incluye o elimina primero la topera asociada a esta vía.",
+                )
+                return
         self.run_command(DeleteItemsCommand(self, items))
 
     def run_command(self, command):
-        command.execute()
+        if command.execute() is False:
+            return
         self.undo_stack.append(command)
         self.redo_stack.clear()
         self.is_dirty = True
@@ -2165,23 +2605,62 @@ class TrackEditor(QMainWindow):
         self.dependency.blockSignals(was_blocked)
 
     def draw_grid(self):
+        self._update_grid_bounds()
+        self._draw_grid_lines()
+        self.draw_items()
+
+    def _update_grid_bounds(self):
+        old_bounds = (self.grid_left, self.grid_right)
+        item_positions = [
+            position
+            for items in self.items_by_dependency.values()
+            for item in items
+            for position in self._grid_item_positions(item)
+        ]
+        if item_positions:
+            minimum_x = min(position.x for position in item_positions)
+            maximum_x = max(position.x for position in item_positions)
+            trigger_width = GRID_EXTENSION_TRIGGER * GRID_WIDTH
+            if maximum_x >= self.grid_right * GRID_WIDTH - trigger_width:
+                self.grid_right += GRID_EXTENSION_CELLS
+            if minimum_x <= self.grid_left * GRID_WIDTH + trigger_width:
+                self.grid_left -= GRID_EXTENSION_CELLS
+        self.scene.setSceneRect(
+            self.grid_left * GRID_WIDTH, 0,
+            (self.grid_right - self.grid_left) * GRID_WIDTH,
+            ROWS * GRID_HEIGHT,
+        )
+        return (self.grid_left, self.grid_right) != old_bounds
+
+    def _draw_grid_lines(self):
         for graphic in getattr(self, "grid_graphics", []):
             self.scene.removeItem(graphic)
         self.grid_graphics = []
         pen = QPen(QColor("#d7dee7"), 1)
-        for col in range(COLS + 1):
+        for col in range(self.grid_left, self.grid_right + 1):
             self.grid_graphics.append(
-                self.scene.addLine(col * GRID_WIDTH, 0,
-                                   col * GRID_WIDTH, ROWS * GRID_HEIGHT, pen)
+                self.scene.addLine(
+                    col * GRID_WIDTH, 0,
+                    col * GRID_WIDTH, ROWS * GRID_HEIGHT, pen
+                )
             )
         for row in range(ROWS + 1):
             self.grid_graphics.append(
-                self.scene.addLine(0, row * GRID_HEIGHT,
-                                   COLS * GRID_WIDTH, row * GRID_HEIGHT, pen)
+                self.scene.addLine(
+                    self.grid_left * GRID_WIDTH, row * GRID_HEIGHT,
+                    self.grid_right * GRID_WIDTH, row * GRID_HEIGHT, pen
+                )
             )
-        self.draw_items()
+
+    @staticmethod
+    def _grid_item_positions(item):
+        if isinstance(item, (CvLineal, Aguja)):
+            return [position for position, _ in item.get_outs()]
+        return [item.position]
 
     def draw_items(self):
+        if self._update_grid_bounds():
+            self._draw_grid_lines()
         # Preserve the grid graphics; replace only item graphics on each redraw.
         if hasattr(self, "delete_button"):
             self.delete_button.setEnabled(bool(self.selected_items))
@@ -2211,8 +2690,7 @@ class TrackEditor(QMainWindow):
                 for point in points[1:]:
                     path.lineTo(QPointF(*point))
                 self.item_graphics.append(self.scene.addPath(path, pen))
-                outs = item.get_outs()
-                label_center = item_screen_point((outs[0][0] + outs[1][0]) / 2)
+                label_center = label_anchor(item)
                 if item.lado is not None:
                     if item.lado == Lado.Impar:
                         start, end = points[-2], points[-1]
@@ -2241,9 +2719,7 @@ class TrackEditor(QMainWindow):
                 angle = item.rotation.angle
                 ux, uy = cos(angle), sin(angle)
                 bottom = item_screen_point(signal_foot_position(item))
-                center_x = bottom[0] + ux * SIGNAL_ICON.width / 2 + uy * SIGNAL_ICON.height / 2
-                center_y = bottom[1] + uy * SIGNAL_ICON.width / 2 - ux * SIGNAL_ICON.height / 2
-                label_center = (center_x - uy * 12, center_y + ux * 12)
+                label_pos = label_anchor(item)
                 pixmap = SIGNAL_ICON.pixmap()
                 graphic = self.scene.addPixmap(pixmap)
                 graphic.setOffset(0, -pixmap.height())
@@ -2251,20 +2727,86 @@ class TrackEditor(QMainWindow):
                 graphic.setRotation(item.rotation.angle * 180 / pi)
                 graphic.setZValue(1)
                 self.item_graphics.append(graphic)
-            label = self.scene.addText(item.id.id_corto)
-            label.setDefaultTextColor(color)
+            elif isinstance(item, Topera):
+                angle = item.rotation.angle
+                ux, uy = cos(angle), sin(angle)
+                center = item.position + Point(ux * 2, uy * 2)
+                perpendicular = Point(-uy * 10, ux * 10)
+                first = item_screen_point(center - perpendicular)
+                second = item_screen_point(center + perpendicular)
+                self.item_graphics.append(
+                    self.scene.addLine(first[0], first[1], second[0], second[1], pen)
+                )
+                label_center = label_anchor(item)
             if isinstance(item, Señal):
-                label.setPos(
-                    label_center[0] - label.boundingRect().width() / 2,
-                    label_center[1] - label.boundingRect().height() / 2,
+                label_group = QGraphicsItemGroup()
+                label_group.setPos(*label_pos)
+                label_group.setTransformOriginPoint(0, 0)
+                label_group.setRotation(item.rotation.angle * 180 / pi)
+                label_group.setZValue(2)
+                self.scene.addItem(label_group)
+                background = QGraphicsRectItem(label_group)
+                background.setRect(
+                    0, -SIGNAL_ICON_HEIGHT / 2,
+                    label_background_width(item.id.id_corto), SIGNAL_ICON_HEIGHT,
                 )
-            else:
-                label.setPos(
-                    label_center[0] - label.boundingRect().width() / 2,
-                    label_center[1]# + CELL * .17,
-                )
-            label.setZValue(2)
-            self.item_graphics.append(label)
+                background.setBrush(QBrush(QColor(255, 255, 255, 204)))
+                no_pen = Qt.PenStyle.NoPen if hasattr(Qt, "PenStyle") else Qt.NoPen
+                background.setPen(QPen(no_pen))
+                text = QGraphicsTextItem(item.id.id_corto, label_group)
+                text.document().setDocumentMargin(0)
+                text.setDefaultTextColor(color)
+                font = QFont()
+                font.setPointSizeF(9)
+                text.setFont(font)
+                text.setPos(0, -text.boundingRect().height() / 2)
+                self.item_graphics.append(label_group)
+                continue
+            if isinstance(item, CvLineal):
+                marker_x, marker_y = label_center
+                marker_pen = QPen(color, 1.5)
+                marker_brush = QBrush(QColor("white"))
+                self.item_graphics.append(self.scene.addEllipse(
+                    marker_x - 7, marker_y - 7, 14, 14, marker_pen, marker_brush
+                ))
+                self.item_graphics.append(self.scene.addLine(
+                    marker_x - 3.5, marker_y - 3.5,
+                    marker_x + 3.5, marker_y + 3.5, marker_pen
+                ))
+                self.item_graphics.append(self.scene.addLine(
+                    marker_x - 3.5, marker_y + 3.5,
+                    marker_x + 3.5, marker_y - 3.5, marker_pen
+                ))
+                self.add_canvas_label("*0", (marker_x, marker_y - 12), color, label_angle(item))
+                self.add_canvas_label("AVERÍA", (marker_x, marker_y - 20), color, label_angle(item))
+            self.add_canvas_label(
+                item.id.id_corto, label_center, color, label_angle(item),
+                top_offset=6 if isinstance(item, CvLineal) else 0,
+            )
+
+    def add_canvas_label(self, text_value, center, color, angle=0, top_offset=0):
+        x, y = center
+        width = label_background_width(text_value)
+        label_group = QGraphicsItemGroup()
+        label_group.setPos(x, y)
+        label_group.setTransformOriginPoint(0, 0)
+        label_group.setRotation(angle * 180 / pi)
+        label_group.setZValue(2)
+        self.scene.addItem(label_group)
+        background = QGraphicsRectItem(label_group)
+        background.setRect(-width / 2, top_offset, width, 14)
+        background.setBrush(QBrush(QColor(255, 255, 255, 204)))
+        no_pen = Qt.PenStyle.NoPen if hasattr(Qt, "PenStyle") else Qt.NoPen
+        background.setPen(QPen(no_pen))
+        label = QGraphicsTextItem(text_value, label_group)
+        label.document().setDocumentMargin(0)
+        font = QFont()
+        font.setPointSizeF(9)
+        label.setFont(font)
+        label.setDefaultTextColor(color)
+        label.setPos(-label.boundingRect().width() / 2,
+                     top_offset + (14 - label.boundingRect().height()) / 2)
+        self.item_graphics.append(label_group)
 
     def add_arrow_vector(self, anchor, direction, color):
         length = (direction[0] ** 2 + direction[1] ** 2) ** .5

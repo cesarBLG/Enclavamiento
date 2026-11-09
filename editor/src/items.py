@@ -194,7 +194,8 @@ class Item:
             raise ValueError("Cada elemento debe ser un objeto JSON.")
         constructors = {"CvLineal": CvLineal.deserialize,
                         "Aguja": Aguja.deserialize,
-                        "Señal": Señal.deserialize}
+                        "Señal": Señal.deserialize,
+                        "Topera": Topera.deserialize}
         kind = data.get("tipo")
         if kind not in constructors:
             raise ValueError(f"Tipo de elemento desconocido: {kind!r}.")
@@ -232,6 +233,8 @@ class CvLineal(SeccionVia):
         self.points = [Point(0, 0)] + [p if isinstance(p, Point) else Point(*p)
                                       for p in (points or [Point(30, 0)])]
         self.lado = None
+        self.tipo_cv = None
+        self.offset = self.length() / 2
 
     @staticmethod
     def get_connections():
@@ -253,10 +256,48 @@ class CvLineal(SeccionVia):
     def get_cv(self):
         return self.id
 
+    def length(self):
+        total_length = 0.0
+        for i in range(len(self.points) - 1):
+            p1 = self.points[i]
+            p2 = self.points[i + 1]
+            segment_length = math.sqrt((p2.x - p1.x) ** 2 + (p2.y - p1.y) ** 2)
+            total_length += segment_length
+        return total_length
+
+    def get_linear_position(self, distance: float) -> Point:
+        if distance < 0:
+            raise ValueError("La distancia no puede ser negativa.")
+        remaining_distance = distance
+        for i in range(len(self.points) - 1):
+            p1 = self.points[i]
+            p2 = self.points[i + 1]
+            segment_length = math.sqrt((p2.x - p1.x) ** 2 + (p2.y - p1.y) ** 2)
+            if remaining_distance <= segment_length:
+                ratio = remaining_distance / segment_length
+                x = p1.x + ratio * (p2.x - p1.x)
+                y = p1.y + ratio * (p2.y - p1.y)
+                return Point(x, y)
+            remaining_distance -= segment_length
+        raise ValueError("La distancia excede la longitud de la vía.")
+
+    def get_linear_angle(self, distance: float) -> Angle:
+        if distance < 0 or distance > self.length():
+            raise ValueError("La distancia excede la longitud de la vía.")
+        remaining = distance
+        for first, second in zip(self.points, self.points[1:]):
+            length = math.hypot(second.x - first.x, second.y - first.y)
+            if remaining <= length:
+                return get_angle(first, second) + self.rotation
+            remaining -= length
+        return get_angle(self.points[-2], self.points[-1]) + self.rotation
+
     def serialize(self):
         return {**super().serialize(), "tipo": "CvLineal",
                 "points": [p.serialize() for p in self.points[1:]],
-                "lado": self.lado.name if self.lado else None}
+                "lado": self.lado.name if self.lado else None,
+                "tipo_cv": self.tipo_cv,
+                "offset": self.offset}
 
     @classmethod
     def deserialize(cls, data, dependency):
@@ -268,6 +309,13 @@ class CvLineal(SeccionVia):
                 item.lado = Lado[side]
             except (KeyError, TypeError):
                 raise ValueError(f"Lado inválido para {ident.id}.") from None
+        item.tipo_cv = data.get("tipo_cv")
+        if item.tipo_cv not in (None, "Estacionamiento", "Trayecto"):
+            raise ValueError(f"Tipo de CV inválido para {ident.id}.")
+        # Older layouts stored the train's linear position under this key.
+        item.offset = data.get("offset", data.get("distancia_tren", item.length() / 2))
+        if not isinstance(item.offset, (int, float)) or not math.isfinite(item.offset) or not 0 <= item.offset <= item.length():
+            raise ValueError(f"Offset inválido para {ident.id}.")
         return item
 
 
@@ -337,21 +385,23 @@ class Aguja(SeccionVia):
 
 class Señal(Item):
     def __init__(self, id: IdElemento, position: Point, tipo: TipoSeñal,
-                 offset_pie: float = 6.0, rotation: Angle = None):
+                 offset_pie: float = 6.0, rotation: Angle = None,
+                 focos=None, aspectos_pantalla=None):
         super().__init__(id, TipoElemento.SEÑAL, position, rotation)
         self.tipo_señal = tipo
         self.offset_pie = float(offset_pie)
+        self.focos = list(focos if focos is not None else ("V", "R", "B", "Az", "A"))
+        self.aspectos_pantalla = list(aspectos_pantalla or [])
 
     def get_outs(self):
         return [(self.position, self.rotation)]
 
-    def get_directions(self):
-        return (Direccion(round(self.rotation.angle / (math.pi / 4)) % 8),)
-
     def serialize(self):
         return {**super().serialize(), "tipo": "Señal",
                 "tipo_señal": self.tipo_señal.name,
-                "offset_pie": self.offset_pie}
+                "offset_pie": self.offset_pie,
+                "focos": self.focos,
+                "aspectos_pantalla": self.aspectos_pantalla}
 
     @classmethod
     def deserialize(cls, data, dependency):
@@ -363,8 +413,28 @@ class Señal(Item):
         offset = data.get("offset_pie", 6.0)
         if not isinstance(offset, (int, float)) or not math.isfinite(offset):
             raise ValueError(f"Desplazamiento del pie inválido para {ident.id}.")
-        return cls(ident, position, signal_type, offset, rotation)
+        focos = data.get("focos", ["V", "R", "B", "Az", "A"])
+        aspectos = data.get("aspectos_pantalla", [])
+        if not isinstance(focos, list) or any(foco not in ("V", "R", "B", "Az", "A") for foco in focos):
+            raise ValueError(f"Focos inválidos para {ident.id}.")
+        if not isinstance(aspectos, list) or any(not isinstance(v, str) for v in aspectos):
+            raise ValueError(f"Velocidades de pantalla inválidas para {ident.id}.")
+        return cls(ident, position, signal_type, offset, rotation, focos, aspectos)
 
+class Topera(Item):
+    def __init__(self, id: IdElemento, position: Point, rotation: Angle = None):
+        super().__init__(id, TipoElemento.TOPERA, position, rotation)
+
+    def get_outs(self):
+        return [(self.position, self.rotation)]
+
+    def serialize(self):
+        return {**super().serialize(), "tipo": "Topera"}
+
+    @classmethod
+    def deserialize(cls, data, dependency):
+        ident, position, rotation = Item._base(data, dependency)
+        return cls(ident, position, rotation)
 
 def _validate_layout(dependencies):
     # Los elementos pueden compartir coordenadas o cruzarse; las relaciones de

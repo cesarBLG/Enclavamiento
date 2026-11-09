@@ -112,6 +112,7 @@ def get_seccion_pin_lado(out, sec, conexiones):
                 return None, None, None
             return get_seccion_pin_lado(out2, sec2, conexiones)
         else:
+            print(sec.id.id)
             return sec, idx, sec.lado if rev else sec.lado.opp_lado()
     return None, None, None
 
@@ -140,6 +141,11 @@ def generar_config_ence(itemlist: List[SeccionVia]):
                             "Pin": pin,
                             "Lado": lado.name,
                         }
+                        signal_config = get_config(item.id.dep, "Señales")[item.id.id_corto]
+                        foco_codes = {"V": "V", "R": "R", "B": "B", "Az": "Az", "A": "A"}
+                        signal_config["Focos"] = "".join(foco_codes[f] for f in ("V", "R", "B", "Az", "A") if f in item.focos)
+                        if item.aspectos_pantalla:
+                            signal_config["AspectosPantalla"] = list(item.aspectos_pantalla)
                         break
                 else:
                     continue
