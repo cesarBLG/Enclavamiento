@@ -1,6 +1,6 @@
 """Shared label anchors for the editor canvas and SVG export."""
 
-from math import cos, sin
+from math import cos, pi, sin
 
 from items import Aguja, CvLineal, Point, Señal, Topera
 
@@ -45,8 +45,24 @@ def label_anchor(item):
 def label_angle(item):
     """Return the local track angle where this item's name is placed."""
     if isinstance(item, CvLineal):
-        return item.get_linear_angle(item.offset).angle
-    return item.rotation.angle
+        angle = item.get_linear_angle(item.offset).angle
+    else:
+        angle = item.rotation.angle
+    while angle > pi / 2:
+        angle -= pi
+    while angle <= -pi / 2:
+        angle += pi
+    return angle
+
+
+def label_text_anchor(item):
+    """Return the horizontal alignment needed at the label anchor."""
+    if not isinstance(item, Señal):
+        return "middle"
+    raw_angle = item.rotation.angle
+    normalized_angle = label_angle(item)
+    angle_delta = (raw_angle - normalized_angle) % (2 * pi)
+    return "end" if abs(angle_delta - pi) <= 1e-9 else "start"
 
 
 def label_background_width(text):

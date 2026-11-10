@@ -15,7 +15,7 @@ from pathlib import Path
 
 try:
     from PyQt6.QtCore import QPointF, QRectF, QSize, Qt
-    from PyQt6.QtGui import QBrush, QColor, QFont, QIcon, QKeySequence, QPainter, QPainterPath, QPen, QPixmap, QPolygonF, QShortcut
+    from PyQt6.QtGui import QBrush, QColor, QFont, QFontMetricsF, QIcon, QKeySequence, QPainter, QPainterPath, QPen, QPixmap, QPolygonF, QShortcut
     from PyQt6.QtSvg import QSvgRenderer
     from PyQt6.QtWidgets import (
         QApplication, QCheckBox, QComboBox, QFormLayout,
@@ -27,7 +27,7 @@ try:
     LEFT_BUTTON = Qt.MouseButton.LeftButton
 except ImportError:
     from PyQt5.QtCore import QPointF, QRectF, QSize, Qt
-    from PyQt5.QtGui import QBrush, QColor, QFont, QIcon, QKeySequence, QPainter, QPainterPath, QPen, QPixmap, QPolygonF
+    from PyQt5.QtGui import QBrush, QColor, QFont, QFontMetricsF, QIcon, QKeySequence, QPainter, QPainterPath, QPen, QPixmap, QPolygonF
     from PyQt5.QtSvg import QSvgRenderer
     from PyQt5.QtWidgets import (
         QApplication, QCheckBox, QComboBox, QFormLayout,
@@ -45,7 +45,7 @@ from items import (
 from export import generar_config_ence
 from label_positions import (
     SIGNAL_ICON_HEIGHT, SIGNAL_ICON_WIDTH, label_anchor, label_angle,
-    label_background_width, signal_foot_position, signal_label_anchor,
+    label_text_anchor, signal_foot_position, signal_label_anchor,
 )
 from svg.svg_export import export_svg
 from svg.generate_junction import get_junction_bounds
@@ -168,6 +168,24 @@ class RotateCommand:
 
     def undo(self):
         self.editor.restore_rotation_state(self.item, self.linked_signal, self.before)
+        self.editor.set_selection(self.previous_selection)
+
+
+class ConvertTravesiaCommand:
+    def __init__(self, editor, item):
+        self.editor = editor
+        self.item = item
+        self.before = (item.is_travesia, list(item.points_punta))
+        self.previous_selection = list(editor.selected_items)
+        self.text = f"Convertir en travesía {item.id.id}"
+
+    def execute(self):
+        self.item.is_travesia = True
+        self.item.points_punta = []
+        self.editor.set_selection([self.item])
+
+    def undo(self):
+        self.item.is_travesia, self.item.points_punta = self.before
         self.editor.set_selection(self.previous_selection)
 
 
@@ -652,7 +670,7 @@ class GridView(QGraphicsView):
             if isinstance(item, CvLineal):
                 local_paths = (item.points,)
             elif isinstance(item, Aguja):
-                local_paths = (item.points_normal, item.points_invertida, item.points_punta)
+                local_paths = (item.points_normal, item.points_invertida)
             elif isinstance(item, Cruzamiento):
                 local_paths = (item.points_p1, item.points_p2, item.points_p3, item.points_p4)
             else:
@@ -1070,6 +1088,14 @@ class TrackEditor(QMainWindow):
         self.junction_button.clicked.connect(self.generate_junction_selected)
         self.junction_button.setEnabled(False)
         tools.addWidget(self.junction_button)
+        self.travesia_button = QToolButton(self)
+        self.travesia_button.setIcon(self.make_icon("crossing"))
+        self.travesia_button.setIconSize(QSize(36, 36))
+        self.travesia_button.setFixedSize(46, 42)
+        self.travesia_button.setToolTip("Convertir la aguja seleccionada en travesía")
+        self.travesia_button.clicked.connect(self.convert_selected_to_travesia)
+        self.travesia_button.setEnabled(False)
+        tools.addWidget(self.travesia_button)
         self.crossing_button = QToolButton(self)
         self.crossing_button.setIcon(self.make_icon("crossing"))
         self.crossing_button.setIconSize(QSize(36, 36))
@@ -1382,6 +1408,11 @@ class TrackEditor(QMainWindow):
             self.merge_button.setEnabled(section_selection)
         if hasattr(self, "junction_button"):
             self.junction_button.setEnabled(section_selection)
+        if hasattr(self, "travesia_button"):
+            self.travesia_button.setEnabled(
+                len(selection) == 1 and isinstance(selection[0], Aguja)
+                and not selection[0].is_travesia
+            )
         if hasattr(self, "crossing_button"):
             self.crossing_button.setEnabled(section_selection)
         if hasattr(self, "config_panel"):
@@ -1650,6 +1681,15 @@ class TrackEditor(QMainWindow):
             and port_angle.close_to(target_angle + Angle(pi))
         ]
 
+    def convert_selected_to_travesia(self):
+        if len(self.selected_items) != 1 or not isinstance(self.selected_items[0], Aguja):
+            self.statusBar().showMessage("Selecciona una aguja para convertirla en travesía.")
+            return
+        item = self.selected_items[0]
+        if item.is_travesia:
+            return
+        self.run_command(ConvertTravesiaCommand(self, item))
+
     def point_clicked(self, scene_point):
         kind, value = self.mode
         if kind == "select":
@@ -1872,6 +1912,8 @@ class TrackEditor(QMainWindow):
             return list(reversed(TrackEditor._world_path(
                 item, (item.points_p1, item.points_p2, item.points_p3, item.points_p4)[port_index]
             )))
+        if item.is_travesia and port_index == 2:
+            return [item.position, item.position]
         paths = (item.points_normal, item.points_invertida, item.points_punta)
         return list(reversed(TrackEditor._world_path(item, paths[port_index])))
 
@@ -1911,6 +1953,9 @@ class TrackEditor(QMainWindow):
             for destination_index, first in enumerate(destination_outs)
             for source_index, second in enumerate(source_outs)
         )
+        if ((isinstance(destination, Aguja) and destination.is_travesia and destination_port == 2)
+                or (isinstance(source, Aguja) and source.is_travesia and source_port == 2)):
+            return False
         intersection = self._line_join_point(
             destination_outs[destination_port], source_outs[source_port]
         )
@@ -2113,6 +2158,8 @@ class TrackEditor(QMainWindow):
         candidates = []
         for item in self._section_items():
             for port, (position, _) in enumerate(item.get_outs()):
+                if isinstance(item, Aguja) and item.is_travesia and port == 2:
+                    continue
                 distance = sqrt((position.x - point_x) ** 2 + (position.y - point_y) ** 2)
                 candidates.append((distance, item, port))
         if not candidates:
@@ -2123,6 +2170,8 @@ class TrackEditor(QMainWindow):
         return item, port, self.capture_geometry_state(item)
 
     def preview_extend(self, item, port_index, before, point):
+        if isinstance(item, Aguja) and item.is_travesia and port_index == 2:
+            return
         self.restore_geometry_state(item, before)
         point_x = point.x() if callable(point.x) else point.x
         point_y = point.y() if callable(point.y) else point.y
@@ -2278,7 +2327,8 @@ class TrackEditor(QMainWindow):
         if isinstance(item, Aguja):
             item.points_normal = self._extend_path(item.points_normal, extension_length)
             item.points_invertida = self._extend_path(item.points_invertida, extension_length)
-            item.points_punta = self._extend_path(item.points_punta, extension_length)
+            if not item.is_travesia:
+                item.points_punta = self._extend_path(item.points_punta, extension_length)
         elif isinstance(item, Cruzamiento):
             item.points_p1 = self._extend_path(item.points_p1, extension_length)
             item.points_p2 = self._extend_path(item.points_p2, extension_length)
@@ -2843,9 +2893,19 @@ class TrackEditor(QMainWindow):
                     self.item_graphics.append(self.scene.addPath(branch, pen))
                 center = item_screen_point(item.position)
                 label_center = center
+                inverted_start = item.position + item.points_invertida[0].get_rotated(item.rotation)
+                normal_start = item.position + item.points_normal[0].get_rotated(item.rotation)
+                label_offset = 5 if inverted_start.y < normal_start.y else -19
                 if item.lado is not None:
-                    arrow_dir = (branch_ends[0][0] - center[0], branch_ends[0][1] - center[1]) if item.lado == Lado.Impar else (branch_ends[2][0] - center[0], branch_ends[2][1] - center[1])
-                    self.item_graphics.extend(self.add_arrow_vector(branch_ends[2], arrow_dir, color))
+                    if item.is_travesia:
+                        arrow_dir = (cos(item.rotation.angle), sin(item.rotation.angle))
+                        arrow_anchor = center
+                    else:
+                        arrow_dir = ((branch_ends[0][0] - center[0], branch_ends[0][1] - center[1])
+                                     if item.lado == Lado.Impar else
+                                     (branch_ends[2][0] - center[0], branch_ends[2][1] - center[1]))
+                        arrow_anchor = branch_ends[2]
+                    self.item_graphics.extend(self.add_arrow_vector(arrow_anchor, arrow_dir, color))
             elif isinstance(item, Cruzamiento):
                 label_center = item_screen_point(item.position)
                 for path_points in (
@@ -2884,16 +2944,20 @@ class TrackEditor(QMainWindow):
                 )
                 label_center = label_anchor(item)
             if isinstance(item, Señal):
+                font = QFont()
+                font.setPointSizeF(9)
+                width = QFontMetricsF(font).horizontalAdvance(item.id.id_corto) + 4
                 label_group = QGraphicsItemGroup()
                 label_group.setPos(*label_pos)
                 label_group.setTransformOriginPoint(0, 0)
-                label_group.setRotation(item.rotation.angle * 180 / pi)
+                label_group.setRotation(label_angle(item) * 180 / pi)
                 label_group.setZValue(2)
                 self.scene.addItem(label_group)
+                text_anchor = label_text_anchor(item)
+                label_left = -width if text_anchor == "end" else 0
                 background = QGraphicsRectItem(label_group)
                 background.setRect(
-                    0, -SIGNAL_ICON_HEIGHT / 2,
-                    label_background_width(item.id.id_corto), SIGNAL_ICON_HEIGHT,
+                    label_left, -SIGNAL_ICON_HEIGHT / 2, width, SIGNAL_ICON_HEIGHT,
                 )
                 background.setBrush(QBrush(QColor(255, 255, 255, 204)))
                 no_pen = Qt.PenStyle.NoPen if hasattr(Qt, "PenStyle") else Qt.NoPen
@@ -2901,10 +2965,11 @@ class TrackEditor(QMainWindow):
                 text = QGraphicsTextItem(item.id.id_corto, label_group)
                 text.document().setDocumentMargin(0)
                 text.setDefaultTextColor(color)
-                font = QFont()
-                font.setPointSizeF(9)
                 text.setFont(font)
-                text.setPos(0, -text.boundingRect().height() / 2)
+                text.setPos(
+                    label_left if text_anchor == "start" else -text.boundingRect().width(),
+                    -text.boundingRect().height() / 2,
+                )
                 self.item_graphics.append(label_group)
                 continue
             if isinstance(item, CvLineal):
@@ -2922,16 +2987,22 @@ class TrackEditor(QMainWindow):
                     marker_x - 3.5, marker_y + 3.5,
                     marker_x + 3.5, marker_y - 3.5, marker_pen
                 ))
-                self.add_canvas_label("*0", (marker_x, marker_y - 12), color, label_angle(item))
-                self.add_canvas_label("AVERÍA", (marker_x, marker_y - 20), color, label_angle(item))
+                self.add_canvas_label("*0", (marker_x, marker_y), color, label_angle(item), top_offset=-7)
+                self.add_canvas_label("AVERÍA", (marker_x, marker_y), color, label_angle(item), top_offset=-7)
             self.add_canvas_label(
                 item.id.id_corto, label_center, color, label_angle(item),
-                top_offset=6 if isinstance(item, CvLineal) else 0,
+                top_offset=(
+                    6 if isinstance(item, CvLineal)
+                    else label_offset if isinstance(item, Aguja)
+                    else 0
+                ),
             )
 
     def add_canvas_label(self, text_value, center, color, angle=0, top_offset=0):
         x, y = center
-        width = label_background_width(text_value)
+        font = QFont()
+        font.setPointSizeF(9)
+        width = QFontMetricsF(font).horizontalAdvance(text_value) + 4
         label_group = QGraphicsItemGroup()
         label_group.setPos(x, y)
         label_group.setTransformOriginPoint(0, 0)
@@ -2945,8 +3016,6 @@ class TrackEditor(QMainWindow):
         background.setPen(QPen(no_pen))
         label = QGraphicsTextItem(text_value, label_group)
         label.document().setDocumentMargin(0)
-        font = QFont()
-        font.setPointSizeF(9)
         label.setFont(font)
         label.setDefaultTextColor(color)
         label.setPos(-label.boundingRect().width() / 2,

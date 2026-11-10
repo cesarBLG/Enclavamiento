@@ -13,7 +13,7 @@ from tomlkit import item
 from items import Aguja, Cruzamiento, CvLineal, Item, Point, Señal, Topera
 from label_positions import (
 	SIGNAL_ICON_HEIGHT, SIGNAL_ICON_WIDTH, label_anchor, label_angle,
-	label_background_width,
+	label_background_width, label_text_anchor,
 )
 
 
@@ -22,7 +22,14 @@ if str(INKEX_UTILS_PATH) not in sys.path:
 	sys.path.insert(0, str(INKEX_UTILS_PATH))
 from svg.generate_track import generate_track_svg  # pyright: ignore[reportMissingImports]
 from svg.generate_junction import generate_junction  # pyright: ignore[reportMissingImports]
+from svg.generate_travesia import generate_travesia  # pyright: ignore[reportMissingImports]
 from svg.generate_crossing import generate_crossing  # pyright: ignore[reportMissingImports]
+
+
+def _aguja_label_offset(item: Aguja):
+	inverted_start = item.position + item.points_invertida[0].get_rotated(item.rotation)
+	normal_start = item.position + item.points_normal[0].get_rotated(item.rotation)
+	return 5 if inverted_start.y < normal_start.y else -19
 
 
 class Symbol:
@@ -67,40 +74,52 @@ def _track_group(item: CvLineal):
 		f"rotate({block_angle:.15g}) "
 		f"translate({-block_symbol.width / 2:.15g} {-block_symbol.height / 2:.15g})"
 	))
-	block.set("{http://www.inkscape.org/namespaces/inkscape}label", "bloqueoDestino")
+	block.set("{http://www.inkscape.org/namespaces/inkscape}label", "bv")
 	group.append(block)
-	_add_item_label(group, "*0", label_center.x, label_center.y - 12, angle=angle)
-	_add_item_label(group, "AVERÍA", label_center.x, label_center.y - 20, angle=angle)
+	_add_item_label_group(group, "*0", label_center.x, label_center.y,
+	                      label="numerador", angle=angle, top_offset=-7)
+	_add_item_label_group(group, "AVERÍA", label_center.x, label_center.y,
+	                      label="averia", angle=angle, top_offset=-7)
 	return group
 
 
 def _add_item_label(group, item_id, x, y, width=None, height=14, angle=0, top_offset=0):
 	inkscape_namespace = "http://www.inkscape.org/namespaces/inkscape"
 	width = width if width is not None else len(item_id) * 7 + 4
-	label_group = ElementTree.Element("{http://www.w3.org/2000/svg}g", {
-		"transform": (
-			f"matrix({cos(angle):.15g} {sin(angle):.15g} "
-			f"{-sin(angle):.15g} {cos(angle):.15g} {x:.15g} {y:.15g})"
-		),
-		f"{{{inkscape_namespace}}}label": "etiquetaNombre",
-	})
+	transform = (
+		f"matrix({cos(angle):.15g} {sin(angle):.15g} "
+		f"{-sin(angle):.15g} {cos(angle):.15g} {x:.15g} {y:.15g})"
+	)
 	background = ElementTree.Element("{http://www.w3.org/2000/svg}rect", {
 		"x": f"{-width / 2:.15g}",
 		"y": f"{top_offset:.15g}",
 		"width": f"{width:.15g}",
 		"height": f"{height:.15g}",
 		"style": "fill:#fff;fill-opacity:0.8",
-		f"{{{inkscape_namespace}}}label": "fondoNombre",
+		"transform": transform,
+		f"{{{inkscape_namespace}}}label": "fondo_nombre",
 	})
 	text = ElementTree.Element("{http://www.w3.org/2000/svg}text", {
 		"x": "0",
 		"y": f"{top_offset + height / 2:.15g}",
 		"text-anchor": "middle",
 		"dominant-baseline": "middle",
+		"transform": transform,
 		f"{{{inkscape_namespace}}}label": "nombre",
 	})
-	text.text = item_id
-	label_group.extend((background, text))
+	tspan = ElementTree.SubElement(text, "{http://www.w3.org/2000/svg}tspan")
+	tspan.text = item_id
+	group.extend((background, text))
+
+
+def _add_item_label_group(group, item_id, x, y, label, width=None, height=14,
+						  angle=0, top_offset=0):
+	inkscape_namespace = "http://www.inkscape.org/namespaces/inkscape"
+	label_group = ElementTree.Element("{http://www.w3.org/2000/svg}g", {
+		f"{{{inkscape_namespace}}}label": label,
+	})
+	_add_item_label(label_group, item_id, x, y, width=width, height=height,
+					angle=angle, top_offset=top_offset)
 	group.append(label_group)
 
 
@@ -122,7 +141,30 @@ def _junction_group(item: Aguja):
 	anchor_x, anchor_y = label_anchor(item)
 	_add_item_label(group, item.id.id_corto,
 	                anchor_x - item.position.x, anchor_y - item.position.y,
-	                angle=label_angle(item))
+	                angle=label_angle(item),
+	               top_offset=_aguja_label_offset(item))
+	return group
+
+
+def _travesia_group(item: Aguja):
+	group = ElementTree.Element("{http://www.w3.org/2000/svg}g")
+	group.set("{http://www.inkscape.org/namespaces/inkscape}label", item.id.id)
+	group.set("transform", f"translate({item.position.x:.15g} {item.position.y:.15g})")
+	transform = f"rotate({degrees(item.rotation.angle):g})"
+	if item.points_invertida[-1][1] < 0:
+		transform += " scale(1,-1)"
+	for child in generate_travesia(radians(item.angulo), transform=transform):
+		group.append(child)
+	for points, label in ((item.points_normal, "t3Ra"),
+						 (item.points_invertida, "t3La")):
+		group.append(generate_track_svg(
+			[point.get_rotated(item.rotation) for point in points], name=label,
+		))
+	anchor_x, anchor_y = label_anchor(item)
+	_add_item_label(group, item.id.id_corto,
+					anchor_x - item.position.x, anchor_y - item.position.y,
+					angle=label_angle(item),
+					top_offset=_aguja_label_offset(item))
 	return group
 
 def _signal_group(item: Señal) -> tuple[ElementTree.Element, list[Point]]:
@@ -148,31 +190,32 @@ def _signal_group(item: Señal) -> tuple[ElementTree.Element, list[Point]]:
 		"{http://www.inkscape.org/namespaces/inkscape}label": item.id.id,
 	})
 	group.append(use)
-	angle_radians = item.rotation.angle
-	label = ElementTree.Element("{http://www.w3.org/2000/svg}g", {
-		"transform": (
-			f"matrix({cos(angle_radians):.15g} {sin(angle_radians):.15g} "
-			f"{-sin(angle_radians):.15g} {cos(angle_radians):.15g} "
-			f"{label_x:.15g} {label_y:.15g})"
-		),
-		"{http://www.inkscape.org/namespaces/inkscape}label": "etiquetaNombre",
-	})
+	angle_radians = label_angle(item)
+	label_transform = (
+		f"matrix({cos(angle_radians):.15g} {sin(angle_radians):.15g} "
+		f"{-sin(angle_radians):.15g} {cos(angle_radians):.15g} "
+		f"{label_x:.15g} {label_y:.15g})"
+	)
 	width = label_background_width(item.id.id_corto)
+	text_anchor = label_text_anchor(item)
+	label_left = -width if text_anchor == "end" else 0
 	background = ElementTree.Element("{http://www.w3.org/2000/svg}rect", {
-		"x": "0", "y": f"{-SIGNAL_ICON_HEIGHT / 2:.15g}",
+		"x": f"{label_left:.15g}", "y": f"{-SIGNAL_ICON_HEIGHT / 2:.15g}",
 		"width": f"{width:.15g}", "height": f"{SIGNAL_ICON_HEIGHT:.15g}",
 		"style": "fill:#fff;fill-opacity:0.8",
-		"{http://www.inkscape.org/namespaces/inkscape}label": "fondoNombre",
+		"transform": label_transform,
+		"{http://www.inkscape.org/namespaces/inkscape}label": "fondo_nombre",
 	})
 	text = ElementTree.Element("{http://www.w3.org/2000/svg}text", {
-		"x": "0", "y": "0", "text-anchor": "start",
+		"x": "0", "y": "0", "text-anchor": text_anchor,
 		"dominant-baseline": "middle", "font-size": "12",
 		"font-family": "sans-serif",
+		"transform": label_transform,
 		"{http://www.inkscape.org/namespaces/inkscape}label": "nombre",
 	})
-	text.text = item.id.id_corto
-	label.extend((background, text))
-	group.append(label)
+	tspan = ElementTree.SubElement(text, "{http://www.w3.org/2000/svg}tspan")
+	tspan.text = item.id.id_corto
+	group.extend((background, text))
 	return group, absolute
 
 
@@ -224,7 +267,7 @@ def export_svg(items: Iterable[Item]) -> str:
 	locales a las coordenadas del layout antes de formar su ``path``.
 	Elementos aún no soportados se omiten.
 	"""
-	layers = {"CVs": [], "Agujas": [], "Cruzamientos": [], "Señales": [], "Toperas": []}
+	layers = {"CV": [], "Aguja": [], "Cruzamientos": [], "Señal": [], "Destino": []}
 	bounds = [None,None,None,None]
 	def update_bounds(points):
 		if isinstance(points, Point):
@@ -242,20 +285,25 @@ def export_svg(items: Iterable[Item]) -> str:
 	for item in items:
 		if isinstance(item, Señal):
 			group, signal_points = _signal_group(item)
-			layers["Señales"].append(group)
+			layers["Señal"].append(group)
 			update_bounds(signal_points)
 		elif isinstance(item, Topera):
-			layers["Toperas"].append(_topera_group(item))
+			layers["Destino"].append(_topera_group(item))
 			angle = item.rotation.angle
 			center = item.position + Point(cos(angle) * 2, sin(angle) * 2)
 			perpendicular = Point(-sin(angle) * 10, cos(angle) * 10)
 			update_bounds([center - perpendicular, center + perpendicular])
 		elif isinstance(item, Aguja):
-			absolute = [item.position + point.get_rotated(item.rotation)
-			            for point in (item.points_punta + item.points_normal[1:]
-			                          + item.points_invertida[1:])]
+			absolute = [item.position]
+			absolute.extend(
+				item.position + point.get_rotated(item.rotation)
+				for points in (item.points_normal, item.points_invertida)
+				for point in points[1:]
+			)
 			update_bounds(absolute)
-			layers["Agujas"].append(_junction_group(item))
+			layers["Aguja"].append(
+				_travesia_group(item) if item.is_travesia else _junction_group(item)
+			)
 		elif isinstance(item, Cruzamiento):
 			absolute = [item.position + point.get_rotated(item.rotation)
 			            for points in (item.points_p1, item.points_p2,
@@ -266,7 +314,7 @@ def export_svg(items: Iterable[Item]) -> str:
 		elif isinstance(item, CvLineal):
 			absolute = [item.position + point.get_rotated(item.rotation) for point in item.points]
 			update_bounds(absolute)
-			layers["CVs"].append(_track_group(item))
+			layers["CV"].append(_track_group(item))
 
 	if bounds[0]:
 		min_x, min_y, max_x, max_y = bounds
@@ -284,7 +332,8 @@ def export_svg(items: Iterable[Item]) -> str:
 	svg.append(defs)
 	for layer_name, elements in layers.items():
 		layer_group = ElementTree.Element("{http://www.w3.org/2000/svg}g", {
-			"{http://www.inkscape.org/namespaces/inkscape}label": layer_name
+			"{http://www.inkscape.org/namespaces/inkscape}label": layer_name,
+			"{http://www.inkscape.org/namespaces/inkscape}groupmode": "layer",
 		})
 		for element in elements:
 			layer_group.append(element)

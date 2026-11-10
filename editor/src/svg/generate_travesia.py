@@ -21,12 +21,25 @@
 Description of this extension
 """
 
-import inkex
-import track_utils
-import track_to_svg
 import math
+from xml.etree import ElementTree
 
-def generate_junction(angle, av=False):
+from svg import track_utils
+from svg import generate_track
+
+
+SVG_NAMESPACE = "http://www.w3.org/2000/svg"
+INKSCAPE_NAMESPACE = "http://www.inkscape.org/namespaces/inkscape"
+
+
+def create_group(label=None):
+    group = ElementTree.Element(f"{{{SVG_NAMESPACE}}}g")
+    if label:
+        group.set(f"{{{INKSCAPE_NAMESPACE}}}label", label)
+    return group
+
+
+def generate_travesia(angle, av=False, transform=None):
     # Define constants as before
     track_width = 5.0
     desliz_width = 1.0
@@ -53,11 +66,17 @@ def generate_junction(angle, av=False):
     paths = []
 
     def gen_path(points, gen, name=None, color='#ff0', *, inicio_recto=True, fin_recto=True, vec_inicio=None, vec_fin=None):
-        return track_to_svg.create_path(track_utils.generate_path_from_coords(track_utils.generate_track_points(points, gen, inicio_recto=inicio_recto, fin_recto=fin_recto, vec_inicio=vec_inicio, vec_fin=vec_fin))[0], name, color)
+        return generate_track.create_path(
+            track_utils.generate_path_from_coords(
+                track_utils.generate_track_points(
+                    points, gen, inicio_recto=inicio_recto, fin_recto=fin_recto,
+                    vec_inicio=vec_inicio, vec_fin=vec_fin,
+                )
+            )[0], name, color, transform,
+        )
 
     if not av:
-        group = inkex.Group()
-        group.set("inkscape:label", "bv")
+        group = create_group("bv")
         paths.append(group)
         group.append(gen_path([(-(desliz_pos + desliz_width / 2) * normal[0] / cosang, - desliz_pos * normal[1] / cosang), (3*gap_horiz / 2 + t2R_width, -desliz_pos)], [-desliz_width / 2, 3*desliz_width / 2], 'bvLpos', '#f0f'))
         group.append(gen_path([((desliz_pos + desliz_width / 2) * normal[0] / cosang, desliz_pos * normal[1] / cosang), (3*gap_horiz / 2 + t2R_width, desliz_pos)], [-3*desliz_width / 2, desliz_width / 2], 'bvRpos', '#f0f'))
@@ -65,8 +84,7 @@ def generate_junction(angle, av=False):
         group.append(gen_path([(desliz_pos * normal[0] / cosang - desliz_width / 2 / math.tan(angle), desliz_pos * normal[1] / cosang - desliz_width / 2), (cut2[0] - desliz_pos / math.sin(angle), cut2[1])], [-3*desliz_width / 2, desliz_width / 2], 'bvRneg', '#f0f'))
 
 
-    me = inkex.Group()
-    me.set("inkscape:label", "me")
+    me = create_group("me")
     paths.append(me)
     me.append(gen_path([(0, 0), (3 * gap_horiz / 2 + t2R_width, 0)], [-track_width/2-desliz_width,track_width/2+desliz_width], color='#fff'))
     me.append(gen_path([(track_width / 2 / math.tan(angle), track_width / 2), cut2], [-track_width/2-desliz_width,track_width/2+desliz_width], color='#fff'))
@@ -76,9 +94,9 @@ def generate_junction(angle, av=False):
         (-cut1[0] + track_width / math.sin(angle), track_width / 2), 
         (gap_horiz / 2, track_width / 2)]
 
-    paths.append(track_to_svg.create_path(track_utils.generate_path_from_coords([[t2[0], t2[3]], [t2[1], t2[2]]])[0], 't2'))
+    paths.append(generate_track.create_path(track_utils.generate_path_from_coords([[t2[0], t2[3]], [t2[1], t2[2]]])[0], 't2', transform=transform))
 
-    paths.append(track_to_svg.generate_track_svg([cut2, 
+    paths.append(generate_track.generate_track_svg([cut2,
                             (cut2[0] + t3L_height / math.tan(angle), cut2[1] + t3L_height)], name='t3L', av=av))
 
     t2R = [(-track_width / 2 * normal[0] / cosang, -track_width / 2 * normal[1] / cosang), 
@@ -86,14 +104,13 @@ def generate_junction(angle, av=False):
         (gap_horiz / 2 + t2R_width, track_width / 2), 
         (gap_horiz / 2 + t2R_width, -track_width / 2)]
 
-    paths.append(track_to_svg.create_path(track_utils.generate_path_from_coords([[t2R[0], t2R[3]], [t2R[1], t2R[2]]])[0], 't2R'))
+    paths.append(generate_track.create_path(track_utils.generate_path_from_coords([[t2R[0], t2R[3]], [t2R[1], t2R[2]]])[0], 't2R', transform=transform))
 
-    paths.append(track_to_svg.generate_track_svg([(3 * gap_horiz / 2 + t2R_width, 0), 
+    paths.append(generate_track.generate_track_svg([(3 * gap_horiz / 2 + t2R_width, 0),
                             (3 * gap_horiz / 2 + t2R_width + t3R_width, 0)], name='t3R', av=av))
     
     if av:
-        group = inkex.Group()
-        group.set("inkscape:label", "bv")
+        group = create_group("bv")
         paths.append(group)
         #group.append(gen_path([(0, 0), (0,0)], [-track_width/4, track_width/4], 'bvL', '#000', fin_recto=False, vec_fin=bisec))
         group.append(gen_path([(gap_horiz / 2, 0), (gap_horiz / 2 + t2R_width, 0)], [-track_width/4, track_width/4], 'bvLpos', '#000'))
@@ -117,19 +134,4 @@ def generate_junction(angle, av=False):
                                     [-desliz_width / 2, desliz_width / 2], 'deslizLneg1'))
 
     return paths
-
-
-class GenerateJunctionExtension(inkex.EffectExtension):
-    def add_arguments(self, pars):
-        pars.add_argument("--angulo", type=float, default=7.0)
-
-    def effect(self):
-        group = inkex.Group()
-        self.svg.get_current_layer().append(group)
-        items = generate_junction(self.options.angulo*math.pi/18)
-        for item in items:
-            group.append(item)
-
-if __name__ == '__main__':
-    GenerateJunctionExtension().run()
 
