@@ -1,6 +1,6 @@
 """Exportación del modelo geométrico del editor a SVG."""
 
-from math import cos, degrees, pi, radians, sin
+from math import cos, degrees, hypot, pi, radians, sin
 from operator import invert
 from pathlib import Path
 import sys
@@ -10,7 +10,8 @@ from xml.etree import ElementTree
 from rich_click import group
 from tomlkit import item
 
-from items import Aguja, Cruzamiento, CvLineal, Item, Point, Señal, Topera
+from export import get_conexiones
+from items import Aguja, Cruzamiento, CvLineal, Item, Point, Señal, SeccionVia, Topera
 from label_positions import (
 	SIGNAL_ICON_HEIGHT, SIGNAL_ICON_WIDTH, label_anchor, label_angle,
 	label_background_width, label_text_anchor,
@@ -58,8 +59,52 @@ simbolos = {
 }
 
 
-def _track_group(item: CvLineal):
-	group = generate_track_svg([point.get_rotated(item.rotation) for point in item.points], name=item.id.id)
+def _shorten_last_segment(points, from_start=False):
+	points = list(points)
+	if len(points) < 2:
+		return points
+	endpoint_index = 0 if from_start else -1
+	previous_index = 1 if from_start else -2
+	endpoint = points[endpoint_index]
+	previous = points[previous_index]
+	length = hypot(endpoint.x - previous.x, endpoint.y - previous.y)
+	if length == 0:
+		return points
+	distance = min(2.5, length-0.5)
+	points[endpoint_index] = endpoint + (previous - endpoint) * (distance / length)
+	return points
+
+
+def _points_for_ports(item, connections):
+	if isinstance(item, CvLineal):
+		points = list(item.points)
+		circuit = item.get_cv()
+		for port, (connected, _) in enumerate(connections):
+			if connected is not None and circuit != connected.get_cv():
+				points = _shorten_last_segment(points, from_start=port == 0)
+		return {0: points, 1: points}
+	if isinstance(item, Cruzamiento):
+		paths = {
+			0: item.points_p1, 1: item.points_p2,
+			2: item.points_p3, 3: item.points_p4,
+		}
+	else:
+		paths = {
+			0: item.points_normal,
+			1: item.points_invertida,
+			2: item.points_punta,
+		}
+	result = {port: list(points) for port, points in paths.items()}
+	circuit = item.get_cv()
+	for port, (connected, _) in enumerate(connections):
+		if connected is not None and circuit != connected.get_cv():
+			result[port] = _shorten_last_segment(result[port])
+	return result
+
+
+def _track_group(item: CvLineal, points=None):
+	points = item.points if points is None else points
+	group = generate_track_svg([point.get_rotated(item.rotation) for point in points], name=item.id.id)
 	group.set("transform", f"translate({item.position.x:.15g} {item.position.y:.15g})")
 	anchor_x, anchor_y = label_anchor(item)
 	label_center = Point(anchor_x - item.position.x, anchor_y - item.position.y)
@@ -123,7 +168,7 @@ def _add_item_label_group(group, item_id, x, y, label, width=None, height=14,
 	group.append(label_group)
 
 
-def _junction_group(item: Aguja):
+def _junction_group(item: Aguja, points_by_port=None):
 	group = ElementTree.Element("{http://www.w3.org/2000/svg}g")
 	group.set("{http://www.inkscape.org/namespaces/inkscape}label", item.id.id)
 	invert = item.points_invertida[-1][1] < 0
@@ -134,9 +179,11 @@ def _junction_group(item: Aguja):
 		transform += " scale(1,-1)"
 	for child in generate_junction(radians(item.angulo), transform=transform):
 		group.append(child)
-	for points, label in ((item.points_punta, "t1a"),
-						 (item.points_normal, "t3Ra"),
-						 (item.points_invertida, "t3La")):
+	for port, (points, label) in enumerate(((item.points_punta, "t1a"),
+									 (item.points_normal, "t3Ra"),
+									 (item.points_invertida, "t3La"))):
+		if points_by_port is not None:
+			points = points_by_port[{0: 2, 1: 0, 2: 1}[port]]
 		group.append(generate_track_svg([point.get_rotated(item.rotation) for point in points], inicio_recto=label=="t3La", name=label))
 	anchor_x, anchor_y = label_anchor(item)
 	_add_item_label(group, item.id.id_corto,
@@ -146,7 +193,7 @@ def _junction_group(item: Aguja):
 	return group
 
 
-def _travesia_group(item: Aguja):
+def _travesia_group(item: Aguja, points_by_port=None):
 	group = ElementTree.Element("{http://www.w3.org/2000/svg}g")
 	group.set("{http://www.inkscape.org/namespaces/inkscape}label", item.id.id)
 	group.set("transform", f"translate({item.position.x:.15g} {item.position.y:.15g})")
@@ -155,8 +202,10 @@ def _travesia_group(item: Aguja):
 		transform += " scale(1,-1)"
 	for child in generate_travesia(radians(item.angulo), transform=transform):
 		group.append(child)
-	for points, label in ((item.points_normal, "t3Ra"),
-						 (item.points_invertida, "t3La")):
+	for port, (points, label) in enumerate(((item.points_normal, "t3Ra"),
+									 (item.points_invertida, "t3La"))):
+		if points_by_port is not None:
+			points = points_by_port[port]
 		group.append(generate_track_svg(
 			[point.get_rotated(item.rotation) for point in points], name=label,
 		))
@@ -219,7 +268,7 @@ def _signal_group(item: Señal) -> tuple[ElementTree.Element, list[Point]]:
 	return group, absolute
 
 
-def _crossing_group(item: Cruzamiento):
+def _crossing_group(item: Cruzamiento, points_by_port=None):
 	group = ElementTree.Element("{http://www.w3.org/2000/svg}g", {
 		"transform": (
 			f"translate({item.position.x:.15g} {item.position.y:.15g}) "
@@ -229,10 +278,12 @@ def _crossing_group(item: Cruzamiento):
 	})
 	for child in generate_crossing(radians(item.angulo)):
 		group.append(child)
-	for points, label in (
+	for port, (points, label) in enumerate((
 		(item.points_p1, "p1"), (item.points_p2, "p2"),
 		(item.points_p3, "p3"), (item.points_p4, "p4"),
-	):
+	)):
+		if points_by_port is not None:
+			points = points_by_port[port]
 		group.append(generate_track_svg(
 			[point for point in points], name=label,
 		))
@@ -267,6 +318,9 @@ def export_svg(items: Iterable[Item]) -> str:
 	locales a las coordenadas del layout antes de formar su ``path``.
 	Elementos aún no soportados se omiten.
 	"""
+	items = list(items)
+	secciones = [item for item in items if isinstance(item, SeccionVia)]
+	connections = {id(item): get_conexiones(item, secciones) for item in secciones}
 	layers = {"CV": [], "Aguja": [], "Cruzamientos": [], "Señal": [], "Destino": []}
 	bounds = [None,None,None,None]
 	def update_bounds(points):
@@ -301,20 +355,23 @@ def export_svg(items: Iterable[Item]) -> str:
 				for point in points[1:]
 			)
 			update_bounds(absolute)
-			layers["Aguja"].append(
-				_travesia_group(item) if item.is_travesia else _junction_group(item)
-			)
+			points_by_port = _points_for_ports(item, connections[id(item)])
+			layers["Aguja"].append(_travesia_group(
+				item, points_by_port) if item.is_travesia else _junction_group(
+				item, points_by_port))
 		elif isinstance(item, Cruzamiento):
 			absolute = [item.position + point.get_rotated(item.rotation)
 			            for points in (item.points_p1, item.points_p2,
 			                           item.points_p3, item.points_p4)
 			            for point in points]
 			update_bounds(absolute)
-			layers["Cruzamientos"].append(_crossing_group(item))
+			layers["Cruzamientos"].append(
+				_crossing_group(item, _points_for_ports(item, connections[id(item)])))
 		elif isinstance(item, CvLineal):
 			absolute = [item.position + point.get_rotated(item.rotation) for point in item.points]
 			update_bounds(absolute)
-			layers["CV"].append(_track_group(item))
+			layers["CV"].append(_track_group(
+				item, _points_for_ports(item, connections[id(item)])[0]))
 
 	if bounds[0]:
 		min_x, min_y, max_x, max_y = bounds
