@@ -97,7 +97,7 @@ def generate_travesia(angle, av=False, transform=None):
     paths.append(generate_track.create_path(track_utils.generate_path_from_coords([[t2[0], t2[3]], [t2[1], t2[2]]])[0], 't2', transform=transform))
 
     paths.append(generate_track.generate_track_svg([cut2,
-                            (cut2[0] + t3L_height / math.tan(angle), cut2[1] + t3L_height)], name='t3L', av=av))
+                            (cut2[0] + t3L_height / math.tan(angle), cut2[1] + t3L_height)], name='t3L', av=av, transform=transform))
 
     t2R = [(-track_width / 2 * normal[0] / cosang, -track_width / 2 * normal[1] / cosang), 
         (-cut1[0] + track_width / math.sin(angle), track_width / 2), 
@@ -107,7 +107,7 @@ def generate_travesia(angle, av=False, transform=None):
     paths.append(generate_track.create_path(track_utils.generate_path_from_coords([[t2R[0], t2R[3]], [t2R[1], t2R[2]]])[0], 't2R', transform=transform))
 
     paths.append(generate_track.generate_track_svg([(3 * gap_horiz / 2 + t2R_width, 0),
-                            (3 * gap_horiz / 2 + t2R_width + t3R_width, 0)], name='t3R', av=av))
+                            (3 * gap_horiz / 2 + t2R_width + t3R_width, 0)], name='t3R', av=av, transform=transform))
     
     if av:
         group = create_group("bv")

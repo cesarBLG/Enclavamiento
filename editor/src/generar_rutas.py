@@ -103,7 +103,7 @@ def construir_ruta(dependencia_id, dependencia, inicio, fin, dependencias=None):
         seccion = secciones[actual]
         salidas = conexiones_seccion(seccion, dir_marcha, dep_actual)
         entradas = conexiones_seccion(seccion, "Par" if dir_marcha == "Impar" else "Impar", dep_actual)
-        pin_in = 0 if previa is None else next(
+        pin_in = señal.get("Pin", 0) if previa is None else next(
             (pin for vecino, pin in entradas if vecino == f"{previa_dep}:{previa}"), None
         )
         for siguiente, pin_out in salidas:
@@ -139,18 +139,18 @@ def construir_ruta(dependencia_id, dependencia, inicio, fin, dependencias=None):
         seccion = dependencias[seccion_dep]["Secciones"][seccion_id]
         if seccion.get("Tipo") != "Aguja":
             continue
-        siguiente_estado = estados[indice + 1] if indice + 1 < len(estados) else None
-        if siguiente_estado is None:
-            # FIXME: si la aguja se toma de talón (seccion["Lado"] != dir_actual), requerir posicion (asumir pin_out = 0)
-            continue
-        siguiente_dep, siguiente_id = siguiente_estado[0], siguiente_estado[1]
         in_lado = "Par" if dir_actual == "Impar" else "Impar"
         entradas = conexiones_seccion(seccion, in_lado, seccion_dep)
         salidas = conexiones_seccion(seccion, dir_actual, seccion_dep)
-        pin_in = 0 if previa is None else next(
+        pin_in = señal.get("Pin", 0) if previa is None else next(
             (pin for vecino, pin in entradas if vecino == f"{previa_dep}:{previa}"), None
         )
-        pin_out = next((pin for vecino, pin in salidas if vecino == f"{siguiente_dep}:{siguiente_id}"), None)
+        siguiente_estado = estados[indice + 1] if indice + 1 < len(estados) else None
+        if siguiente_estado is None:
+            pin_out = 0
+        else:
+            siguiente_dep, siguiente_id = siguiente_estado[0], siguiente_estado[1]
+            pin_out = next((pin for vecino, pin in salidas if vecino == f"{siguiente_dep}:{siguiente_id}"), None)
         if pin_in is None or pin_out is None:
             raise ValueError(f"No se pudieron determinar los pines de la aguja {seccion_id}")
         # lados<int> se serializa como [Par, Impar].
@@ -248,7 +248,7 @@ def main(config=None, inicios=None, destinos=None, tipos=None, dependencia_id=No
 if __name__ == "__main__":
     #raise SystemExit(main())
     rutas = []
-    dep = "ARB"
+    dep = "TMB"
     if dep == "VG":
         config = json.loads(Path("dist/villalba.json").read_text(encoding="utf-8"))
         dependencia_id, dependencia = load_dependencia(config, dependencia_id="VG")
@@ -279,10 +279,10 @@ if __name__ == "__main__":
         generar = partial(generar, dependencias=config["Dependencias"])
         rutas += generar(dependencia_id, dependencia, inicios=["E1"], destinos=[(f"S1/{i}", f"CV{i}") for i in range(1,5)], tipos=["Itinerario", "Rebase"], params_ruta={"DiferímetroDeslizamiento": {}})
         rutas += generar(dependencia_id, dependencia, inicios=["R1"], destinos=[(f"S1/{i}", f"CV{i}") for i in range(1,5)], tipos=["Maniobra"], params_ruta={"DiferímetroDeslizamiento": {}})
-        rutas += generar(dependencia_id, dependencia, inicios=["E2"], destinos=[(f"S2/{i}", f"CV{i}") for i in range(1,5)], tipos=["Itinerario", "Rebase", "Maniobra"], params_ruta={"DiferímetroDeslizamiento": {}})
-        rutas += generar(dependencia_id, dependencia, inicios=["R2"], destinos=[(f"S2/{i}", f"CV{i}") for i in range(1,5)], tipos=["Maniobra"], params_ruta={"DiferímetroDeslizamiento": {}})
-        rutas += generar(dependencia_id, dependencia, inicios=[f"S1/{i}" for i in range(1,5)], destinos=[("TOR", "A4"),("CAR","A2")], tipos=["Itinerario"])
-        rutas += generar(dependencia_id, dependencia, inicios=[f"S1/{i}" for i in range(1,5)], destinos=[("TOR", "CVCTLTOR"),("CAR","CVCTLCAR")], tipos=["Maniobra"])
+        rutas += generar(dependencia_id, dependencia, inicios=["E2","E4"], destinos=[(f"S2/{i}", f"CV{i}") for i in range(1,5)], tipos=["Itinerario", "Rebase", "Maniobra"], params_ruta={"DiferímetroDeslizamiento": {}})
+        rutas += generar(dependencia_id, dependencia, inicios=[f"S1/{i}" for i in range(1,5)], destinos=[("TOR:E1", "CVCTLTOR")], tipos=["Itinerario","Maniobra"])
+        rutas += generar(dependencia_id, dependencia, inicios=[f"S1/{i}" for i in range(1,5)], destinos=[("CAR","A2")], tipos=["Itinerario"])
+        rutas += generar(dependencia_id, dependencia, inicios=[f"S1/{i}" for i in range(1,5)], destinos=[("CAR","CVCTLCAR")], tipos=["Maniobra"])
         rutas += generar(dependencia_id, dependencia, inicios=[f"S2/{i}" for i in range(1,5)], destinos=[("TMB", "CVE1")], tipos=["Itinerario", "Maniobra"])
     elif dep == "ARB":
         config = json.loads(Path("../../dist/ENCE_FCD.json").read_text(encoding="utf-8"))
@@ -300,5 +300,39 @@ if __name__ == "__main__":
         rutas += generar(dependencia_id, dependencia, inicios=["M2"], destinos=[("S2/4", "CV4")], tipos=["Maniobra"], params_ruta={"DiferímetroDeslizamiento": {}})
         rutas += generar(dependencia_id, dependencia, inicios=[f"S2/{i}" for i in range(1,4)], destinos=[("CDM", "A1")], tipos=["Itinerario"])
         rutas += generar(dependencia_id, dependencia, inicios=[f"S2/{i}" for i in range(1,4)], destinos=[("CDM", "CVCDMARB")], tipos=["Maniobra"])
-        rutas += generar(dependencia_id, dependencia, inicios=[f"S2/{i}" for i in range(1,4)], destinos=[("TMB:S1/1", "TMB:CV1")], tipos=["Itinerario","Maniobra","Rebase"], params_ruta={"DiferímetroDeslizamiento": {}})
+        rutas += generar(dependencia_id, dependencia, inicios=[f"S2/{i}" for i in [1,3]], destinos=[("TMB:S1/1", "TMB:CV1")], tipos=["Itinerario","Maniobra","Rebase"], params_ruta={"DiferímetroDeslizamiento": {}})
+    elif dep == "TMB":
+        config = json.loads(Path("../../dist/ENCE_FCD.json").read_text(encoding="utf-8"))
+        dependencia_id, dependencia = load_dependencia(config, dependencia_id="TMB")
+        generar = partial(generar, dependencias=config["Dependencias"])
+        rutas += generar(dependencia_id, dependencia, inicios=["E1"], destinos=[("ARB:CDM", "ARB:A1")], tipos=["Itinerario"])
+        rutas += generar(dependencia_id, dependencia, inicios=["E1"], destinos=[("ARB:CDM", "ARB:CVCDMARB")], tipos=["Maniobra"])
+        rutas += generar(dependencia_id, dependencia, inicios=["E1"], destinos=[("S1/1", "CV1")], tipos=["Itinerario","Maniobra","Rebase"], params_ruta={"DiferímetroDeslizamiento": {}})
+        rutas += generar(dependencia_id, dependencia, inicios=["S1/1"], destinos=[("CTL", "A2")], tipos=["Itinerario"])
+        rutas += generar(dependencia_id, dependencia, inicios=["S1/1"], destinos=[("CTL", "CVTMBCTL")], tipos=["Maniobra"])
+        rutas += generar(dependencia_id, dependencia, inicios=["S2/2"], destinos=[("ARB", "A1")], tipos=["Itinerario"])
+        rutas += generar(dependencia_id, dependencia, inicios=["S2/2"], destinos=[("ARB", "CVPROXE1")], tipos=["Maniobra"])
+        rutas += generar(dependencia_id, dependencia, inicios=["S2/2"], destinos=[(f"ARB:S1/{i}", f"ARB:CV{i}") for i in [1,3]], tipos=["Itinerario","Maniobra","Rebase"], params_ruta={"DiferímetroDeslizamiento": {}})
+    elif dep == "CDM":
+        config = json.loads(Path("../../dist/ENCE_FCD.json").read_text(encoding="utf-8"))
+        dependencia_id, dependencia = load_dependencia(config, dependencia_id="CDM")
+        generar = partial(generar, dependencias=config["Dependencias"])
+        rutas += generar(dependencia_id, dependencia, inicios=["S1/1"], destinos=[("ARB", "A2")], tipos=["Itinerario"])
+        rutas += generar(dependencia_id, dependencia, inicios=["S1/1"], destinos=[("ARB", "ARB:CVCDMARB")], tipos=["Maniobra"])
+    elif dep == "CAR":
+        config = json.loads(Path("../../dist/ENCE_FCD.json").read_text(encoding="utf-8"))
+        dependencia_id, dependencia = load_dependencia(config, dependencia_id="CAR")
+        generar = partial(generar, dependencias=config["Dependencias"])
+        rutas += generar(dependencia_id, dependencia, inicios=["S1/1","S1/3"], destinos=[("CDM1", "A2")], tipos=["Itinerario"])
+        rutas += generar(dependencia_id, dependencia, inicios=["S1/1","S1/3"], destinos=[("CDM1", "CVCARCDM1")], tipos=["Maniobra"])
+        rutas += generar(dependencia_id, dependencia, inicios=["S2/2"], destinos=[("CTL", "A1")], tipos=["Itinerario"])
+        rutas += generar(dependencia_id, dependencia, inicios=["S2/2"], destinos=[("CTL", "CTL:CVCTLCAR")], tipos=["Maniobra"])
+    elif dep == "TOR":
+        config = json.loads(Path("../../dist/ENCE_FCD.json").read_text(encoding="utf-8"))
+        dependencia_id, dependencia = load_dependencia(config, dependencia_id="TOR")
+        generar = partial(generar, dependencias=config["Dependencias"])
+        rutas += generar(dependencia_id, dependencia, inicios=["E1"], destinos=[("CAR:S1/1", "CAR:CV1")], tipos=["Itinerario","Maniobra","Rebase"], params_ruta={"DiferímetroDeslizamiento": {}})
+        rutas += generar(dependencia_id, dependencia, inicios=["E1"], destinos=[("FTOR", "A1")], tipos=["Maniobra"])
+        rutas += generar(dependencia_id, dependencia, inicios=["S2"], destinos=[("CTL:E4", "CTL:CVCTLTOR")], tipos=["Itinerario"])
+
     print(json.dumps(rutas, ensure_ascii=False, indent=None))

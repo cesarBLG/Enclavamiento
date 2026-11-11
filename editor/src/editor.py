@@ -60,7 +60,7 @@ SNAP_DISTANCE = 10
 PICK_TOLERANCE = 5.0
 GRID_EXTENSION_TRIGGER = 2
 GRID_EXTENSION_CELLS = 10
-SIGNAL_ICON_PATH = Path(__file__).resolve().parent.parent / "symbols" / "señal.svg"
+SIGNAL_ICON_PATH = Path(__file__).resolve().parent.parent / "symbols" / "signal.svg"
 SECTION_TYPES = (CvLineal, Aguja, Cruzamiento)
 
 
@@ -2667,6 +2667,33 @@ class TrackEditor(QMainWindow):
         try:
             dependencies = generar_config_ence(deepcopy(items))
             output = {"Dependencias": dependencies}
+
+             # Look for a matching template file
+            output_path = Path(path)
+            template_path = output_path.with_name(
+                f"{output_path.stem}.template.json"
+            )
+
+            if template_path.is_file():
+                with open(template_path, "r", encoding="utf-8") as template_file:
+                    template = json.load(template_file)
+
+                # Append template content to output
+                if isinstance(template, dict):
+                    def deep_update(destination: dict, source: dict) -> dict:
+                        for key, value in source.items():
+                            if (
+                                key in destination
+                                and isinstance(destination[key], dict)
+                                and isinstance(value, dict)
+                            ):
+                                deep_update(destination[key], value)
+                            else:
+                                destination[key] = value
+
+                        return destination
+                    output = deep_update(output, template)
+
             with open(path, "w", encoding="utf-8") as destination:
                 json.dump(output, destination, ensure_ascii=False, indent=2)
                 destination.write("\n")

@@ -20,7 +20,7 @@ def create_path(path_data, name, color='#ff0', transform=None):
     return path
 
 
-def generate_track_svg(points, *, av=True, inicio_recto=True, fin_recto=True, vec_inicio=None, vec_fin=None, name=None, transform=None):
+def generate_track_svg(points, *, av=False, inicio_recto=True, fin_recto=True, vec_inicio=None, vec_fin=None, name=None, transform=None):
     group = ElementTree.Element(f"{{{SVG_NAMESPACE}}}g")
     def gen_points(start, end):
         return track_utils.generate_path_from_coords(track_utils.generate_track_points(points, [start, end], inicio_recto=inicio_recto, fin_recto=fin_recto, vec_inicio=vec_inicio, vec_fin=vec_fin))[0]

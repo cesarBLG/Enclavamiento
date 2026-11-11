@@ -112,7 +112,6 @@ def get_seccion_pin_lado(out, sec, conexiones):
                 return None, None, None
             return get_seccion_pin_lado(out2, sec2, conexiones)
         else:
-            print(sec.id.id)
             return sec, idx, sec.lado if rev else sec.lado.opp_lado()
     return None, None, None
 

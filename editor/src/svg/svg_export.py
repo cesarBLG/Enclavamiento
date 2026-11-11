@@ -55,7 +55,7 @@ class Symbol:
 
 simbolos = {
 	label: Symbol(Path(__file__).resolve().parent.parent.parent / "symbols" / f"{label}.svg", label)
-	for label in ("señal", "bloqueoVia", "bloqueoDestino", "IMV", "FMV", "bloqueo")
+	for label in ("signal", "bloqueoVia", "bloqueoDestino", "IMV", "FMV", "bloqueo")
 }
 
 
@@ -111,8 +111,8 @@ def _track_group(item: CvLineal, points=None):
 	angle = label_angle(item)
 	_add_item_label(group, item.id.id_corto, label_center.x, label_center.y,
 	                angle=angle, top_offset=6)
-	block = simbolos["bloqueoDestino"].use()
-	block_symbol = simbolos["bloqueoDestino"]
+	block = simbolos["bloqueoVia"].use()
+	block_symbol = simbolos["bloqueoVia"]
 	block_angle = degrees(item.get_linear_angle(item.offset).angle)
 	block.set("transform", (
 		f"translate({label_center.x:.15g} {label_center.y:.15g}) "
@@ -220,10 +220,10 @@ def _signal_group(item: Señal) -> tuple[ElementTree.Element, list[Point]]:
 	normal = Point(sin(item.rotation.angle), -cos(item.rotation.angle))
 	foot = item.position + normal * item.offset_pie
 	angle = degrees(item.rotation.angle)
-	signal = simbolos["señal"]
+	signal = simbolos["signal"]
 	use = signal.use()
 	use.set("transform", f"translate({foot.x - item.position.x:.15g} {foot.y - item.position.y:.15g}) rotate({angle:.15g}) translate(0 {-signal.height:.15g})")
-	use.set("{http://www.inkscape.org/namespaces/inkscape}label", "señal")
+	use.set("{http://www.inkscape.org/namespaces/inkscape}label", "objeto")
 
 	# The symbol is anchored at its lower-left corner before rotation.
 	local_points = (Point(0, -signal.height), Point(signal.width, -signal.height),
