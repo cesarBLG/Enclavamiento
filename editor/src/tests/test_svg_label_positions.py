@@ -129,6 +129,65 @@ class SvgLabelPositionTests(unittest.TestCase):
                 self.assertEqual(str(expected_left), rect.get("x"))
                 self.assertAlmostEqual(SIGNAL_ICON_HEIGHT, float(rect.get("height")), places=12)
 
+    def test_signal_imv_is_exported_in_its_own_layer_inside_the_port(self):
+        item = Señal(
+            IdElemento("S1", "TEST"), Point(210, 105), TipoSeñal.Entrada,
+            offset_pie=8, rotation=Angle(1.17),
+        )
+        root = ElementTree.fromstring(export_svg([item]))
+        imv_layer = root.find(
+            f"./{{{SVG_NS}}}g[@{{{INKSCAPE_NS}}}label='IMV']"
+        )
+        self.assertIsNotNone(imv_layer)
+        imv = imv_layer.find(f"./{{{SVG_NS}}}use")
+        self.assertIsNotNone(imv)
+        self.assertEqual(item.id.id, imv.get(f"{{{INKSCAPE_NS}}}label"))
+        self.assertEqual("#IMV", imv.get("{http://www.w3.org/1999/xlink}href"))
+        center = item.position + Point(math.cos(item.rotation.angle) * 11,
+                                      math.sin(item.rotation.angle) * 11)
+        x, y = (float(value) for value in imv.get("transform")[10:-1].split())
+        self.assertAlmostEqual(center.x - 5.9999995, x, places=12)
+        self.assertAlmostEqual(center.y - 5.999996, y, places=12)
+
+    def test_signal_and_topera_fmv_are_exported_outside_their_ports(self):
+        signal = Señal(
+            IdElemento("S1", "TEST"), Point(210, 105), TipoSeñal.Entrada,
+            offset_pie=8, rotation=Angle(1.17),
+        )
+        topera = Topera(IdElemento("F1", "TEST"), Point(300, 160), Angle(2.02))
+        root = ElementTree.fromstring(export_svg([signal, topera]))
+        fmv_layer = root.find(
+            f"./{{{SVG_NS}}}g[@{{{INKSCAPE_NS}}}label='FMV']"
+        )
+        self.assertIsNotNone(fmv_layer)
+        fmvs = fmv_layer.findall(f"./{{{SVG_NS}}}use")
+        self.assertEqual({signal.id.id, topera.id.id}, {
+            node.get(f"{{{INKSCAPE_NS}}}label") for node in fmvs
+        })
+        for item in (signal, topera):
+            fmv = next(node for node in fmvs
+                       if node.get(f"{{{INKSCAPE_NS}}}label") == item.id.id)
+            center = item.position - Point(math.cos(item.rotation.angle) * 11,
+                                      math.sin(item.rotation.angle) * 11)
+            x, y = (float(value) for value in fmv.get("transform")[10:-1].split())
+            self.assertAlmostEqual(center.x - 6, x, places=5)
+            self.assertAlmostEqual(center.y - 6, y, places=5)
+
+    def test_signal_route_options_control_its_symbols_but_not_topera_fmv(self):
+        signal = Señal(
+            IdElemento("S1", "TEST"), Point(210, 105), TipoSeñal.Entrada,
+            rotation=Angle(1.17), inicio_ruta=False, final_ruta=False,
+        )
+        topera = Topera(IdElemento("F1", "TEST"), Point(300, 160), Angle(2.02))
+        root = ElementTree.fromstring(export_svg([signal, topera]))
+        imv_layer = root.find(f"./{{{SVG_NS}}}g[@{{{INKSCAPE_NS}}}label='IMV']")
+        fmv_layer = root.find(f"./{{{SVG_NS}}}g[@{{{INKSCAPE_NS}}}label='FMV']")
+        self.assertEqual([], imv_layer.findall(f"./{{{SVG_NS}}}use"))
+        self.assertEqual([topera.id.id], [
+            node.get(f"{{{INKSCAPE_NS}}}label")
+            for node in fmv_layer.findall(f"./{{{SVG_NS}}}use")
+        ])
+
     def test_cv_fixed_decorations_follow_the_common_linear_offset(self):
         item = self.make_items()[0]
         item.offset = item.length() * 0.25

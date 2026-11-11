@@ -268,6 +268,30 @@ def _signal_group(item: Señal) -> tuple[ElementTree.Element, list[Point]]:
 	return group, absolute
 
 
+def _imv_group(item: Señal) -> ElementTree.Element:
+	angle = item.rotation.angle
+	center = item.position + Point(cos(angle) * 11, sin(angle) * 11)
+	imv = simbolos["IMV"]
+	use = imv.use()
+	use.set("transform", f"translate({center.x - imv.width / 2:.15g} {center.y - imv.height / 2:.15g})")
+	use.set("{http://www.inkscape.org/namespaces/inkscape}label", item.id.id)
+	return use
+
+
+def _fmv_group(item: Item) -> ElementTree.Element:
+	angle = item.rotation.angle
+	center = item.position - Point(cos(angle) * 11, sin(angle) * 11)
+	fmv = simbolos["FMV"]
+	use = fmv.use()
+	use.set("transform", f"translate({center.x - fmv.width / 2:.15g} {center.y - fmv.height / 2:.15g})")
+	use.set("{http://www.inkscape.org/namespaces/inkscape}label", "señal")
+	group = ElementTree.Element("{http://www.w3.org/2000/svg}g", {
+		"{http://www.inkscape.org/namespaces/inkscape}label": item.id.id,
+	})
+	group.append(use)
+	return group
+
+
 def _crossing_group(item: Cruzamiento, points_by_port=None):
 	group = ElementTree.Element("{http://www.w3.org/2000/svg}g", {
 		"transform": (
@@ -321,7 +345,7 @@ def export_svg(items: Iterable[Item]) -> str:
 	items = list(items)
 	secciones = [item for item in items if isinstance(item, SeccionVia)]
 	connections = {id(item): get_conexiones(item, secciones) for item in secciones}
-	layers = {"CV": [], "Aguja": [], "Cruzamientos": [], "Señal": [], "Destino": []}
+	layers = {"CV": [], "Aguja": [], "Cruzamientos": [], "Señal": [], "IMV": [], "FMV": [], "Destino": []}
 	bounds = [None,None,None,None]
 	def update_bounds(points):
 		if isinstance(points, Point):
@@ -340,9 +364,14 @@ def export_svg(items: Iterable[Item]) -> str:
 		if isinstance(item, Señal):
 			group, signal_points = _signal_group(item)
 			layers["Señal"].append(group)
+			if item.inicio_ruta:
+				layers["IMV"].append(_imv_group(item))
+			if item.final_ruta:
+				layers["FMV"].append(_fmv_group(item))
 			update_bounds(signal_points)
 		elif isinstance(item, Topera):
 			layers["Destino"].append(_topera_group(item))
+			layers["FMV"].append(_fmv_group(item))
 			angle = item.rotation.angle
 			center = item.position + Point(cos(angle) * 2, sin(angle) * 2)
 			perpendicular = Point(-sin(angle) * 10, cos(angle) * 10)

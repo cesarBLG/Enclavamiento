@@ -61,21 +61,25 @@ PICK_TOLERANCE = 5.0
 GRID_EXTENSION_TRIGGER = 2
 GRID_EXTENSION_CELLS = 10
 SIGNAL_ICON_PATH = Path(__file__).resolve().parent.parent / "symbols" / "signal.svg"
+IMV_ICON_PATH = Path(__file__).resolve().parent.parent / "symbols" / "IMV.svg"
+FMV_ICON_PATH = Path(__file__).resolve().parent.parent / "symbols" / "FMV.svg"
 SECTION_TYPES = (CvLineal, Aguja, Cruzamiento)
 
 
 class SignalIcon:
-    def __init__(self, path):
+    def __init__(self, path, width=None, height=None):
         self.renderer = QSvgRenderer(str(path))
         self.size = self.renderer.defaultSize()
+        self._width = SIGNAL_ICON_WIDTH if width is None else width
+        self._height = SIGNAL_ICON_HEIGHT if height is None else height
 
     @property
     def width(self):
-        return SIGNAL_ICON_WIDTH
+        return self._width
 
     @property
     def height(self):
-        return SIGNAL_ICON_HEIGHT
+        return self._height
 
     def pixmap(self):
         pixmap = QPixmap(self.size)
@@ -87,6 +91,8 @@ class SignalIcon:
 
 
 SIGNAL_ICON = SignalIcon(SIGNAL_ICON_PATH)
+IMV_ICON = SignalIcon(IMV_ICON_PATH, width=12, height=12)
+FMV_ICON = SignalIcon(FMV_ICON_PATH, width=12, height=12)
 
 
 def item_kind_name(item):
@@ -362,6 +368,8 @@ class EditItemCommand:
             state["tipo_señal"] = item.tipo_señal
             state["focos"] = list(item.focos)
             state["aspectos_pantalla"] = list(item.aspectos_pantalla)
+            state["inicio_ruta"] = item.inicio_ruta
+            state["final_ruta"] = item.final_ruta
         return state
 
     def apply(self, state):
@@ -378,6 +386,8 @@ class EditItemCommand:
             self.item.tipo_señal = state["tipo_señal"]
             self.item.focos = list(state["focos"])
             self.item.aspectos_pantalla = list(state["aspectos_pantalla"])
+            self.item.inicio_ruta = state["inicio_ruta"]
+            self.item.final_ruta = state["final_ruta"]
         self.editor.set_selection([self.item])
 
     def execute(self):
@@ -402,6 +412,8 @@ class ItemConfigPanel(QWidget):
         self.cv_type = None
         self.cv_offset = None
         self.signal_lamps = {}
+        self.signal_route_start = None
+        self.signal_route_end = None
         self.speed_list = None
         self.speed_edit = None
 
@@ -443,6 +455,8 @@ class ItemConfigPanel(QWidget):
         self.cv_type = None
         self.cv_offset = None
         self.signal_lamps = {}
+        self.signal_route_start = None
+        self.signal_route_end = None
         self.speed_list = None
         self.speed_edit = None
         self.current_kind = None
@@ -494,6 +508,12 @@ class ItemConfigPanel(QWidget):
             for signal_type in TipoSeñal:
                 self.signal_type.addItem(signal_type.name, signal_type)
             self.form_layout.addRow("Tipo de señal:", self.signal_type)
+            self.signal_route_start = QCheckBox("Inicio de ruta", self)
+            self.signal_route_start.setChecked(True)
+            self.form_layout.addRow(self.signal_route_start)
+            self.signal_route_end = QCheckBox("Final de ruta", self)
+            self.signal_route_end.setChecked(True)
+            self.form_layout.addRow(self.signal_route_end)
             lamp_widget = QWidget(self)
             lamp_layout = QVBoxLayout(lamp_widget)
             lamp_layout.setContentsMargins(0, 0, 0, 0)
@@ -564,6 +584,8 @@ class ItemConfigPanel(QWidget):
                 self.signal_type.setCurrentIndex(index)
             for code, checkbox in self.signal_lamps.items():
                 checkbox.setChecked(code in item.focos)
+            self.signal_route_start.setChecked(item.inicio_ruta)
+            self.signal_route_end.setChecked(item.final_ruta)
             self.speed_list.clear()
             self.speed_list.addItems(item.aspectos_pantalla)
 
@@ -589,6 +611,8 @@ class ItemConfigPanel(QWidget):
         side = Lado[side_value] if side_value else None
         focos = [code for code, checkbox in self.signal_lamps.items() if checkbox.isChecked()]
         velocidades = [self.speed_list.item(i).text() for i in range(self.speed_list.count())] if self.speed_list else []
+        inicio_ruta = self.signal_route_start.isChecked() if self.signal_route_start else True
+        final_ruta = self.signal_route_end.isChecked() if self.signal_route_end else True
         cv_options = None
         if isinstance(item, CvLineal):
             try:
@@ -602,7 +626,7 @@ class ItemConfigPanel(QWidget):
             cv_options = (self.cv_type.currentData(), offset)
         self.editor.apply_item_configuration(
             item, short_id, cv_name, signal_type, side, focos, velocidades,
-            cv_options, position,
+            cv_options, position, inicio_ruta, final_ruta,
         )
 
 
@@ -2474,7 +2498,7 @@ class TrackEditor(QMainWindow):
             item.position = center
             self.set_aguja_rotation(item, best_rotation)
 
-    def apply_item_configuration(self, item, short_id, cv_name, signal_type, side, focos=None, velocidades=None, cv_options=None, position=None):
+    def apply_item_configuration(self, item, short_id, cv_name, signal_type, side, focos=None, velocidades=None, cv_options=None, position=None, inicio_ruta=True, final_ruta=True):
         if item is None:
             return False
         item_dependency = item.id.dep
@@ -2513,6 +2537,8 @@ class TrackEditor(QMainWindow):
             new_state["tipo_señal"] = signal_type
             new_state["focos"] = list(focos or [])
             new_state["aspectos_pantalla"] = list(velocidades or [])
+            new_state["inicio_ruta"] = inicio_ruta
+            new_state["final_ruta"] = final_ruta
         self.run_command(EditItemCommand(self, item, new_state, f"Configurar {item.id.id}"))
         return True
 
@@ -2959,6 +2985,20 @@ class TrackEditor(QMainWindow):
                 graphic.setRotation(item.rotation.angle * 180 / pi)
                 graphic.setZValue(1)
                 self.item_graphics.append(graphic)
+                if item.inicio_ruta:
+                    imv_center = item.position + Point(ux * 11, uy * 11)
+                    imv = self.scene.addPixmap(IMV_ICON.pixmap())
+                    imv.setOffset(-IMV_ICON.width / 2, -IMV_ICON.height / 2)
+                    imv.setPos(imv_center.x, imv_center.y)
+                    imv.setZValue(1)
+                    self.item_graphics.append(imv)
+                if item.final_ruta:
+                    fmv_center = item.position - Point(ux * 11, uy * 11)
+                    fmv = self.scene.addPixmap(FMV_ICON.pixmap())
+                    fmv.setOffset(-FMV_ICON.width / 2, -FMV_ICON.height / 2)
+                    fmv.setPos(fmv_center.x, fmv_center.y)
+                    fmv.setZValue(1)
+                    self.item_graphics.append(fmv)
             elif isinstance(item, Topera):
                 angle = item.rotation.angle
                 ux, uy = cos(angle), sin(angle)
@@ -2969,6 +3009,12 @@ class TrackEditor(QMainWindow):
                 self.item_graphics.append(
                     self.scene.addLine(first[0], first[1], second[0], second[1], pen)
                 )
+                fmv_center = item.position - Point(ux * 11, uy * 11)
+                fmv = self.scene.addPixmap(FMV_ICON.pixmap())
+                fmv.setOffset(-FMV_ICON.width / 2, -FMV_ICON.height / 2)
+                fmv.setPos(fmv_center.x, fmv_center.y)
+                fmv.setZValue(1)
+                self.item_graphics.append(fmv)
                 label_center = label_anchor(item)
             if isinstance(item, Señal):
                 font = QFont()

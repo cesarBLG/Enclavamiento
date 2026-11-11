@@ -463,12 +463,15 @@ class Cruzamiento(SeccionVia):
 class Señal(Item):
     def __init__(self, id: IdElemento, position: Point, tipo: TipoSeñal,
                  offset_pie: float = 6.0, rotation: Angle = None,
-                 focos=None, aspectos_pantalla=None):
+                 focos=None, aspectos_pantalla=None,
+                 inicio_ruta: bool = True, final_ruta: bool = True):
         super().__init__(id, TipoElemento.SEÑAL, position, rotation)
         self.tipo_señal = tipo
         self.offset_pie = float(offset_pie)
         self.focos = list(focos if focos is not None else ("V", "R", "B", "Az", "A"))
         self.aspectos_pantalla = list(aspectos_pantalla or [])
+        self.inicio_ruta = inicio_ruta
+        self.final_ruta = final_ruta
 
     def get_outs(self):
         return [(self.position, self.rotation)]
@@ -478,7 +481,9 @@ class Señal(Item):
                 "tipo_señal": self.tipo_señal.name,
                 "offset_pie": self.offset_pie,
                 "focos": self.focos,
-                "aspectos_pantalla": self.aspectos_pantalla}
+                "aspectos_pantalla": self.aspectos_pantalla,
+                "inicio_ruta": self.inicio_ruta,
+                "final_ruta": self.final_ruta}
 
     @classmethod
     def deserialize(cls, data, dependency):
@@ -492,11 +497,16 @@ class Señal(Item):
             raise ValueError(f"Desplazamiento del pie inválido para {ident.id}.")
         focos = data.get("focos", ["V", "R", "B", "Az", "A"])
         aspectos = data.get("aspectos_pantalla", [])
+        inicio_ruta = data.get("inicio_ruta", True)
+        final_ruta = data.get("final_ruta", True)
         if not isinstance(focos, list) or any(foco not in ("V", "R", "B", "Az", "A") for foco in focos):
             raise ValueError(f"Focos inválidos para {ident.id}.")
         if not isinstance(aspectos, list) or any(not isinstance(v, str) for v in aspectos):
             raise ValueError(f"Velocidades de pantalla inválidas para {ident.id}.")
-        return cls(ident, position, signal_type, offset, rotation, focos, aspectos)
+        if not isinstance(inicio_ruta, bool) or not isinstance(final_ruta, bool):
+            raise ValueError(f"Opciones de ruta inválidas para {ident.id}.")
+        return cls(ident, position, signal_type, offset, rotation, focos, aspectos,
+                   inicio_ruta, final_ruta)
 
 class Topera(Item):
     def __init__(self, id: IdElemento, position: Point, rotation: Angle = None):
