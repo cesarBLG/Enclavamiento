@@ -8,7 +8,9 @@ tipo(j.value("Tipo", TipoBloqueo::BAU)), bloqueo_emisor(lado == Lado::Impar ? Es
     if (tipo == TipoBloqueo::BAD || tipo == TipoBloqueo::BLAD) estado_inicial = sentido_preferente == Lado::Impar ? EstadoBloqueo::BloqueoImpar : EstadoBloqueo::BloqueoPar;
     else estado_inicial = EstadoBloqueo::Desbloqueo;
     for (auto &cv : j["CVs"]) {
-        cvs.push_back(secciones[id_elemento::from_default_dep(cv, estacion)]);
+        auto *sec = secciones[id_elemento::from_default_dep(cv, estacion)];
+        if (!sec->bloqueo_asociado) sec->asociar_bloqueo(id);
+        cvs.push_back(sec);
     }
     int num_cve = j.value("CVsEntrada", 1);
     if (!cvs.empty()) {

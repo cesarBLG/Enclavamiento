@@ -98,7 +98,7 @@ class ruta : public movimiento
 public:
     const std::string id_inicio;
     const std::string id_destino;
-    const std::optional<id_elemento> bloqueo_salida;
+    std::optional<id_elemento> bloqueo_salida;
 
     bool anulacion_bloqueo_pendiente = false;
 protected:

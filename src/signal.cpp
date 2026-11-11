@@ -204,6 +204,8 @@ void señal_impl::determinar_aspecto()
         if (!seccion_asegurada && ruta_activa != nullptr && ruta_activa->tipo == TipoMovimiento::Maniobra) {
             break;
         }
+        if (sec_prv != nullptr && sec_prv->is_trayecto() && sec_act != seccion && !sec_act->is_trayecto())
+            break;
         EstadoCanton sec_ocup = sec_act->get_ocupacion(sec_prv, dir);
         canton = std::max(sec_ocup, canton);
         if (sec_act->get_cv() != nullptr && sec_act->get_cv()->is_btv()) prohibir_abrir = true;

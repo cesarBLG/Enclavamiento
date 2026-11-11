@@ -63,7 +63,7 @@ frontera *destino_ruta::get_frontera()
     }
     return nullptr;
 }
-ruta::ruta(const std::string &estacion, const json &j) : movimiento(estacion, j["Tipo"], j["Inicio"].get<std::string>()+" "+j["Destino"].get<std::string>(), true, j.value("ERTMS", false)), id_inicio(j["Inicio"]), id_destino(j["Destino"]), bloqueo_salida(j.contains("Bloqueo") ? std::optional<id_elemento>(id_elemento(j["Bloqueo"])) : std::nullopt)
+ruta::ruta(const std::string &estacion, const json &j) : movimiento(estacion, j["Tipo"], j["Inicio"].get<std::string>()+" "+j["Destino"].get<std::string>(), true, j.value("ERTMS", false)), id_inicio(j["Inicio"]), id_destino(j["Destino"])
 {
     id_elemento id_señal(estacion, id_inicio);
     if (señal_impls.find(id_señal) == señal_impls.end()) {
@@ -91,6 +91,11 @@ ruta::ruta(const std::string &estacion, const json &j) : movimiento(estacion, j[
     if (destino->tipo == TipoDestino::Señal) {
         auto it = señal_impls.find(destino->id);
         if (it != señal_impls.end()) señales_fin.push_back(it->second);
+    }
+    if (j.contains("Bloqueo")) {
+        bloqueo_salida = id_elemento(j["Bloqueo"]);
+    } else if (destino->tipo == TipoDestino::Colateral && bloqueos.find(full_id_destino) != bloqueos.end()) {
+        bloqueo_salida = full_id_destino;
     }
 
     maniobra_compatible = j.value("Compatible", CompatibilidadManiobra::IncompatibleBloqueo);
@@ -1001,7 +1006,7 @@ RespuestaMando ruta::mando(const std::string &inicio, const std::string &fin, co
 
     auto mando0 = dependencias[señal_inicio->id.dependencia]->mando_actual;
     for (auto &sec : secciones) {
-        if (sec.seccion->is_trayecto()) continue;
+        if (sec.seccion->is_trayecto() || sec.seccion->is_estacionamiento()) continue;
         auto it = dependencias.find(sec.seccion->id.dependencia);
         if (it == dependencias.end() || it->second->mando_actual.central != mando0.central || it->second->mando_actual.puesto != mando0.puesto) {
             return RespuestaMando::NoMando;

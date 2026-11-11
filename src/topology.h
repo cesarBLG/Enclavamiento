@@ -88,7 +88,7 @@ public:
         conexion(const std::string &dep, const json &j);
     };
     const id_elemento id;
-    const std::optional<id_elemento> bloqueo_asociado;
+    std::optional<id_elemento> bloqueo_asociado;
     const TipoSeccion tipo;
     id_elemento id_cv;
 
@@ -269,6 +269,11 @@ public:
         return velocidad_agujas::max();
     }
     RemotaCV get_estado_remota();
+    void asociar_bloqueo(const id_elemento &id)
+    {
+        bloqueo_asociado = id;
+        trayecto = true;
+    }
 };
 class cruzamiento : public seccion_via
 {
