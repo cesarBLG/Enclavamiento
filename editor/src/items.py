@@ -18,6 +18,7 @@ class TipoElemento(Enum):
     CRUZAMIENTO = 3
     TOPERA = 4
     SEÑAL = 5
+    BLOQUEO = 6
 
 class Lado(Enum):
     Par = 0
@@ -197,7 +198,8 @@ class Item:
                         "Aguja": Aguja.deserialize,
                         "Cruzamiento": Cruzamiento.deserialize,
                         "Señal": Señal.deserialize,
-                        "Topera": Topera.deserialize}
+                        "Topera": Topera.deserialize,
+                        "Bloqueo": Bloqueo.deserialize}
         kind = data.get("tipo")
         if kind not in constructors:
             raise ValueError(f"Tipo de elemento desconocido: {kind!r}.")
@@ -522,6 +524,33 @@ class Topera(Item):
     def deserialize(cls, data, dependency):
         ident, position, rotation = Item._base(data, dependency)
         return cls(ident, position, rotation)
+
+
+class Bloqueo(Item):
+    def __init__(self, id: IdElemento, position: Point, rotation: Angle = None):
+        super().__init__(id, TipoElemento.BLOQUEO, position, rotation)
+        self.volteado = False
+
+    def display_side(self):
+        """Return the local normal-side sign for the visual stack."""
+        return 1 if self.volteado else -1
+
+    def get_outs(self):
+        return [(self.position, self.rotation)]
+
+    def serialize(self):
+        return {**super().serialize(), "tipo": "Bloqueo",
+            "volteado": self.volteado}
+
+    @classmethod
+    def deserialize(cls, data, dependency):
+        ident, position, rotation = Item._base(data, dependency)
+        item = cls(ident, position, rotation)
+        volteado = data.get("volteado", False)
+        if not isinstance(volteado, bool):
+            raise ValueError(f"Orientación visual inválida para {ident.id}.")
+        item.volteado = volteado
+        return item
 
 def _validate_layout(dependencies):
     # Los elementos pueden compartir coordenadas o cruzarse; las relaciones de

@@ -86,7 +86,7 @@ def get_siguientes_secciones(sec, lado, secciones, conexiones):
 
 def serialize_connection(connection):
     if connection is None:
-        return None
+        return ""
     if isinstance(connection, tuple):
         ident, invert = connection
     else:

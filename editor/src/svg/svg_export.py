@@ -11,7 +11,7 @@ from rich_click import group
 from tomlkit import item
 
 from export import get_conexiones
-from items import Aguja, Cruzamiento, CvLineal, Item, Point, Señal, SeccionVia, Topera
+from items import Aguja, Bloqueo, Cruzamiento, CvLineal, Item, Point, Señal, SeccionVia, Topera
 from label_positions import (
 	SIGNAL_ICON_HEIGHT, SIGNAL_ICON_WIDTH, label_anchor, label_angle,
 	label_background_width, label_text_anchor,
@@ -45,6 +45,10 @@ class Symbol:
 			"svg": svg_namespace,
 			"inkscape": "http://www.inkscape.org/namespaces/inkscape",
 		})
+		if group is None:
+			group = root.find(f".//*[@inkscape:label='{label}']", {
+				"inkscape": "http://www.inkscape.org/namespaces/inkscape",
+			})
 		self.symbol = ElementTree.Element("{http://www.w3.org/2000/svg}symbol", {
 			"id": label
 		})
@@ -55,7 +59,8 @@ class Symbol:
 
 simbolos = {
 	label: Symbol(Path(__file__).resolve().parent.parent.parent / "symbols" / f"{label}.svg", label)
-	for label in ("signal", "bloqueoVia", "bloqueoDestino", "IMV", "FMV", "bloqueo")
+	for label in ("signal", "bloqueoVia", "IMV", "FMV", "bloqueo",
+	             "csb", "prohibirBloqueo")
 }
 
 
@@ -292,6 +297,108 @@ def _fmv_group(item: Item) -> ElementTree.Element:
 	return group
 
 
+def _bloqueo_group(item: Bloqueo, cv: CvLineal) -> tuple[ElementTree.Element, ElementTree.Element, ElementTree.Element]:
+	inkscape_namespace = "http://www.inkscape.org/namespaces/inkscape"
+	link_namespace = "http://www.w3.org/1999/xlink"
+	svg_rotation = degrees(item.rotation.angle + pi)
+	display_side = item.display_side()
+	side = -display_side
+	group = ElementTree.Element("{http://www.w3.org/2000/svg}g", {
+		"transform": (
+			f"translate({item.position.x:.15g} {item.position.y:.15g}) "
+			f"rotate({svg_rotation:.15g})"
+		),
+		f"{{{inkscape_namespace}}}label": item.id.id,
+	})
+	destination = ElementTree.Element("{http://www.w3.org/2000/svg}g", {
+		"transform": (
+			f"translate({item.position.x:.15g} {item.position.y:.15g}) "
+			f"rotate({degrees(item.rotation.angle):.15g})"
+		),
+		f"{{{inkscape_namespace}}}label": item.id.id,
+	})
+	fmv_group = ElementTree.Element("{http://www.w3.org/2000/svg}g", {
+		"transform": (
+			f"translate({item.position.x:.15g} {item.position.y:.15g}) "
+			f"rotate({degrees(item.rotation.angle):.15g})"
+		),
+		f"{{{inkscape_namespace}}}label": item.id.id,
+	})
+	_add_item_label(
+		destination,
+		item.id.id_corto,
+		0,
+		display_side * 40,
+		angle=label_angle(item) - item.rotation.angle,
+	)
+
+	def append_symbol(name, x, y, label, rotation=0, center=True):
+		symbol = simbolos[name]
+		use = symbol.use()
+		if center:
+			transform = (
+				f"translate({x - symbol.width / 2:.15g} {y - symbol.height / 2:.15g}) "
+				f"rotate({rotation:.15g} {symbol.width / 2:.15g} {symbol.height / 2:.15g})"
+			)
+		else:
+			transform = (
+				f"translate({x:.15g} {y - symbol.height / 2:.15g}) "
+				f"rotate({rotation:.15g} 0 {symbol.height / 2:.15g})"
+			)
+		use.set("transform", transform)
+		use.set(f"{{{inkscape_namespace}}}label", label)
+		group.append(use)
+
+	label_width = len(item.id.id_corto) * 7 + 4
+	actc_width = 32
+	actc_x = label_width / 2 + actc_width / 2 + 5
+	actc_angle = degrees(label_angle(item) - item.rotation.angle - pi)
+	actc_text = ElementTree.Element("{http://www.w3.org/2000/svg}text", {
+		"x": "0",
+		"y": "0",
+		"text-anchor": "middle",
+		"dominant-baseline": "middle",
+		"font-size": "12",
+		"font-family": "sans-serif",
+		"fill": "#00aa00",
+		"transform": (
+			f"translate({actc_x:.15g} {side * 40:.15g}) "
+			f"rotate({actc_angle:.15g})"
+		),
+		f"{{{inkscape_namespace}}}label": "actc",
+	})
+	ElementTree.SubElement(actc_text, "{http://www.w3.org/2000/svg}tspan").text = "A/CTC"
+	group.append(actc_text)
+	append_symbol("bloqueo", 0, side * 75, "principal")
+	lock_half_width = simbolos["bloqueo"].width / 2
+	csb_gap = 5
+	append_symbol("csb", -lock_half_width - csb_gap, side * 75, "csbPropio", 180, center=False)
+	append_symbol("csb", lock_half_width + csb_gap, side * 75, "csbColateral", center=False)
+	append_symbol("prohibirBloqueo", 0, side * (75 + simbolos["bloqueo"].height / 2 + simbolos["prohibirBloqueo"].height / 2 + 5), "prohibir")
+
+	port = next(
+		(index for index, (position, angle) in enumerate(cv.get_outs())
+		 if position.close_to(item.position) and angle.close_to(item.rotation)),
+		None,
+	)
+	if port is None:
+		return group, destination, fmv_group
+	other_port = 1 - port
+	other_position, other_angle = cv.get_outs()[other_port]
+	inside = other_position - Point(cos(other_angle.angle) * 11, sin(other_angle.angle) * 11)
+	inside_local = (inside - item.position).get_rotated(-item.rotation.angle)
+	fmv = simbolos["FMV"]
+	for label, center in (
+		("estacion", Point(11, 0)),
+		("trayecto", inside_local),
+	):
+		use = fmv.use()
+		use.set("transform", f"translate({center.x - fmv.width / 2:.15g} {center.y - fmv.height / 2:.15g})")
+		use.set(f"{{{inkscape_namespace}}}label", label)
+		fmv_group.append(use)
+	return group, destination, fmv_group
+
+
 def _crossing_group(item: Cruzamiento, points_by_port=None):
 	group = ElementTree.Element("{http://www.w3.org/2000/svg}g", {
 		"transform": (
@@ -345,7 +452,7 @@ def export_svg(items: Iterable[Item]) -> str:
 	items = list(items)
 	secciones = [item for item in items if isinstance(item, SeccionVia)]
 	connections = {id(item): get_conexiones(item, secciones) for item in secciones}
-	layers = {"CV": [], "Aguja": [], "Cruzamientos": [], "Señal": [], "IMV": [], "FMV": [], "Destino": []}
+	layers = {"CV": [], "Aguja": [], "Cruzamientos": [], "Señal": [], "IMV": [], "FMV": [], "Destino": [], "Bloqueo": []}
 	bounds = [None,None,None,None]
 	def update_bounds(points):
 		if isinstance(points, Point):
@@ -361,7 +468,16 @@ def export_svg(items: Iterable[Item]) -> str:
 			if bounds[3] is None or point.y > bounds[3]:
 				bounds[3] = point.y
 	for item in items:
-		if isinstance(item, Señal):
+		if isinstance(item, Bloqueo):
+			cv = next((candidate for candidate in items
+					   if isinstance(candidate, CvLineal)
+					   and candidate.matches(item.position, item.rotation)), None)
+			if cv is not None:
+				bloqueo, destination, fmv = _bloqueo_group(item, cv)
+				layers["Bloqueo"].append(bloqueo)
+				layers["Destino"].append(destination)
+				layers["FMV"].append(fmv)
+		elif isinstance(item, Señal):
 			group, signal_points = _signal_group(item)
 			layers["Señal"].append(group)
 			if item.inicio_ruta:

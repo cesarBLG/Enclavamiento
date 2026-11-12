@@ -39,7 +39,7 @@ except ImportError:
     LEFT_BUTTON = Qt.LeftButton
 
 from items import (
-    Aguja, Angle, Cruzamiento, CvLineal, Direccion, GEOMETRY_TOLERANCE, IdElemento, Lado, Point, Señal, TipoSeñal,
+    Aguja, Angle, Bloqueo, Cruzamiento, CvLineal, Direccion, GEOMETRY_TOLERANCE, IdElemento, Lado, Point, Señal, TipoSeñal,
     Topera, deserialize_layout, serialize_layout,
 )
 from export import generar_config_ence
@@ -63,6 +63,9 @@ GRID_EXTENSION_CELLS = 10
 SIGNAL_ICON_PATH = Path(__file__).resolve().parent.parent / "symbols" / "signal.svg"
 IMV_ICON_PATH = Path(__file__).resolve().parent.parent / "symbols" / "IMV.svg"
 FMV_ICON_PATH = Path(__file__).resolve().parent.parent / "symbols" / "FMV.svg"
+BLOQUEO_ICON_PATH = Path(__file__).resolve().parent.parent / "symbols" / "bloqueo.svg"
+CSB_ICON_PATH = Path(__file__).resolve().parent.parent / "symbols" / "csb.svg"
+PROHIBIR_ICON_PATH = Path(__file__).resolve().parent.parent / "symbols" / "prohibirBloqueo.svg"
 SECTION_TYPES = (CvLineal, Aguja, Cruzamiento)
 
 
@@ -70,8 +73,8 @@ class SignalIcon:
     def __init__(self, path, width=None, height=None):
         self.renderer = QSvgRenderer(str(path))
         self.size = self.renderer.defaultSize()
-        self._width = SIGNAL_ICON_WIDTH if width is None else width
-        self._height = SIGNAL_ICON_HEIGHT if height is None else height
+        self._width = self.size.width() if width is None else width
+        self._height = self.size.height() if height is None else height
 
     @property
     def width(self):
@@ -93,6 +96,9 @@ class SignalIcon:
 SIGNAL_ICON = SignalIcon(SIGNAL_ICON_PATH)
 IMV_ICON = SignalIcon(IMV_ICON_PATH, width=12, height=12)
 FMV_ICON = SignalIcon(FMV_ICON_PATH, width=12, height=12)
+BLOQUEO_ICON = SignalIcon(BLOQUEO_ICON_PATH)
+CSB_ICON = SignalIcon(CSB_ICON_PATH)
+PROHIBIR_ICON = SignalIcon(PROHIBIR_ICON_PATH)
 
 
 def item_kind_name(item):
@@ -106,6 +112,8 @@ def item_kind_name(item):
         return "Señal"
     if isinstance(item, Topera):
         return "Topera"
+    if isinstance(item, Bloqueo):
+        return "Bloqueo"
     return None
 
 
@@ -138,6 +146,8 @@ class AddItemCommand:
             self.text = f"Cruzamiento {item.id.id}"
         elif isinstance(item, Topera):
             self.text = f"Topera {item.id.id}"
+        elif isinstance(item, Bloqueo):
+            self.text = f"Bloqueo {item.id.id}"
         else:
             self.text = f"Señal {item.tipo_señal.name} {item.id.id}"
 
@@ -158,15 +168,32 @@ class RotateCommand:
         self.item = item
         self.amount = amount
         self.linked_signal = None
+        self.linked_bloqueos = []
         if isinstance(item, (CvLineal, Aguja)):
             self.linked_signal = editor.signal_for_section(item)
+        if isinstance(item, CvLineal):
+            self.linked_bloqueos = [
+                (bloqueo, next(
+                    index for index, (position, angle) in enumerate(item.get_outs())
+                    if position.close_to(bloqueo.position)
+                    and angle.close_to(bloqueo.rotation)
+                ))
+                for bloqueo in editor.items_by_dependency.get(item.id.dep, [])
+                if editor.bloqueo_matches_section(bloqueo, item)
+            ]
         self.before = editor.capture_rotation_state(item, self.linked_signal)
+        self.before_bloqueos = [
+            (bloqueo, bloqueo.position, bloqueo.rotation)
+            for bloqueo, _ in self.linked_bloqueos
+        ]
         self.previous_selection = list(editor.selected_items)
         x, y = item.position
         self.text = f"{'RotCW' if amount > 0 else 'RotCCW'} {x} {y}"
 
     def execute(self):
-        if self.editor.rotate_geometry(self.item, self.amount, self.linked_signal) is False:
+        if self.editor.rotate_geometry(
+            self.item, self.amount, self.linked_signal, self.linked_bloqueos
+        ) is False:
             self.after = self.before
             return False
         self.after = self.editor.capture_rotation_state(self.item, self.linked_signal)
@@ -174,6 +201,8 @@ class RotateCommand:
 
     def undo(self):
         self.editor.restore_rotation_state(self.item, self.linked_signal, self.before)
+        for bloqueo, position, rotation in self.before_bloqueos:
+            bloqueo.position, bloqueo.rotation = position, rotation
         self.editor.set_selection(self.previous_selection)
 
 
@@ -729,6 +758,23 @@ class GridView(QGraphicsView):
                               + (point.y() - center_y) * ux)
                     if abs(along) <= PICK_TOLERANCE and abs(across) <= 10 + PICK_TOLERANCE:
                         hits.append((0, item))
+                elif isinstance(item, Bloqueo):
+                    local = Point(
+                        point.x() - item.position.x,
+                        point.y() - item.position.y,
+                    ).get_rotated(-item.rotation.angle)
+                    side = item.display_side()
+                    label_width = len(item.id.id_corto) * 7 + 4
+                    half_width = max(
+                        label_width / 2,
+                        BLOQUEO_ICON.width / 2 + CSB_ICON.width + 5,
+                        PROHIBIR_ICON.width / 2,
+                    )
+                    top = 75 + BLOQUEO_ICON.height / 2 + PROHIBIR_ICON.height / 2 + 5
+                    display_distance = local.y * side
+                    if (-10 <= display_distance <= top + 10
+                            and abs(local.x) <= half_width + PICK_TOLERANCE):
+                        hits.append((0, item))
                 continue
             angle = item.rotation.angle
             ux, uy = cos(angle), sin(angle)
@@ -964,6 +1010,8 @@ class GridView(QGraphicsView):
                                 center = item.position + Point(ux * 2, uy * 2)
                                 perpendicular = Point(-uy * 10, ux * 10)
                                 visible_points = [center - perpendicular, center + perpendicular]
+                            elif isinstance(item, Bloqueo):
+                                visible_points = [item.position]
                             elif isinstance(item, CvLineal):
                                 visible_points = [
                                     item.position + path_point.get_rotated(item.rotation)
@@ -1096,6 +1144,7 @@ class TrackEditor(QMainWindow):
         self.add_tool(tools, "Alargar vía", "extend", None)
         self.add_tool(tools, "Señal", "signal", None)
         self.add_tool(tools, "Topera", "topera", None)
+        self.add_tool(tools, "Bloqueo", "bloqueo", None)
         self.merge_button = QToolButton(self)
         self.merge_button.setIcon(self.make_icon("merge"))
         self.merge_button.setIconSize(QSize(36, 36))
@@ -1254,8 +1303,8 @@ class TrackEditor(QMainWindow):
     @staticmethod
     def make_icon(kind, value=None):
         """Crea iconos vectoriales Qt para las herramientas del editor."""
-        if kind == "signal":
-            return QIcon(str(SIGNAL_ICON_PATH))
+        if kind in ("signal", "bloqueo"):
+            return QIcon(str(SIGNAL_ICON_PATH if kind == "signal" else BLOQUEO_ICON_PATH))
         size = QSize(48, 48)
         pixmap = QPixmap(size)
         pixmap.fill(Qt.GlobalColor.transparent if hasattr(Qt, "GlobalColor") else Qt.transparent)
@@ -1444,12 +1493,12 @@ class TrackEditor(QMainWindow):
         self.draw_items()
 
     def movable_selection(self, items):
-        result = [item for item in items if not isinstance(item, Topera)]
+        result = [item for item in items if not isinstance(item, (Topera, Bloqueo))]
         index = 0
         while index < len(result):
             item = result[index]
             if isinstance(item, SECTION_TYPES):
-                related_types = (Señal, Topera)
+                related_types = (Señal, Topera, Bloqueo)
             else:
                 related_types = ()
             for candidate in self.items_by_dependency.get(item.id.dep, []):
@@ -1457,10 +1506,21 @@ class TrackEditor(QMainWindow):
                     self.signal_matches_section(candidate, item)
                     if isinstance(candidate, Señal)
                     else self.topera_matches_section(candidate, item)
+                    if isinstance(candidate, Topera)
+                    else self.bloqueo_matches_section(candidate, item)
                 )
                 if (isinstance(candidate, related_types) and matches
                         and candidate not in result):
                     result.append(candidate)
+            if isinstance(item, SECTION_TYPES):
+                for candidate in (
+                    candidate
+                    for dependency_items in self.items_by_dependency.values()
+                    for candidate in dependency_items
+                    if isinstance(candidate, Bloqueo)
+                ):
+                    if self.bloqueo_matches_section(candidate, item) and candidate not in result:
+                        result.append(candidate)
             index += 1
         return result
 
@@ -1475,6 +1535,11 @@ class TrackEditor(QMainWindow):
         if not isinstance(topera, Topera) or not isinstance(section, SECTION_TYPES):
             return False
         return section.matches(topera.position, topera.rotation)
+
+    @staticmethod
+    def bloqueo_matches_section(bloqueo, section):
+        return (isinstance(bloqueo, Bloqueo) and isinstance(section, CvLineal)
+                and section.matches(bloqueo.position, bloqueo.rotation))
 
     def signal_for_section(self, section):
         return next((item for item in self.items_by_dependency.get(section.id.dep, [])
@@ -1536,6 +1601,8 @@ class TrackEditor(QMainWindow):
                 for name in ("points_normal", "points_invertida", "points_punta")
             )
             geometry = (item.position, *paths, item.rotation)
+        elif isinstance(item, Bloqueo):
+            geometry = (item.position, item.rotation, item.volteado)
         else:
             geometry = (item.position, item.rotation)
         signal_state = ((signal.position, signal.rotation) if signal is not None else None)
@@ -1552,6 +1619,8 @@ class TrackEditor(QMainWindow):
         elif isinstance(item, Cruzamiento):
             (item.position, item.points_p1, item.points_p2,
              item.points_p3, item.points_p4, item.rotation) = geometry
+        elif isinstance(item, Bloqueo):
+            item.position, item.rotation, item.volteado = geometry
         else:
             item.position, item.rotation = geometry
         if signal is not None:
@@ -1584,9 +1653,12 @@ class TrackEditor(QMainWindow):
         )
         return rotations[(current + (1 if direction > 0 else -1)) % len(rotations)]
 
-    def rotate_geometry(self, item, steps, signal=None):
+    def rotate_geometry(self, item, steps, signal=None, linked_bloqueos=()):
         if isinstance(item, Topera):
             return False
+        if isinstance(item, Bloqueo):
+            item.volteado = not item.volteado
+            return True
         before = self.capture_rotation_state(item, signal) if isinstance(item, (Aguja, Cruzamiento)) else None
         if isinstance(item, Señal):
             track = next((candidate for candidate in self.items_by_dependency.get(item.id.dep, [])
@@ -1670,6 +1742,8 @@ class TrackEditor(QMainWindow):
         if isinstance(item, SECTION_TYPES):
             if not isinstance(item, Aguja):
                 self.snap_section_to_connection(item, rotate=False)
+            for bloqueo, port_index in linked_bloqueos:
+                bloqueo.position, bloqueo.rotation = item.get_outs()[port_index]
         if signal is not None:
             if signal_port_index is not None:
                 new_port = item.get_outs()[signal_port_index]
@@ -1792,6 +1866,50 @@ class TrackEditor(QMainWindow):
             item = Topera(
                 IdElemento(f"FV{suffix}", track.id.dep), port, angle
             )
+            self.run_command(AddItemCommand(self, item))
+            return
+        if kind == "bloqueo":
+            tracks = [
+                item
+                for dependency_items in self.items_by_dependency.values()
+                for item in dependency_items
+                if isinstance(item, CvLineal)
+            ]
+            tracks.sort(key=lambda item: item.id.dep == self.current_dependency)
+            clicked_track = next(
+                (track for track in reversed(tracks)
+                 if self.view.item_at(scene_point, [track]) is track),
+                None,
+            )
+            candidate_tracks = [clicked_track] if clicked_track is not None else tracks
+            connection = min(
+                (
+                    (sqrt((port.x - scene_point.x()) ** 2
+                          + (port.y - scene_point.y()) ** 2), track, port_index, port, angle)
+                    for track in candidate_tracks
+                    for port_index, (port, angle) in enumerate(track.get_outs())
+                ),
+                key=lambda candidate: candidate[0],
+                default=None,
+            )
+            if connection is None or connection[0] > SNAP_DISTANCE:
+                QMessageBox.warning(self, "Vía necesaria", "Coloca el bloqueo sobre un puerto de un CV lineal.")
+                return
+            _, track, port_index, port, angle = connection
+            if any(
+                isinstance(other, Bloqueo)
+                and track.get_outs()[port_index][0].close_to(other.position)
+                and track.get_outs()[port_index][1].close_to(other.rotation)
+                for dependency_items in self.items_by_dependency.values()
+                for other in dependency_items
+            ):
+                QMessageBox.warning(self, "Puerto ocupado", "Ese puerto ya tiene un bloqueo.")
+                return
+            suffix = 1
+            while any(item.id.id == f"{self.current_dependency}:B{suffix}"
+                      for item in self.items_by_dependency.get(self.current_dependency, [])):
+                suffix += 1
+            item = Bloqueo(IdElemento(f"B{suffix}", self.current_dependency), port, angle)
             self.run_command(AddItemCommand(self, item))
             return
         dependency = self.dependency.currentText().strip()
@@ -3016,6 +3134,88 @@ class TrackEditor(QMainWindow):
                 fmv.setZValue(1)
                 self.item_graphics.append(fmv)
                 label_center = label_anchor(item)
+            elif isinstance(item, Bloqueo):
+                def add_bloqueo_symbol(icon, local_center, extra_angle=0, center=True):
+                    pixmap = icon.pixmap()
+                    graphic = self.scene.addPixmap(pixmap)
+                    if center:
+                        graphic.setOffset(-pixmap.width() / 2, -pixmap.height() / 2)
+                        graphic.setTransformOriginPoint(0, 0)
+                    else:
+                        graphic.setOffset(0, -pixmap.height() / 2)
+                        graphic.setTransformOriginPoint(0, 0)
+                    center = item.position + local_center.get_rotated(item.rotation)
+                    graphic.setPos(center.x, center.y)
+                    graphic.setRotation(item.rotation.angle * 180 / pi + extra_angle)
+                    graphic.setZValue(1)
+                    self.item_graphics.append(graphic)
+
+                def add_bloqueo_text(local_center):
+                    text = QGraphicsTextItem("A/CTC")
+                    text.document().setDocumentMargin(0)
+                    font = QFont()
+                    font.setPointSizeF(9)
+                    text.setFont(font)
+                    text.setDefaultTextColor(QColor("#00aa00"))
+                    bounds = text.boundingRect()
+                    text.setTransformOriginPoint(bounds.center())
+                    center = item.position + local_center.get_rotated(item.rotation)
+                    text.setPos(center.x - bounds.width() / 2, center.y - bounds.height() / 2)
+                    text.setRotation(label_angle(item) * 180 / pi)
+                    text.setZValue(1)
+                    self.scene.addItem(text)
+                    self.item_graphics.append(text)
+
+                label_width = len(item.id.id_corto) * 7 + 4
+                side = item.display_side()
+                bloqueo_center = Point(0, side * 75)
+                add_bloqueo_text(Point(label_width / 2 + 16 + 5, side * 40))
+                add_bloqueo_symbol(BLOQUEO_ICON, bloqueo_center)
+                add_bloqueo_symbol(CSB_ICON, Point(
+                    -BLOQUEO_ICON.width / 2 - 5, side * 75,
+                ), 180, center=False)
+                add_bloqueo_symbol(CSB_ICON, Point(
+                    BLOQUEO_ICON.width / 2 + 5, side * 75,
+                ), center=False)
+                add_bloqueo_symbol(PROHIBIR_ICON, Point(
+                    0, side * (75 + BLOQUEO_ICON.height / 2
+                               + PROHIBIR_ICON.height / 2 + 5),
+                ))
+
+                section = next(
+                    (candidate for dependency_items in self.items_by_dependency.values()
+                     for candidate in dependency_items
+                     if isinstance(candidate, CvLineal)
+                     and self.bloqueo_matches_section(item, candidate)),
+                    None,
+                )
+                if section is not None:
+                    port_index = next(
+                        index for index, (position, angle) in enumerate(section.get_outs())
+                        if position.close_to(item.position)
+                        and angle.close_to(item.rotation)
+                    )
+                    other_position, other_angle = section.get_outs()[1 - port_index]
+                    inside = other_position - Point(
+                        cos(other_angle.angle) * 11,
+                        sin(other_angle.angle) * 11,
+                    )
+                    fmv_centers = (
+                        Point(11, 0),
+                        (inside - item.position).get_rotated(-item.rotation.angle),
+                    )
+                    for fmv_local in fmv_centers:
+                        fmv_pixmap = FMV_ICON.pixmap()
+                        fmv = self.scene.addPixmap(fmv_pixmap)
+                        fmv.setOffset(-FMV_ICON.width / 2, -FMV_ICON.height / 2)
+                        fmv_center = item.position + fmv_local.get_rotated(item.rotation)
+                        fmv.setPos(fmv_center.x, fmv_center.y)
+                        fmv.setZValue(1)
+                        self.item_graphics.append(fmv)
+                label_center = item.position + Point(
+                    -side * sin(item.rotation.angle) * 40,
+                    side * cos(item.rotation.angle) * 40,
+                )
             if isinstance(item, Señal):
                 font = QFont()
                 font.setPointSizeF(9)
