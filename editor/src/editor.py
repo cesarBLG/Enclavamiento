@@ -1539,7 +1539,7 @@ class TrackEditor(QMainWindow):
     @staticmethod
     def bloqueo_matches_section(bloqueo, section):
         return (isinstance(bloqueo, Bloqueo) and isinstance(section, CvLineal)
-                and section.matches(bloqueo.position, bloqueo.rotation))
+                and section.matches(bloqueo.position, bloqueo.rotation + Angle(pi)))
 
     def signal_for_section(self, section):
         return next((item for item in self.items_by_dependency.get(section.id.dep, [])
@@ -3169,7 +3169,21 @@ class TrackEditor(QMainWindow):
                 label_width = len(item.id.id_corto) * 7 + 4
                 side = item.display_side()
                 bloqueo_center = Point(0, side * 75)
-                add_bloqueo_text(Point(label_width / 2 + 16 + 5, side * 40))
+                label_rotation = label_angle(item)
+                label_top_offset = 0 if side * cos(
+                    label_rotation - item.rotation.angle
+                ) > 0 else -14
+                label_center_local = Point(0, side * (
+                    75 - BLOQUEO_ICON.height / 2 - 5 - 14 / 2
+                ))
+                label_center = item.position + label_center_local.get_rotated(item.rotation)
+                label_anchor_point = label_center - Point(
+                    0, label_top_offset + 7
+                ).get_rotated(label_rotation)
+                add_bloqueo_text(Point(
+                    label_width / 2 + 16 + 5,
+                    label_center_local.y,
+                ))
                 add_bloqueo_symbol(BLOQUEO_ICON, bloqueo_center)
                 add_bloqueo_symbol(CSB_ICON, Point(
                     -BLOQUEO_ICON.width / 2 - 5, side * 75,
@@ -3193,7 +3207,7 @@ class TrackEditor(QMainWindow):
                     port_index = next(
                         index for index, (position, angle) in enumerate(section.get_outs())
                         if position.close_to(item.position)
-                        and angle.close_to(item.rotation)
+                        and angle.close_to(item.rotation+Angle(pi))
                     )
                     other_position, other_angle = section.get_outs()[1 - port_index]
                     inside = other_position - Point(
@@ -3212,10 +3226,7 @@ class TrackEditor(QMainWindow):
                         fmv.setPos(fmv_center.x, fmv_center.y)
                         fmv.setZValue(1)
                         self.item_graphics.append(fmv)
-                label_center = item.position + Point(
-                    -side * sin(item.rotation.angle) * 40,
-                    side * cos(item.rotation.angle) * 40,
-                )
+                label_center = label_anchor_point
             if isinstance(item, Señal):
                 font = QFont()
                 font.setPointSizeF(9)
@@ -3265,16 +3276,19 @@ class TrackEditor(QMainWindow):
             self.add_canvas_label(
                 item.id.id_corto, label_center, color, label_angle(item),
                 top_offset=(
-                    6 if isinstance(item, CvLineal)
-                    else label_offset if isinstance(item, Aguja)
-                    else 0
-                ),
+                    label_top_offset if isinstance(item, Bloqueo) else (
+                        6 if isinstance(item, CvLineal)
+                        else label_offset if isinstance(item, Aguja)
+                        else 0
+                    )
+                ), font_size=12 if isinstance(item, Bloqueo) else 9,
             )
 
-    def add_canvas_label(self, text_value, center, color, angle=0, top_offset=0):
+    def add_canvas_label(self, text_value, center, color, angle=0, top_offset=0,
+                        font_size=9):
         x, y = center
         font = QFont()
-        font.setPointSizeF(9)
+        font.setPointSizeF(font_size)
         width = QFontMetricsF(font).horizontalAdvance(text_value) + 4
         label_group = QGraphicsItemGroup()
         label_group.setPos(x, y)

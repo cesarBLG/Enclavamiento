@@ -13,8 +13,8 @@ from tomlkit import item
 from export import get_conexiones
 from items import Aguja, Bloqueo, Cruzamiento, CvLineal, Item, Point, Señal, SeccionVia, Topera
 from label_positions import (
-	SIGNAL_ICON_HEIGHT, SIGNAL_ICON_WIDTH, label_anchor, label_angle,
-	label_background_width, label_text_anchor,
+	LABEL_FONT_SIZE, LABEL_SIDE_PADDING, SIGNAL_ICON_HEIGHT, SIGNAL_ICON_WIDTH,
+	label_anchor, label_angle, label_background_width, label_text_anchor,
 )
 
 
@@ -133,9 +133,10 @@ def _track_group(item: CvLineal, points=None):
 	return group
 
 
-def _add_item_label(group, item_id, x, y, width=None, height=14, angle=0, top_offset=0):
+def _add_item_label(group, item_id, x, y, width=None, height=14, angle=0, top_offset=0,
+					font_size=LABEL_FONT_SIZE):
 	inkscape_namespace = "http://www.inkscape.org/namespaces/inkscape"
-	width = width if width is not None else len(item_id) * 7 + 4
+	width = width if width is not None else label_background_width(item_id)
 	transform = (
 		f"matrix({cos(angle):.15g} {sin(angle):.15g} "
 		f"{-sin(angle):.15g} {cos(angle):.15g} {x:.15g} {y:.15g})"
@@ -154,6 +155,10 @@ def _add_item_label(group, item_id, x, y, width=None, height=14, angle=0, top_of
 		"y": f"{top_offset + height / 2:.15g}",
 		"text-anchor": "middle",
 		"dominant-baseline": "middle",
+		"font-size": str(font_size),
+		"font-family": "sans-serif",
+		"textLength": f"{width - LABEL_SIDE_PADDING:.15g}",
+		"lengthAdjust": "spacingAndGlyphs",
 		"transform": transform,
 		f"{{{inkscape_namespace}}}label": "nombre",
 	})
@@ -262,8 +267,10 @@ def _signal_group(item: Señal) -> tuple[ElementTree.Element, list[Point]]:
 	})
 	text = ElementTree.Element("{http://www.w3.org/2000/svg}text", {
 		"x": "0", "y": "0", "text-anchor": text_anchor,
-		"dominant-baseline": "middle", "font-size": "12",
+		"dominant-baseline": "middle", "font-size": str(LABEL_FONT_SIZE),
 		"font-family": "sans-serif",
+		"textLength": f"{width - LABEL_SIDE_PADDING:.15g}",
+		"lengthAdjust": "spacingAndGlyphs",
 		"transform": label_transform,
 		"{http://www.inkscape.org/namespaces/inkscape}label": "nombre",
 	})
@@ -324,12 +331,26 @@ def _bloqueo_group(item: Bloqueo, cv: CvLineal) -> tuple[ElementTree.Element, El
 		),
 		f"{{{inkscape_namespace}}}label": item.id.id,
 	})
+	label_rotation = label_angle(item)
+	label_top_offset = 0 if display_side * cos(
+		label_rotation - item.rotation.angle
+	) > 0 else -18
+	label_center_local = display_side * (
+		75 - simbolos["bloqueo"].height / 2 - 5 - 18 / 2
+	)
+	label_anchor = Point(0, label_center_local) - Point(
+		0, label_top_offset + 9
+	).get_rotated(label_rotation - item.rotation.angle)
 	_add_item_label(
 		destination,
 		item.id.id_corto,
-		0,
-		display_side * 40,
-		angle=label_angle(item) - item.rotation.angle,
+		label_anchor.x,
+		label_anchor.y,
+		width=label_background_width(item.id.id_corto) * 16 / LABEL_FONT_SIZE,
+		height=18,
+		angle=label_rotation - item.rotation.angle,
+		top_offset=label_top_offset,
+		font_size=16,
 	)
 
 	def append_symbol(name, x, y, label, rotation=0, center=True):
@@ -349,20 +370,22 @@ def _bloqueo_group(item: Bloqueo, cv: CvLineal) -> tuple[ElementTree.Element, El
 		use.set(f"{{{inkscape_namespace}}}label", label)
 		group.append(use)
 
-	label_width = len(item.id.id_corto) * 7 + 4
+	label_width = label_background_width(item.id.id_corto)
 	actc_width = 32
 	actc_x = label_width / 2 + actc_width / 2 + 5
-	actc_angle = degrees(label_angle(item) - item.rotation.angle - pi)
+	actc_angle = degrees(label_rotation - item.rotation.angle - pi)
 	actc_text = ElementTree.Element("{http://www.w3.org/2000/svg}text", {
 		"x": "0",
 		"y": "0",
 		"text-anchor": "middle",
 		"dominant-baseline": "middle",
-		"font-size": "12",
+		"font-size": str(LABEL_FONT_SIZE),
 		"font-family": "sans-serif",
 		"fill": "#00aa00",
 		"transform": (
-			f"translate({actc_x:.15g} {side * 40:.15g}) "
+			f"translate({actc_x:.15g} {side * (
+				75 - simbolos["bloqueo"].height / 2 - 5 - 18 / 2
+			):.15g}) "
 			f"rotate({actc_angle:.15g})"
 		),
 		f"{{{inkscape_namespace}}}label": "actc",
@@ -467,6 +490,32 @@ def export_svg(items: Iterable[Item]) -> str:
 				bounds[2] = point.x
 			if bounds[3] is None or point.y > bounds[3]:
 				bounds[3] = point.y
+	def update_rotated_rect(center, width, height, angle=0, x_offset=0, y_offset=0):
+		corners = (
+			Point(-width / 2 + x_offset, y_offset),
+			Point(width / 2 + x_offset, y_offset),
+			Point(width / 2 + x_offset, height + y_offset),
+			Point(-width / 2 + x_offset, height + y_offset),
+		)
+		update_bounds(center + corner.get_rotated(angle) for corner in corners)
+	def update_label_bounds(item, top_offset=0, height=14, width=None):
+		width = label_background_width(item.id.id_corto) if width is None else width
+		if isinstance(item, Cruzamiento):
+			anchor_x, anchor_y = item.position.x, item.position.y
+		else:
+			anchor_x, anchor_y = label_anchor(item)
+		if isinstance(item, Señal):
+			text_anchor = label_text_anchor(item)
+			x_offset = -width if text_anchor == "end" else 0
+			update_rotated_rect(
+				Point(anchor_x, anchor_y), width, height, label_angle(item),
+				x_offset=x_offset, y_offset=-height / 2,
+			)
+		else:
+			update_rotated_rect(
+				Point(anchor_x, anchor_y), width, height, label_angle(item),
+				x_offset=0, y_offset=top_offset,
+			)
 	for item in items:
 		if isinstance(item, Bloqueo):
 			cv = next((candidate for candidate in items
@@ -477,6 +526,8 @@ def export_svg(items: Iterable[Item]) -> str:
 				layers["Bloqueo"].append(bloqueo)
 				layers["Destino"].append(destination)
 				layers["FMV"].append(fmv)
+			update_bounds((item.position + Point(x, y).get_rotated(item.rotation)
+				for x, y in ((-90, -90), (90, -90), (90, 90), (-90, 90))))
 		elif isinstance(item, Señal):
 			group, signal_points = _signal_group(item)
 			layers["Señal"].append(group)
@@ -485,6 +536,19 @@ def export_svg(items: Iterable[Item]) -> str:
 			if item.final_ruta:
 				layers["FMV"].append(_fmv_group(item))
 			update_bounds(signal_points)
+			update_label_bounds(item, height=SIGNAL_ICON_HEIGHT)
+			if item.inicio_ruta:
+				angle = item.rotation.angle
+				update_rotated_rect(
+					item.position + Point(cos(angle) * 11, sin(angle) * 11),
+					simbolos["IMV"].width, simbolos["IMV"].height,
+				)
+			if item.final_ruta:
+				angle = item.rotation.angle
+				update_rotated_rect(
+					item.position - Point(cos(angle) * 11, sin(angle) * 11),
+					simbolos["FMV"].width, simbolos["FMV"].height,
+				)
 		elif isinstance(item, Topera):
 			layers["Destino"].append(_topera_group(item))
 			layers["FMV"].append(_fmv_group(item))
@@ -492,6 +556,12 @@ def export_svg(items: Iterable[Item]) -> str:
 			center = item.position + Point(cos(angle) * 2, sin(angle) * 2)
 			perpendicular = Point(-sin(angle) * 10, cos(angle) * 10)
 			update_bounds([center - perpendicular, center + perpendicular])
+			update_label_bounds(item)
+			angle = item.rotation.angle
+			update_rotated_rect(
+				item.position - Point(cos(angle) * 11, sin(angle) * 11),
+				simbolos["FMV"].width, simbolos["FMV"].height,
+			)
 		elif isinstance(item, Aguja):
 			absolute = [item.position]
 			absolute.extend(
@@ -504,6 +574,7 @@ def export_svg(items: Iterable[Item]) -> str:
 			layers["Aguja"].append(_travesia_group(
 				item, points_by_port) if item.is_travesia else _junction_group(
 				item, points_by_port))
+			update_label_bounds(item, top_offset=_aguja_label_offset(item))
 		elif isinstance(item, Cruzamiento):
 			absolute = [item.position + point.get_rotated(item.rotation)
 			            for points in (item.points_p1, item.points_p2,
@@ -512,13 +583,14 @@ def export_svg(items: Iterable[Item]) -> str:
 			update_bounds(absolute)
 			layers["Cruzamientos"].append(
 				_crossing_group(item, _points_for_ports(item, connections[id(item)])))
+			update_label_bounds(item)
 		elif isinstance(item, CvLineal):
 			absolute = [item.position + point.get_rotated(item.rotation) for point in item.points]
 			update_bounds(absolute)
 			layers["CV"].append(_track_group(
 				item, _points_for_ports(item, connections[id(item)])[0]))
-
-	if bounds[0]:
+			update_label_bounds(item, top_offset=6)
+	if bounds[0] is not None:
 		min_x, min_y, max_x, max_y = bounds
 		width = max_x - min_x or 1
 		height = max_y - min_y or 1

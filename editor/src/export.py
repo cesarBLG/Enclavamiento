@@ -1,7 +1,7 @@
 """Exporta el grafo geométrico de vías al formato de enclavamiento."""
 
 from typing import List
-from items import Aguja, Cruzamiento, CvLineal, Lado, Señal, SeccionVia
+from items import Aguja, Cruzamiento, CvLineal, Lado, Señal, SeccionVia, Bloqueo, Topera
 
 def conectados(first, second):
     p1, a1 = first
@@ -125,6 +125,8 @@ def generar_config_ence(itemlist: List[SeccionVia]):
 
     def get_config(dep, kind):
         return config.setdefault(dep, {}).setdefault(kind, {})
+    def get_config_list(dep, kind):
+        return config.setdefault(dep, {}).setdefault(kind, [])
 
     for item in itemlist:
         if isinstance(item, Señal):
@@ -142,13 +144,18 @@ def generar_config_ence(itemlist: List[SeccionVia]):
                         }
                         signal_config = get_config(item.id.dep, "Señales")[item.id.id_corto]
                         foco_codes = {"V": "V", "R": "R", "B": "B", "Az": "Az", "A": "A"}
-                        signal_config["Focos"] = "".join(foco_codes[f] for f in ("V", "R", "B", "Az", "A") if f in item.focos)
+                        if (len(item.focos) > 0):
+                            signal_config["Focos"] = "".join(foco_codes[f] for f in ("V", "R", "B", "Az", "A") if f in item.focos)
                         if item.aspectos_pantalla:
                             signal_config["AspectosPantalla"] = list(item.aspectos_pantalla)
+                        if not item.inicio_ruta:
+                            signal_config["RutaNecesaria"] = False
                         break
                 else:
                     continue
                 break
+            if item.final_ruta:
+                get_config(item.id.dep, "DestinosRuta")[item.id.id_corto] = {"Tipo": "Señal"}
         elif isinstance(item, CvLineal):
             if item.lado is None or not item.id.id_corto:
                 continue
@@ -187,4 +194,34 @@ def generar_config_ence(itemlist: List[SeccionVia]):
                 get_config(item.id.dep, "CVs")[item.get_cv().id_corto] = {
                     "Tipo": "Cruzamiento"
                 }
+        elif isinstance(item, Topera):
+            get_config(item.id.dep, "DestinosRuta")[item.id.id_corto] = {"Tipo": "FinalVía"}
+        elif isinstance(item, Bloqueo):
+            for sec in secciones:
+                for out, pos in enumerate(sec.get_outs()):
+                    if conectados(item.get_outs()[0], pos):
+                        section, pin, lado = get_seccion_pin_lado(out, sec, conexiones)
+                        if section is None or lado is None:
+                            continue
+                        bloqueo_config = {}
+                        bloqueo_config["Lado"] = lado.name
+                        bloqueo_config["CVs"] = []
+                        sec2, in2 = sec,out
+                        colateral = None
+                        while isinstance(sec2, CvLineal) and colateral is None:
+                            bloqueo_config["CVs"].append(sec2.id.id)
+                            for item2 in itemlist:
+                                if isinstance(item2, Bloqueo) and conectados(item2.get_outs()[0], sec2.get_outs()[1-in2]):
+                                    colateral = item2.id.dep
+                                    break
+                            else:
+                                sec2, in2 = conexiones[sec2][1-in2]
+                        bloqueo_config["Colateral"] = colateral
+                        if not id.id_corto.startswith(colateral):
+                            continue
+                        via = id.id_corto[len(colateral):]
+                        if len(via) > 0:
+                            bloqueo_config["Vía"] = via
+                        get_config_list(item.id.dep, "Bloqueos").append(bloqueo_config)
+            get_config(item.id.dep, "DestinosRuta")[item.id.id_corto] = {"Tipo": "Colateral"}
     return config

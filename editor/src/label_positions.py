@@ -8,6 +8,8 @@ from items import Aguja, CvLineal, Point, Señal, Topera
 # Dimensions declared by editor/symbols/señal.svg (SVG user units).
 SIGNAL_ICON_WIDTH = 51.75
 SIGNAL_ICON_HEIGHT = 22.5
+LABEL_SIDE_PADDING = 4
+LABEL_FONT_SIZE = 12
 
 
 def signal_foot_position(item):
@@ -67,4 +69,4 @@ def label_text_anchor(item):
 
 def label_background_width(text):
     """Shared deterministic SVG/canvas label width, including side padding."""
-    return len(text) * 7 + 4
+    return len(text) * 7 + LABEL_SIDE_PADDING

@@ -270,7 +270,7 @@ class CvLineal(SeccionVia):
 
     def get_linear_position(self, distance: float) -> Point:
         if distance < 0:
-            raise ValueError("La distancia no puede ser negativa.")
+            return self.points[0]
         remaining_distance = distance
         for i in range(len(self.points) - 1):
             p1 = self.points[i]
@@ -282,11 +282,11 @@ class CvLineal(SeccionVia):
                 y = p1.y + ratio * (p2.y - p1.y)
                 return Point(x, y)
             remaining_distance -= segment_length
-        raise ValueError("La distancia excede la longitud de la vía.")
+        return self.points[-1]
 
     def get_linear_angle(self, distance: float) -> Angle:
-        if distance < 0 or distance > self.length():
-            raise ValueError("La distancia excede la longitud de la vía.")
+        if distance < 0:
+            distance = 0
         remaining = distance
         for first, second in zip(self.points, self.points[1:]):
             length = math.hypot(second.x - first.x, second.y - first.y)
