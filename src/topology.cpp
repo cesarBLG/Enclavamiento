@@ -54,6 +54,9 @@ seccion_via::conexion::conexion(const std::string &dep, const json &j)
     if (j.contains("Id")) {
         id = id_elemento::from_default_dep(j["Id"], dep);
         invertir_paridad = j.value("InvertirParidad", false);
+    } else if (j.is_null() || j == "") {
+        id = id_elemento();
+        invertir_paridad = false;
     } else {
         id = id_elemento::from_default_dep(j.get<std::string>(), dep);
         invertir_paridad = false;
@@ -240,9 +243,24 @@ void seccion_via::message_cv(const id_elemento &id, estado_cv ev)
     }
     bool intempestiva = false;
     if ((ev.evento && ev.evento->ocupacion || (!ev.evento && cv_libre(ev.estado_previo))) && !cv_libre(ev.estado)) {
-        if (trayecto && !ruta_asegurada_cv) {
-            if (ev.evento && bloqueo_asociado && bloqueo_act.estado != (ev.evento->lado == Lado::Impar ? EstadoBloqueo::BloqueoImpar : EstadoBloqueo::BloqueoPar) && bloqueo_act.ruta[ev.evento->lado] != TipoMovimiento::Maniobra) {
-                //intempestiva = true;
+        if (bloqueo_asociado && !ruta_asegurada_cv) {
+            std::optional<Lado> l;
+            if (bloqueo_act.estado == EstadoBloqueo::BloqueoImpar) l = Lado::Impar;
+            else if (bloqueo_act.estado == EstadoBloqueo::BloqueoPar) l = Lado::Par;
+            else if (bloqueo_act.estado != EstadoBloqueo::Desbloqueo) intempestiva = true;
+            if (ev.evento) {
+                if (l == opp_lado(ev.evento->lado)) intempestiva = true;
+                else l = ev.evento->lado;
+            } else if (!l) {
+                intempestiva = true;
+            }
+            if (l && !intempestiva) {
+                auto &secs = siguientes_secciones[opp_lado(*l)];
+                if (secs.size() == 1) {
+                    auto *sec = secciones[secs[0].id];
+                    if (sec->bloqueo_asociado && sec->get_cv() != nullptr && cv_libre(sec->get_cv()->get_state()))
+                        intempestiva = true;
+                }
             }
         } else {
             if (!ruta_asegurada_cv) {
@@ -283,8 +301,17 @@ void seccion_via::message_cv(const id_elemento &id, estado_cv ev)
             else if ((!ruta_asegurada_cv || ruta_asegurada || intempestiva) && active_outs[opp_lado(l)].size() == 1)
                 ocupacion_outs[l] = active_outs[opp_lado(l)].begin()->first;
         }
+        if (ev.evento && ev.evento->seccion == this->id)
+            lado_ocupacion = ev.evento->lado;
+        else if (ruta_asegurada && !intempestiva && ruta_asegurada->lado)
+            lado_ocupacion = ruta_asegurada->lado;
+        else if (bloqueo_asociado && !intempestiva && bloqueo_act.estado == EstadoBloqueo::BloqueoImpar)
+            lado_ocupacion = Lado::Impar;
+        else if (bloqueo_asociado && !intempestiva && bloqueo_act.estado == EstadoBloqueo::BloqueoPar)
+            lado_ocupacion = Lado::Par;
     } else if (cv_libre(ev.estado)) {
         ocupacion_outs = {-1, -1};
+        lado_ocupacion = std::nullopt;
     }
 
     for (auto *pn : pns) {
@@ -299,10 +326,8 @@ void seccion_via::message_cv(const id_elemento &id, estado_cv ev)
 }
 EstadoCanton seccion_via::get_ocupacion(seccion_via* prev, Lado dir)
 {
-    if (cv_seccion == nullptr) return EstadoCanton::Libre;
-    EstadoCanton estado = cv_seccion->get_ocupacion(dir);
-    if (estado != EstadoCanton::OcupadoMismoSentido) return estado;
-    if (cv_seccion->ocupacion_intempestiva) return EstadoCanton::Ocupado;
+    if (cv_seccion == nullptr || cv_libre(cv_seccion->get_state())) return EstadoCanton::Libre;
+    if (cv_seccion->ocupacion_intempestiva || lado_ocupacion != dir) return EstadoCanton::Ocupado;
     auto *in_ocupacion = get_seccion_in(dir, ocupacion_outs[opp_lado(dir)]).first;
     if (in_ocupacion != prev) return EstadoCanton::Ocupado;
     return EstadoCanton::OcupadoMismoSentido;
@@ -324,7 +349,7 @@ seccion_via* seccion_via::siguiente_seccion(int in, Lado &dir, bool usar_ruta_as
     } else {
         out = active_outs[dir][in];
     }
-    if (out < 0 || siguientes_secciones[dir].empty()) return nullptr;
+    if (out < 0 || out >= siguientes_secciones[dir].size()) return nullptr;
     auto p = siguientes_secciones[dir][out];
     if (p.invertir_paridad) dir = opp_lado(dir);
     if (p.id.id == "") return nullptr;

@@ -115,6 +115,7 @@ protected:
     std::vector<flanco*> proteccion_flanco;
 
     lados<int> ocupacion_outs = {-1, -1};
+    std::optional<Lado> lado_ocupacion;
 
     bool me_pendiente = false;
     bool bloqueo_seccion = false;

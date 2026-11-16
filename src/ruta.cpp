@@ -363,7 +363,7 @@ bool ruta::posible_establecer(bool msg)
                                 nodo_proximidad *n = ((señal_impl*)señal)->proximidad_señal.root.get();
                                 while (n && n->estado > 0) {
                                     if (n->estado == 2 && !bloqueo_receptor) break;
-                                    if (n->seccion->get_cv() != nullptr && n->seccion->get_cv()->get_ocupacion(opp_lado(n->dir)) == EstadoCanton::Ocupado) {
+                                    if (n->seccion->get_ocupacion(n->siguiente, opp_lado(n->dir)) == EstadoCanton::Ocupado) {
                                         if (msg) log(id, "proximidad ocupada", LOG_DEBUG);
                                         return false;
                                     }
@@ -1064,7 +1064,7 @@ maniobra_local::maniobra_local(const std::string &estacion, const std::string &i
     } else {
         std::set<señal_impl*> señales_intermedias;
         for (auto *sig : señales) {
-            /*if (sig->seccion_prev != nullptr) {
+            if (sig->seccion_prev != nullptr) {
                 int out = sig->seccion_prev->get_out(sig->seccion, sig->lado_prev);
                 std::set<int> ins;
                 for (auto &[in, outs] : sig->seccion_prev->all_outs[sig->lado_prev]) {
@@ -1075,8 +1075,8 @@ maniobra_local::maniobra_local(const std::string &estacion, const std::string &i
                 } else {
                     secciones.push_back({sig->seccion_prev, std::nullopt, lados<int>::from_directional(-1, out, sig->lado_prev)});
                 }
-                ocupacion_maxima_secciones[secciones.back().seccion] = EstadoCanton::Libre;
-            }*/
+                ocupacion_maxima_secciones[secciones.back().seccion] = EstadoCanton::Ocupado;
+            }
             recorrer_seccion(sig->seccion, sig->pin, sig->lado, señales_intermedias, sig);
         }
         señales.insert(señales.end(), señales_intermedias.begin(), señales_intermedias.end());
@@ -1149,6 +1149,7 @@ bool maniobra_local::anular(bool emergencia)
     if (!emergencia) {
         anulacion_normal_imposible = true;
         for (int i=0; i<secciones.size(); i++) {
+            if (ocupacion_maxima_secciones[secciones[i].seccion] > EstadoCanton::Libre) continue;
             auto *cv_seccion = secciones[i].seccion->get_cv();
             if (cv_seccion != nullptr && !cv_libre(cv_seccion->get_state())) {
                 log(id, "cv ocupado", LOG_DEBUG);

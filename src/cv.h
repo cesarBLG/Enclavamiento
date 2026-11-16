@@ -28,15 +28,6 @@ public:
         return estado;
     }
 
-    EstadoCanton get_ocupacion(Lado lado)
-    {
-        if (cv_libre(estado)) return EstadoCanton::Libre;
-        else if (estado == EstadoCV::Prenormalizado) return EstadoCanton::OcupadoMismoSentido;
-        else if (estado == EstadoCV::OcupadoImpar && lado == Lado::Impar) return EstadoCanton::OcupadoMismoSentido;
-        else if (estado == EstadoCV::OcupadoPar && lado == Lado::Par) return EstadoCanton::OcupadoMismoSentido;
-        else return EstadoCanton::Ocupado;
-    }
-
     bool is_averia() { return averia; }
     bool is_btv() { return btv; }
     bool is_perdida_secuencia() { return perdida_secuencia; }
@@ -271,6 +262,7 @@ public:
                     if (!arr.empty()) {
                         int diff = arr[arr.size()-1] - num_ejes[lado];
                         if (diff > 0) {
+                            // Caso especial: la ocupación de un tren ocurre mientras otro abandona el CV
                             for (auto it2 = arr.begin(); it2 != arr.end(); ) {
                                 if (*it2 <= diff) {
                                     it2 = arr.erase(it2);
@@ -280,25 +272,34 @@ public:
                                 }
                             }
                         }
-                        if (now - ultimo_eje[lado] < 15000 || delayed) arr.pop_back();
+                        // Considerar mismo tren si han transcurrido menos de 7 segundos desde la anterior ocupación
+                        if (now - ultimo_eje[lado] < 7000 || delayed) arr.pop_back();
                     }
                     ++num_ejes[lado];
                     arr.push_back(num_ejes[lado]);
                     if (!delayed) ultimo_eje[lado] = now;
                 } else if (msg == "Reverse" && it->second.liberar) {
                     if (num_ejes[lado] > 0) {
+                        // Liberación por el mismo lado que la ocupación
                         --num_ejes[lado];
                         auto &arr = num_trenes[lado];
                         if (!arr.empty()) {
-                            int prev = arr.size() > 1 ? arr[arr.size() - 2] : 0;
-                            int ejes = num_ejes[lado] - prev;
                             if (topera && num_ejes[lado] == 0 && arr[0] >= 2) normalizado = !averia;
-                            if (ejes <= 0) {
-                                ultimo_tren_liberado[lado] = {get_milliseconds(), arr.back() - prev};
+                            int diff = arr[arr.size()-1] - num_ejes[lado];
+                            int val0 = arr[arr.size()-1]-(arr.size() > 1 ? arr[arr.size() - 2] : 0);
+                            if (diff >= val0) {
+                                // Liberación completa de un tren
+                                ultimo_tren_liberado[lado] = {get_milliseconds(), val0};
                                 arr.pop_back();
+                            } else if ((get_milliseconds() - ultimo_tren_liberado[lado].first < 7000 || delayed) && diff < ultimo_tren_liberado[lado].second * (1 - fraccion_ejes_prenormalizacion)) {
+                                // Posiblemente ejes liberados que no se habían detectado en la ocupación
+                                // Reducir su importancia sobre la auto-prenormalización tren anterior
+                                arr[arr.size()-1] -= diff;
+                                ultimo_tren_liberado[lado].second -= diff / (1-fraccion_ejes_prenormalizacion);
                             }
                         }
                     } else {
+                        // Liberación por el lado opuesto a la ocupación
                         Lado opLado = opp_lado(lado);
                         if (num_ejes[opLado] > 0) {
                             --num_ejes[opLado];
@@ -306,14 +307,14 @@ public:
                             auto &arr = num_trenes[opLado];
                             if (!arr.empty()) {
                                 int diff = arr[arr.size()-1] - num_ejes[opLado];
-                                if (diff >= arr[0]) {
-                                    int val0 = arr[0];
+                                int val0 = arr[0];
+                                if (diff >= val0) {
                                     arr.erase(arr.begin());
                                     for (int &n : arr) {
                                         n -= val0;
                                     }
                                     ultimo_tren_liberado[opLado] = {get_milliseconds(), val0};
-                                } else if ((get_milliseconds() - ultimo_tren_liberado[opLado].first < 15000 || delayed) && diff < ultimo_tren_liberado[opLado].second * (1 - fraccion_ejes_prenormalizacion)) {
+                                } else if ((get_milliseconds() - ultimo_tren_liberado[opLado].first < 7000 || delayed) && diff < ultimo_tren_liberado[opLado].second * (1 - fraccion_ejes_prenormalizacion)) {
                                     for (int &n : arr) {
                                         n -= diff;
                                     }
