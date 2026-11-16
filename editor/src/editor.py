@@ -10,11 +10,12 @@ import sys
 import json
 import traceback
 from copy import deepcopy
+from xml.etree import ElementTree
 from math import atan2, cos, degrees, isfinite, pi, sin, sqrt, tan, radians
 from pathlib import Path
 
 try:
-    from PyQt6.QtCore import QPointF, QRectF, QSize, Qt
+    from PyQt6.QtCore import QByteArray, QPointF, QRectF, QSize, Qt
     from PyQt6.QtGui import QBrush, QColor, QFont, QFontMetricsF, QIcon, QKeySequence, QPainter, QPainterPath, QPen, QPixmap, QPolygonF, QShortcut
     from PyQt6.QtSvg import QSvgRenderer
     from PyQt6.QtWidgets import (
@@ -26,7 +27,7 @@ try:
     )
     LEFT_BUTTON = Qt.MouseButton.LeftButton
 except ImportError:
-    from PyQt5.QtCore import QPointF, QRectF, QSize, Qt
+    from PyQt5.QtCore import QByteArray, QPointF, QRectF, QSize, Qt
     from PyQt5.QtGui import QBrush, QColor, QFont, QFontMetricsF, QIcon, QKeySequence, QPainter, QPainterPath, QPen, QPixmap, QPolygonF
     from PyQt5.QtSvg import QSvgRenderer
     from PyQt5.QtWidgets import (
@@ -47,7 +48,7 @@ from label_positions import (
     SIGNAL_ICON_HEIGHT, SIGNAL_ICON_WIDTH, label_anchor, label_angle,
     label_text_anchor, signal_foot_position, signal_label_anchor,
 )
-from svg.svg_export import export_svg
+from svg.svg_export import export_svg, simbolos
 from svg.generate_junction import get_junction_bounds
 from svg.generate_crossing import get_crossing_bounds
 
@@ -95,7 +96,8 @@ class SignalIcon:
 
 SIGNAL_ICON = SignalIcon(SIGNAL_ICON_PATH)
 IMV_ICON = SignalIcon(IMV_ICON_PATH, width=12, height=12)
-FMV_ICON = SignalIcon(FMV_ICON_PATH, width=12, height=12)
+# Follow the FMV SVG's current viewport; it may be larger than 12x12.
+FMV_ICON = SignalIcon(FMV_ICON_PATH)
 BLOQUEO_ICON = SignalIcon(BLOQUEO_ICON_PATH)
 CSB_ICON = SignalIcon(CSB_ICON_PATH)
 PROHIBIR_ICON = SignalIcon(PROHIBIR_ICON_PATH)
@@ -2961,6 +2963,114 @@ class TrackEditor(QMainWindow):
         self._draw_grid_lines()
         self.draw_items()
 
+    def _draw_cached_svg(self, item, items, color, *, labels_only=False):
+        components = item.generate_svg_components(items)
+        raster_scale = 3
+        pixmap_key = (id(components), color.name(), labels_only, raster_scale)
+        pixmap = item._canvas_svg_pixmaps.get(pixmap_key)
+        if pixmap is not None:
+            graphic = self.scene.addPixmap(pixmap)
+            graphic.setPos(item.position.x - 200, item.position.y - 200)
+            graphic.setZValue(2 if labels_only else 1)
+            self.item_graphics.append(graphic)
+            return
+        root = ElementTree.Element("{http://www.w3.org/2000/svg}svg", {
+            "viewBox": "-200 -200 400 400", "width": "400", "height": "400",
+        })
+        defs = ElementTree.SubElement(root, "{http://www.w3.org/2000/svg}defs")
+        symbol_groups = {}
+        for symbol in simbolos.values():
+            symbol_group = deepcopy(symbol.symbol[0])
+            symbol_group.set("id", symbol.label)
+            defs.append(symbol_group)
+            symbol_groups[symbol.label] = symbol_group
+            clip = ElementTree.SubElement(defs, "{http://www.w3.org/2000/svg}clipPath", {
+                "id": f"clip_{symbol.label}", "clipPathUnits": "userSpaceOnUse",
+            })
+            ElementTree.SubElement(clip, "{http://www.w3.org/2000/svg}rect", {
+                "x": "0", "y": "0",
+                "width": f"{symbol.width:.15g}",
+                "height": f"{symbol.height:.15g}",
+            })
+        for layer_name, layer_elements in components.items():
+            # QtSvg expands the FMV source group's out-of-viewport geometry;
+            # add it from its native 12x12 renderer below, as the old canvas did.
+            if layer_name == "FMV":
+                continue
+            for component in layer_elements:
+                component = deepcopy(component)
+                if labels_only:
+                    if isinstance(item, Cruzamiento):
+                        label_group = ElementTree.Element("{http://www.w3.org/2000/svg}g", {
+                            "transform": f"rotate({degrees(item.rotation.angle):.15g})",
+                        })
+                        label_group.append(component)
+                        root.append(label_group)
+                    else:
+                        root.append(component)
+                else:
+                    root.append(component)
+        # Inline symbol references for QtSvg. Its renderer can silently omit
+        # <use> elements even when the referenced definition is present.
+        def inline_uses(parent):
+            for node in list(parent):
+                inline_uses(node)
+                if node.tag != "{http://www.w3.org/2000/svg}use":
+                    continue
+                href = node.get("{http://www.w3.org/1999/xlink}href", "")
+                symbol_group = symbol_groups.get(href.removeprefix("#"))
+                if symbol_group is None:
+                    continue
+                wrapper = ElementTree.Element("{http://www.w3.org/2000/svg}g")
+                if node.get("transform"):
+                    wrapper.set("transform", node.get("transform"))
+                label = node.get("{http://www.inkscape.org/namespaces/inkscape}label")
+                if label:
+                    wrapper.set("{http://www.inkscape.org/namespaces/inkscape}label", label)
+                wrapper.set("clip-path", f"url(#clip_{href.removeprefix('#')})")
+                inline = deepcopy(symbol_group)
+                inline.attrib.pop("id", None)
+                wrapper.append(inline)
+                parent.insert(list(parent).index(node), wrapper)
+                parent.remove(node)
+
+        inline_uses(root)
+        for text_node in root.iter("{http://www.w3.org/2000/svg}text"):
+            if text_node.get("{http://www.inkscape.org/namespaces/inkscape}label") == "nombre":
+                text_node.set("fill", color.name())
+            # QtSvg doesn't consistently implement dominant-baseline="middle";
+            # convert the SVG's centered baseline to an explicit alphabetic one.
+            try:
+                baseline = float(text_node.get("y", "0"))
+                font_size = float(text_node.get("font-size", "12"))
+                text_node.set("y", f"{baseline + font_size * 0.35:.15g}")
+                text_node.set("dominant-baseline", "alphabetic")
+            except ValueError:
+                pass
+        svg_data = ElementTree.tostring(root, encoding="utf-8").replace(b"#222", color.name().encode())
+        renderer = QSvgRenderer(QByteArray(svg_data))
+        pixmap = QPixmap(QSize(400 * raster_scale, 400 * raster_scale))
+        pixmap.fill(Qt.GlobalColor.transparent if hasattr(Qt, "GlobalColor") else Qt.transparent)
+        painter = QPainter(pixmap)
+        renderer.render(painter, QRectF(0, 0, 400 * raster_scale, 400 * raster_scale))
+        painter.end()
+        pixmap.setDevicePixelRatio(raster_scale)
+        # Keep one raster per item so color changes don't accumulate large images.
+        item._canvas_svg_pixmaps.clear()
+        item._canvas_svg_pixmaps[pixmap_key] = pixmap
+        graphic = self.scene.addPixmap(pixmap)
+        graphic.setPos(item.position.x - 200, item.position.y - 200)
+        graphic.setZValue(2 if labels_only else 1)
+        self.item_graphics.append(graphic)
+
+    def _add_fmv_pixmap(self, center):
+        pixmap = FMV_ICON.pixmap()
+        graphic = self.scene.addPixmap(pixmap)
+        graphic.setOffset(-FMV_ICON.width / 2, -FMV_ICON.height / 2)
+        graphic.setPos(center.x, center.y)
+        graphic.setZValue(1)
+        self.item_graphics.append(graphic)
+
     def _update_grid_bounds(self):
         old_bounds = (self.grid_left, self.grid_right)
         item_positions = [
@@ -3022,6 +3132,7 @@ class TrackEditor(QMainWindow):
         drawable_items = [
             item for items in self.items_by_dependency.values() for item in items
         ]
+        all_items = drawable_items
         # Dibujar primero las dependencias inactivas para que la activa quede
         # por encima cuando dos dependencias ocupen la misma celda.
         drawable_items.sort(key=lambda item: item.id.dep == self.current_dependency)
@@ -3035,6 +3146,40 @@ class TrackEditor(QMainWindow):
             pen = QPen(color, 5, Qt.PenStyle.SolidLine if hasattr(Qt, "PenStyle") else Qt.SolidLine)
             pen.setCapStyle(Qt.PenCapStyle.FlatCap if hasattr(Qt, "PenCapStyle") else Qt.FlatCap)
             pen.setJoinStyle(Qt.PenJoinStyle.MiterJoin if hasattr(Qt, "PenJoinStyle") else Qt.MiterJoin)
+            if not isinstance(item, SECTION_TYPES):
+                self._draw_cached_svg(item, all_items, color)
+                if isinstance(item, Señal) and item.final_ruta:
+                    angle = item.rotation.angle
+                    self._add_fmv_pixmap(item.position - Point(cos(angle) * 11, sin(angle) * 11))
+                elif isinstance(item, Topera):
+                    angle = item.rotation.angle
+                    self._add_fmv_pixmap(item.position - Point(cos(angle) * 11, sin(angle) * 11))
+                elif isinstance(item, Bloqueo):
+                    section = next(
+                        (candidate for candidate in all_items
+                         if isinstance(candidate, CvLineal)
+                         and self.bloqueo_matches_section(item, candidate)),
+                        None,
+                    )
+                    if section is not None:
+                        port_index = next(
+                            index for index, (position, angle) in enumerate(section.get_outs())
+                            if position.close_to(item.position)
+                            and angle.close_to(item.rotation + Angle(pi))
+                        )
+                        other_position, other_angle = section.get_outs()[1 - port_index]
+                        inside = other_position - Point(
+                            cos(other_angle.angle) * 11, sin(other_angle.angle) * 11,
+                        )
+                        for local_center in (
+                            Point(11, 0),
+                            (inside - item.position).get_rotated(-item.rotation.angle),
+                        ):
+                            self._add_fmv_pixmap(
+                                item.position + local_center.get_rotated(item.rotation)
+                            )
+                continue
+            self._draw_cached_svg(item, all_items, color, labels_only=True)
             if isinstance(item, CvLineal):
                 local_points = [point.get_rotated(item.rotation.angle) for point in item.points]
                 points = [item_screen_point(item.position + point) for point in local_points]
@@ -3091,171 +3236,6 @@ class TrackEditor(QMainWindow):
                     for point in screen_points[1:]:
                         path.lineTo(QPointF(*point))
                     self.item_graphics.append(self.scene.addPath(path, pen))
-            elif isinstance(item, Señal):
-                angle = item.rotation.angle
-                ux, uy = cos(angle), sin(angle)
-                bottom = item_screen_point(signal_foot_position(item))
-                label_pos = label_anchor(item)
-                pixmap = SIGNAL_ICON.pixmap()
-                graphic = self.scene.addPixmap(pixmap)
-                graphic.setOffset(0, -pixmap.height())
-                graphic.setPos(*bottom)
-                graphic.setRotation(item.rotation.angle * 180 / pi)
-                graphic.setZValue(1)
-                self.item_graphics.append(graphic)
-                if item.inicio_ruta:
-                    imv_center = item.position + Point(ux * 11, uy * 11)
-                    imv = self.scene.addPixmap(IMV_ICON.pixmap())
-                    imv.setOffset(-IMV_ICON.width / 2, -IMV_ICON.height / 2)
-                    imv.setPos(imv_center.x, imv_center.y)
-                    imv.setZValue(1)
-                    self.item_graphics.append(imv)
-                if item.final_ruta:
-                    fmv_center = item.position - Point(ux * 11, uy * 11)
-                    fmv = self.scene.addPixmap(FMV_ICON.pixmap())
-                    fmv.setOffset(-FMV_ICON.width / 2, -FMV_ICON.height / 2)
-                    fmv.setPos(fmv_center.x, fmv_center.y)
-                    fmv.setZValue(1)
-                    self.item_graphics.append(fmv)
-            elif isinstance(item, Topera):
-                angle = item.rotation.angle
-                ux, uy = cos(angle), sin(angle)
-                center = item.position + Point(ux * 2, uy * 2)
-                perpendicular = Point(-uy * 10, ux * 10)
-                first = item_screen_point(center - perpendicular)
-                second = item_screen_point(center + perpendicular)
-                self.item_graphics.append(
-                    self.scene.addLine(first[0], first[1], second[0], second[1], pen)
-                )
-                fmv_center = item.position - Point(ux * 11, uy * 11)
-                fmv = self.scene.addPixmap(FMV_ICON.pixmap())
-                fmv.setOffset(-FMV_ICON.width / 2, -FMV_ICON.height / 2)
-                fmv.setPos(fmv_center.x, fmv_center.y)
-                fmv.setZValue(1)
-                self.item_graphics.append(fmv)
-                label_center = label_anchor(item)
-            elif isinstance(item, Bloqueo):
-                def add_bloqueo_symbol(icon, local_center, extra_angle=0, center=True):
-                    pixmap = icon.pixmap()
-                    graphic = self.scene.addPixmap(pixmap)
-                    if center:
-                        graphic.setOffset(-pixmap.width() / 2, -pixmap.height() / 2)
-                        graphic.setTransformOriginPoint(0, 0)
-                    else:
-                        graphic.setOffset(0, -pixmap.height() / 2)
-                        graphic.setTransformOriginPoint(0, 0)
-                    center = item.position + local_center.get_rotated(item.rotation)
-                    graphic.setPos(center.x, center.y)
-                    graphic.setRotation(item.rotation.angle * 180 / pi + extra_angle)
-                    graphic.setZValue(1)
-                    self.item_graphics.append(graphic)
-
-                def add_bloqueo_text(local_center):
-                    text = QGraphicsTextItem("A/CTC")
-                    text.document().setDocumentMargin(0)
-                    font = QFont()
-                    font.setPointSizeF(9)
-                    text.setFont(font)
-                    text.setDefaultTextColor(QColor("#00aa00"))
-                    bounds = text.boundingRect()
-                    text.setTransformOriginPoint(bounds.center())
-                    center = item.position + local_center.get_rotated(item.rotation)
-                    text.setPos(center.x - bounds.width() / 2, center.y - bounds.height() / 2)
-                    text.setRotation(label_angle(item) * 180 / pi)
-                    text.setZValue(1)
-                    self.scene.addItem(text)
-                    self.item_graphics.append(text)
-
-                label_width = len(item.id.id_corto) * 7 + 4
-                side = item.display_side()
-                bloqueo_center = Point(0, side * 75)
-                label_rotation = label_angle(item)
-                label_top_offset = 0 if side * cos(
-                    label_rotation - item.rotation.angle
-                ) > 0 else -14
-                label_center_local = Point(0, side * (
-                    75 - BLOQUEO_ICON.height / 2 - 5 - 14 / 2
-                ))
-                label_center = item.position + label_center_local.get_rotated(item.rotation)
-                label_anchor_point = label_center - Point(
-                    0, label_top_offset + 7
-                ).get_rotated(label_rotation)
-                add_bloqueo_text(Point(
-                    label_width / 2 + 16 + 5,
-                    label_center_local.y,
-                ))
-                add_bloqueo_symbol(BLOQUEO_ICON, bloqueo_center)
-                add_bloqueo_symbol(CSB_ICON, Point(
-                    -BLOQUEO_ICON.width / 2 - 5, side * 75,
-                ), 180, center=False)
-                add_bloqueo_symbol(CSB_ICON, Point(
-                    BLOQUEO_ICON.width / 2 + 5, side * 75,
-                ), center=False)
-                add_bloqueo_symbol(PROHIBIR_ICON, Point(
-                    0, side * (75 + BLOQUEO_ICON.height / 2
-                               + PROHIBIR_ICON.height / 2 + 5),
-                ))
-
-                section = next(
-                    (candidate for dependency_items in self.items_by_dependency.values()
-                     for candidate in dependency_items
-                     if isinstance(candidate, CvLineal)
-                     and self.bloqueo_matches_section(item, candidate)),
-                    None,
-                )
-                if section is not None:
-                    port_index = next(
-                        index for index, (position, angle) in enumerate(section.get_outs())
-                        if position.close_to(item.position)
-                        and angle.close_to(item.rotation+Angle(pi))
-                    )
-                    other_position, other_angle = section.get_outs()[1 - port_index]
-                    inside = other_position - Point(
-                        cos(other_angle.angle) * 11,
-                        sin(other_angle.angle) * 11,
-                    )
-                    fmv_centers = (
-                        Point(11, 0),
-                        (inside - item.position).get_rotated(-item.rotation.angle),
-                    )
-                    for fmv_local in fmv_centers:
-                        fmv_pixmap = FMV_ICON.pixmap()
-                        fmv = self.scene.addPixmap(fmv_pixmap)
-                        fmv.setOffset(-FMV_ICON.width / 2, -FMV_ICON.height / 2)
-                        fmv_center = item.position + fmv_local.get_rotated(item.rotation)
-                        fmv.setPos(fmv_center.x, fmv_center.y)
-                        fmv.setZValue(1)
-                        self.item_graphics.append(fmv)
-                label_center = label_anchor_point
-            if isinstance(item, Señal):
-                font = QFont()
-                font.setPointSizeF(9)
-                width = QFontMetricsF(font).horizontalAdvance(item.id.id_corto) + 4
-                label_group = QGraphicsItemGroup()
-                label_group.setPos(*label_pos)
-                label_group.setTransformOriginPoint(0, 0)
-                label_group.setRotation(label_angle(item) * 180 / pi)
-                label_group.setZValue(2)
-                self.scene.addItem(label_group)
-                text_anchor = label_text_anchor(item)
-                label_left = -width if text_anchor == "end" else 0
-                background = QGraphicsRectItem(label_group)
-                background.setRect(
-                    label_left, -SIGNAL_ICON_HEIGHT / 2, width, SIGNAL_ICON_HEIGHT,
-                )
-                background.setBrush(QBrush(QColor(255, 255, 255, 204)))
-                no_pen = Qt.PenStyle.NoPen if hasattr(Qt, "PenStyle") else Qt.NoPen
-                background.setPen(QPen(no_pen))
-                text = QGraphicsTextItem(item.id.id_corto, label_group)
-                text.document().setDocumentMargin(0)
-                text.setDefaultTextColor(color)
-                text.setFont(font)
-                text.setPos(
-                    label_left if text_anchor == "start" else -text.boundingRect().width(),
-                    -text.boundingRect().height() / 2,
-                )
-                self.item_graphics.append(label_group)
-                continue
             if isinstance(item, CvLineal):
                 marker_x, marker_y = label_center
                 marker_pen = QPen(color, 1.5)
@@ -3271,18 +3251,6 @@ class TrackEditor(QMainWindow):
                     marker_x - 3.5, marker_y + 3.5,
                     marker_x + 3.5, marker_y - 3.5, marker_pen
                 ))
-                self.add_canvas_label("*0", (marker_x, marker_y), color, label_angle(item), top_offset=-7)
-                self.add_canvas_label("AVERÍA", (marker_x, marker_y), color, label_angle(item), top_offset=-7)
-            self.add_canvas_label(
-                item.id.id_corto, label_center, color, label_angle(item),
-                top_offset=(
-                    label_top_offset if isinstance(item, Bloqueo) else (
-                        6 if isinstance(item, CvLineal)
-                        else label_offset if isinstance(item, Aguja)
-                        else 0
-                    )
-                ), font_size=12 if isinstance(item, Bloqueo) else 9,
-            )
 
     def add_canvas_label(self, text_value, center, color, angle=0, top_offset=0,
                         font_size=9):

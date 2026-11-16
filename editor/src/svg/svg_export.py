@@ -1,6 +1,7 @@
 """Exportación del modelo geométrico del editor a SVG."""
 
 from math import cos, degrees, hypot, pi, radians, sin
+from copy import deepcopy
 from operator import invert
 from pathlib import Path
 import sys
@@ -50,12 +51,19 @@ class Symbol:
 				"inkscape": "http://www.inkscape.org/namespaces/inkscape",
 			})
 		self.symbol = ElementTree.Element("{http://www.w3.org/2000/svg}symbol", {
-			"id": label
+			"id": label,
+			"width": f"{self.width:.15g}",
+			"height": f"{self.height:.15g}",
+			"viewBox": f"0 0 {self.width:.15g} {self.height:.15g}",
+			"overflow": "hidden",
 		})
 		self.symbol.append(group)
 	def use(self):
 		return ElementTree.Element("{http://www.w3.org/2000/svg}use", {
-			"{http://www.w3.org/1999/xlink}href": f"#{self.label}"})
+			"{http://www.w3.org/1999/xlink}href": f"#{self.label}",
+			"width": f"{self.width:.15g}",
+			"height": f"{self.height:.15g}",
+		})
 
 simbolos = {
 	label: Symbol(Path(__file__).resolve().parent.parent.parent / "symbols" / f"{label}.svg", label)
@@ -107,15 +115,16 @@ def _points_for_ports(item, connections):
 	return result
 
 
-def _track_group(item: CvLineal, points=None):
+def _track_group(item: CvLineal, points=None, *, include_label=True):
 	points = item.points if points is None else points
 	group = generate_track_svg([point.get_rotated(item.rotation) for point in points], name=item.id.id)
 	group.set("transform", f"translate({item.position.x:.15g} {item.position.y:.15g})")
 	anchor_x, anchor_y = label_anchor(item)
 	label_center = Point(anchor_x - item.position.x, anchor_y - item.position.y)
 	angle = label_angle(item)
-	_add_item_label(group, item.id.id_corto, label_center.x, label_center.y,
-	                angle=angle, top_offset=6)
+	if include_label:
+		_add_item_label(group, item.id.id_corto, label_center.x, label_center.y,
+		                angle=angle, top_offset=6)
 	block = simbolos["bloqueoVia"].use()
 	block_symbol = simbolos["bloqueoVia"]
 	block_angle = degrees(item.get_linear_angle(item.offset).angle)
@@ -126,10 +135,11 @@ def _track_group(item: CvLineal, points=None):
 	))
 	block.set("{http://www.inkscape.org/namespaces/inkscape}label", "bv")
 	group.append(block)
-	_add_item_label_group(group, "*0", label_center.x, label_center.y,
-	                      label="numerador", angle=angle, top_offset=-7)
-	_add_item_label_group(group, "AVERÍA", label_center.x, label_center.y,
-	                      label="averia", angle=angle, top_offset=-7)
+	if include_label:
+		_add_item_label_group(group, "*0", label_center.x, label_center.y,
+		                      label="numerador", angle=angle, top_offset=-7)
+		_add_item_label_group(group, "AVERÍA", label_center.x, label_center.y,
+		                      label="averia", angle=angle, top_offset=-7)
 	return group
 
 
@@ -146,7 +156,7 @@ def _add_item_label(group, item_id, x, y, width=None, height=14, angle=0, top_of
 		"y": f"{top_offset:.15g}",
 		"width": f"{width:.15g}",
 		"height": f"{height:.15g}",
-		"style": "fill:#fff;fill-opacity:0.8",
+		"style": "fill:#fff",
 		"transform": transform,
 		f"{{{inkscape_namespace}}}label": "fondo_nombre",
 	})
@@ -178,7 +188,7 @@ def _add_item_label_group(group, item_id, x, y, label, width=None, height=14,
 	group.append(label_group)
 
 
-def _junction_group(item: Aguja, points_by_port=None):
+def _junction_group(item: Aguja, points_by_port=None, *, include_label=True):
 	group = ElementTree.Element("{http://www.w3.org/2000/svg}g")
 	group.set("{http://www.inkscape.org/namespaces/inkscape}label", item.id.id)
 	invert = item.points_invertida[-1][1] < 0
@@ -195,15 +205,16 @@ def _junction_group(item: Aguja, points_by_port=None):
 		if points_by_port is not None:
 			points = points_by_port[{0: 2, 1: 0, 2: 1}[port]]
 		group.append(generate_track_svg([point.get_rotated(item.rotation) for point in points], inicio_recto=label=="t3La", name=label))
-	anchor_x, anchor_y = label_anchor(item)
-	_add_item_label(group, item.id.id_corto,
-	                anchor_x - item.position.x, anchor_y - item.position.y,
-	                angle=label_angle(item),
-	               top_offset=_aguja_label_offset(item))
+	if include_label:
+		anchor_x, anchor_y = label_anchor(item)
+		_add_item_label(group, item.id.id_corto,
+		                anchor_x - item.position.x, anchor_y - item.position.y,
+		                angle=label_angle(item),
+		                top_offset=_aguja_label_offset(item))
 	return group
 
 
-def _travesia_group(item: Aguja, points_by_port=None):
+def _travesia_group(item: Aguja, points_by_port=None, *, include_label=True):
 	group = ElementTree.Element("{http://www.w3.org/2000/svg}g")
 	group.set("{http://www.inkscape.org/namespaces/inkscape}label", item.id.id)
 	group.set("transform", f"translate({item.position.x:.15g} {item.position.y:.15g})")
@@ -219,11 +230,12 @@ def _travesia_group(item: Aguja, points_by_port=None):
 		group.append(generate_track_svg(
 			[point.get_rotated(item.rotation) for point in points], name=label,
 		))
-	anchor_x, anchor_y = label_anchor(item)
-	_add_item_label(group, item.id.id_corto,
-					anchor_x - item.position.x, anchor_y - item.position.y,
-					angle=label_angle(item),
-					top_offset=_aguja_label_offset(item))
+	if include_label:
+		anchor_x, anchor_y = label_anchor(item)
+		_add_item_label(group, item.id.id_corto,
+						anchor_x - item.position.x, anchor_y - item.position.y,
+						angle=label_angle(item),
+						top_offset=_aguja_label_offset(item))
 	return group
 
 def _signal_group(item: Señal) -> tuple[ElementTree.Element, list[Point]]:
@@ -261,7 +273,7 @@ def _signal_group(item: Señal) -> tuple[ElementTree.Element, list[Point]]:
 	background = ElementTree.Element("{http://www.w3.org/2000/svg}rect", {
 		"x": f"{label_left:.15g}", "y": f"{-SIGNAL_ICON_HEIGHT / 2:.15g}",
 		"width": f"{width:.15g}", "height": f"{SIGNAL_ICON_HEIGHT:.15g}",
-		"style": "fill:#fff;fill-opacity:0.8",
+		"style": "fill:#fff",
 		"transform": label_transform,
 		"{http://www.inkscape.org/namespaces/inkscape}label": "fondo_nombre",
 	})
@@ -304,12 +316,12 @@ def _fmv_group(item: Item) -> ElementTree.Element:
 	return group
 
 
-def _bloqueo_group(item: Bloqueo, cv: CvLineal) -> tuple[ElementTree.Element, ElementTree.Element, ElementTree.Element]:
+def _bloqueo_group(item: Bloqueo, cv: CvLineal | None) -> tuple[ElementTree.Element, ElementTree.Element, ElementTree.Element]:
 	inkscape_namespace = "http://www.inkscape.org/namespaces/inkscape"
 	link_namespace = "http://www.w3.org/1999/xlink"
-	svg_rotation = degrees(item.rotation.angle + pi)
+	svg_rotation = degrees(item.rotation.angle)
 	display_side = item.display_side()
-	side = -display_side
+	side = display_side
 	group = ElementTree.Element("{http://www.w3.org/2000/svg}g", {
 		"transform": (
 			f"translate({item.position.x:.15g} {item.position.y:.15g}) "
@@ -373,7 +385,7 @@ def _bloqueo_group(item: Bloqueo, cv: CvLineal) -> tuple[ElementTree.Element, El
 	label_width = label_background_width(item.id.id_corto)
 	actc_width = 32
 	actc_x = label_width / 2 + actc_width / 2 + 5
-	actc_angle = degrees(label_rotation - item.rotation.angle - pi)
+	actc_angle = degrees(label_rotation - item.rotation.angle)
 	actc_text = ElementTree.Element("{http://www.w3.org/2000/svg}text", {
 		"x": "0",
 		"y": "0",
@@ -399,9 +411,11 @@ def _bloqueo_group(item: Bloqueo, cv: CvLineal) -> tuple[ElementTree.Element, El
 	append_symbol("csb", lock_half_width + csb_gap, side * 75, "csbColateral", center=False)
 	append_symbol("prohibirBloqueo", 0, side * (75 + simbolos["bloqueo"].height / 2 + simbolos["prohibirBloqueo"].height / 2 + 5), "prohibir")
 
+	if cv is None:
+		return group, destination, fmv_group
 	port = next(
 		(index for index, (position, angle) in enumerate(cv.get_outs())
-		 if position.close_to(item.position) and angle.close_to(item.rotation)),
+		 if position.close_to(item.position) and angle.close_to(item.rotation + pi)),
 		None,
 	)
 	if port is None:
@@ -422,7 +436,7 @@ def _bloqueo_group(item: Bloqueo, cv: CvLineal) -> tuple[ElementTree.Element, El
 	return group, destination, fmv_group
 
 
-def _crossing_group(item: Cruzamiento, points_by_port=None):
+def _crossing_group(item: Cruzamiento, points_by_port=None, *, include_label=True):
 	group = ElementTree.Element("{http://www.w3.org/2000/svg}g", {
 		"transform": (
 			f"translate({item.position.x:.15g} {item.position.y:.15g}) "
@@ -441,7 +455,8 @@ def _crossing_group(item: Cruzamiento, points_by_port=None):
 		group.append(generate_track_svg(
 			[point for point in points], name=label,
 		))
-	_add_item_label(group, item.id.id_corto, 0, 0)
+	if include_label:
+		_add_item_label(group, item.id.id_corto, 0, 0)
 	return group
 
 
@@ -463,6 +478,96 @@ def _topera_group(item: Topera):
 	_add_item_label(group, item.id.id_corto, center.x, center.y,
 	                angle=label_angle(item))
 	return group
+
+
+def generate_item_svg_components(item: Item, related_items=()):
+	"""Devuelve elementos SVG locales agrupados por layer, listos para cachear."""
+	if isinstance(item, SeccionVia):
+		# Only labels are cached for track sections; their geometry and labels are
+		# local to this item, so connection discovery is unnecessary here.
+		points = _points_for_ports(item, [])
+		if isinstance(item, CvLineal):
+			group = _track_group(item, points[0])
+			layer = "CV"
+		elif isinstance(item, Aguja):
+			group = (_travesia_group(item, points) if item.is_travesia
+					 else _junction_group(item, points))
+			layer = "Aguja"
+		else:
+			group = _crossing_group(item, points)
+			layer = "Cruzamientos"
+		labels = ElementTree.Element("{http://www.w3.org/2000/svg}g")
+		inkscape_label = "{http://www.inkscape.org/namespaces/inkscape}label"
+		def collect_labels(parent):
+			for child in parent:
+				label = child.attrib.get(inkscape_label)
+				if label in {"numerador", "averia"}:
+					labels.append(deepcopy(child))
+				elif label in {"fondo_nombre", "nombre"}:
+					labels.append(deepcopy(child))
+				else:
+					collect_labels(child)
+		collect_labels(group)
+		components = {layer: list(labels)}
+	else:
+		components = {}
+		if isinstance(item, Señal):
+			group, _ = _signal_group(item)
+			components["Señal"] = [group]
+			if item.inicio_ruta:
+				components["IMV"] = [_imv_group(item)]
+			if item.final_ruta:
+				components["FMV"] = [_fmv_group(item)]
+		elif isinstance(item, Topera):
+			components["Destino"] = [_topera_group(item)]
+			components["FMV"] = [_fmv_group(item)]
+		elif isinstance(item, Bloqueo):
+			cv = next((candidate for candidate in related_items
+				if isinstance(candidate, CvLineal)
+				and candidate.matches(item.position, item.rotation + pi)), None)
+			lock, destination, fmv = _bloqueo_group(item, cv)
+			components.update(Bloqueo=[lock], Destino=[destination])
+			if len(fmv):
+				components["FMV"] = [fmv]
+	position = item.position
+	for layer, elements in components.items():
+		for element in elements:
+			if isinstance(item, SeccionVia):
+				continue  # Labels are local children of the section's original group.
+			if isinstance(item, Señal):
+				if layer == "Señal":
+					element.set("transform", "")
+				elif layer == "IMV":
+					element.set("transform", f"translate({cos(item.rotation.angle) * 11 - simbolos['IMV'].width / 2:.15g} {sin(item.rotation.angle) * 11 - simbolos['IMV'].height / 2:.15g})")
+				elif layer == "FMV":
+					element[0].set("transform", f"translate({-cos(item.rotation.angle) * 11 - simbolos['FMV'].width / 2:.15g} {-sin(item.rotation.angle) * 11 - simbolos['FMV'].height / 2:.15g})")
+			elif isinstance(item, Topera):
+				if layer == "Destino":
+					element.set("transform", "")
+				else:
+					element[0].set("transform", f"translate({-cos(item.rotation.angle) * 11 - simbolos['FMV'].width / 2:.15g} {-sin(item.rotation.angle) * 11 - simbolos['FMV'].height / 2:.15g})")
+			elif isinstance(item, Bloqueo):
+				element.set("transform", f"rotate({degrees(item.rotation.angle):.15g})")
+	return components
+
+
+def _export_cached_components(item, components):
+	result = {}
+	for layer, elements in components.items():
+		result[layer] = [deepcopy(element) for element in elements]
+		if isinstance(item, SeccionVia):
+			continue
+		for component in result[layer]:
+			if isinstance(item, (Señal, Topera)):
+				if layer == "Señal" or (layer == "Destino" and isinstance(item, Topera)):
+					component.set("transform", f"translate({item.position.x:.15g} {item.position.y:.15g})")
+				elif layer == "FMV":
+					component[0].set("transform", f"translate({item.position.x - cos(item.rotation.angle) * 11 - simbolos['FMV'].width / 2:.15g} {item.position.y - sin(item.rotation.angle) * 11 - simbolos['FMV'].height / 2:.15g})")
+				elif layer == "IMV":
+					component.set("transform", f"translate({item.position.x + cos(item.rotation.angle) * 11 - simbolos['IMV'].width / 2:.15g} {item.position.y + sin(item.rotation.angle) * 11 - simbolos['IMV'].height / 2:.15g})")
+			elif isinstance(item, Bloqueo):
+				component.set("transform", f"translate({item.position.x:.15g} {item.position.y:.15g}) rotate({degrees(item.rotation.angle):.15g})")
+	return result
 
 
 def export_svg(items: Iterable[Item]) -> str:
@@ -517,24 +622,16 @@ def export_svg(items: Iterable[Item]) -> str:
 				x_offset=0, y_offset=top_offset,
 			)
 	for item in items:
+		cached = item.generate_svg_components(items)
 		if isinstance(item, Bloqueo):
-			cv = next((candidate for candidate in items
-					   if isinstance(candidate, CvLineal)
-					   and candidate.matches(item.position, item.rotation)), None)
-			if cv is not None:
-				bloqueo, destination, fmv = _bloqueo_group(item, cv)
-				layers["Bloqueo"].append(bloqueo)
-				layers["Destino"].append(destination)
-				layers["FMV"].append(fmv)
+			for layer, elements in _export_cached_components(item, cached).items():
+				layers[layer].extend(elements)
 			update_bounds((item.position + Point(x, y).get_rotated(item.rotation)
 				for x, y in ((-90, -90), (90, -90), (90, 90), (-90, 90))))
 		elif isinstance(item, Señal):
-			group, signal_points = _signal_group(item)
-			layers["Señal"].append(group)
-			if item.inicio_ruta:
-				layers["IMV"].append(_imv_group(item))
-			if item.final_ruta:
-				layers["FMV"].append(_fmv_group(item))
+			_, signal_points = _signal_group(item)
+			for layer, elements in _export_cached_components(item, cached).items():
+				layers[layer].extend(elements)
 			update_bounds(signal_points)
 			update_label_bounds(item, height=SIGNAL_ICON_HEIGHT)
 			if item.inicio_ruta:
@@ -550,8 +647,8 @@ def export_svg(items: Iterable[Item]) -> str:
 					simbolos["FMV"].width, simbolos["FMV"].height,
 				)
 		elif isinstance(item, Topera):
-			layers["Destino"].append(_topera_group(item))
-			layers["FMV"].append(_fmv_group(item))
+			for layer, elements in _export_cached_components(item, cached).items():
+				layers[layer].extend(elements)
 			angle = item.rotation.angle
 			center = item.position + Point(cos(angle) * 2, sin(angle) * 2)
 			perpendicular = Point(-sin(angle) * 10, cos(angle) * 10)
@@ -571,9 +668,11 @@ def export_svg(items: Iterable[Item]) -> str:
 			)
 			update_bounds(absolute)
 			points_by_port = _points_for_ports(item, connections[id(item)])
-			layers["Aguja"].append(_travesia_group(
-				item, points_by_port) if item.is_travesia else _junction_group(
-				item, points_by_port))
+			group = (_travesia_group(
+				item, points_by_port, include_label=False) if item.is_travesia else _junction_group(
+				item, points_by_port, include_label=False))
+			group.extend(_export_cached_components(item, cached).get("Aguja", []))
+			layers["Aguja"].append(group)
 			update_label_bounds(item, top_offset=_aguja_label_offset(item))
 		elif isinstance(item, Cruzamiento):
 			absolute = [item.position + point.get_rotated(item.rotation)
@@ -581,14 +680,16 @@ def export_svg(items: Iterable[Item]) -> str:
 			                           item.points_p3, item.points_p4)
 			            for point in points]
 			update_bounds(absolute)
-			layers["Cruzamientos"].append(
-				_crossing_group(item, _points_for_ports(item, connections[id(item)])))
+			group = _crossing_group(item, _points_for_ports(item, connections[id(item)]), include_label=False)
+			group.extend(_export_cached_components(item, cached).get("Cruzamientos", []))
+			layers["Cruzamientos"].append(group)
 			update_label_bounds(item)
 		elif isinstance(item, CvLineal):
 			absolute = [item.position + point.get_rotated(item.rotation) for point in item.points]
 			update_bounds(absolute)
-			layers["CV"].append(_track_group(
-				item, _points_for_ports(item, connections[id(item)])[0]))
+			group = _track_group(item, _points_for_ports(item, connections[id(item)])[0], include_label=False)
+			group.extend(_export_cached_components(item, cached).get("CV", []))
+			layers["CV"].append(group)
 			update_label_bounds(item, top_offset=6)
 	if bounds[0] is not None:
 		min_x, min_y, max_x, max_y = bounds

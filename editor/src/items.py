@@ -162,6 +162,43 @@ class Item:
         self.tipo = tipo
         self.posicion = position if isinstance(position, Point) else Point(*position)
         self.rotacion = rotation if isinstance(rotation, Angle) else Angle(rotation or 0)
+        self._svg_components_key = None
+        self._svg_components_cache = None
+        self._canvas_svg_pixmaps = {}
+
+    def _visual_state(self):
+        def freeze(value):
+            if isinstance(value, Point):
+                return (value.x, value.y)
+            if isinstance(value, Angle):
+                return value.angle
+            if isinstance(value, Enum):
+                return value.value
+            if isinstance(value, (tuple, list)):
+                return tuple(freeze(part) for part in value)
+            if isinstance(value, dict):
+                return tuple(sorted((key, freeze(part)) for key, part in value.items()))
+            return value
+        return tuple(sorted((name, freeze(value)) for name, value in vars(self).items()
+                            if name not in {"posicion", "_svg_components_key",
+                                            "_svg_components_cache", "_canvas_svg_pixmaps"}))
+
+    def generate_svg_components(self, related_items=()):
+        related_key = None
+        if isinstance(self, Bloqueo):
+            connected_cv = next((other for other in related_items
+                                 if isinstance(other, CvLineal)
+                                 and other.matches(self.position, self.rotation + Angle(math.pi))), None)
+            if connected_cv is not None:
+                related_key = (id(connected_cv), connected_cv.position.x,
+                               connected_cv.position.y, connected_cv._visual_state())
+        key = (self._visual_state(), related_key)
+        if key != self._svg_components_key:
+            from svg.svg_export import generate_item_svg_components
+            self._svg_components_cache = generate_item_svg_components(self, related_items)
+            self._svg_components_key = key
+            self._canvas_svg_pixmaps = {}
+        return self._svg_components_cache
 
     @property
     def position(self):
