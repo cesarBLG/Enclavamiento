@@ -2,6 +2,7 @@
 #include <chrono>
 struct parametros_predeterminados
 {
+    int64_t diferimetro_dai0;
     int64_t diferimetro_dai1;
     int64_t diferimetro_dai2;
     int64_t diferimetro_dei;

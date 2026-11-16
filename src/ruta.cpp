@@ -73,6 +73,7 @@ ruta::ruta(const std::string &estacion, const json &j) : movimiento(estacion, j[
 
     tiempo_espera_fai = parametros.tiempo_espera_fai;
     desactivar_diferimetro = j.value("DesactivarDiferímetroDAI", false);
+    temporizador_dai0 = j.value("DiferímetroDAI0", parametros.diferimetro_dai0);
     temporizador_dai1 = j.value("DiferímetroDAI1", tipo == TipoMovimiento::Maniobra ? 0 : parametros.diferimetro_dai1);
     temporizador_dai2 = j.value("DiferímetroDAI2", parametros.diferimetro_dai2);
     temporizador_dei = j.value("DiferímetroDEI", parametros.diferimetro_dei);
@@ -746,6 +747,25 @@ void ruta::update()
         supervisada = true;
         log(id, "supervisada");
     }
+    if (diferimetro_dai != nullptr && num_dai == 0) {
+        if (zona_proximidad > 0) {
+            // Si se ocupa la proximidad estando activo el diferímetro DAI D0, se activa el temporizador largo
+            int64_t temporizador;
+            if (zona_proximidad > 1) {
+                num_dai = 2;
+                temporizador = temporizador_dai2;
+            } else {
+                num_dai = 1;
+                temporizador = temporizador_dai1;
+            }
+            log(id, "diferimetro "+std::to_string(temporizador/1000), LOG_DEBUG);
+            diferimetro_dai->time = get_milliseconds() + temporizador;
+        } else if (señal_inicio->aspecto == Aspecto::Parada && señal_inicio->aspecto_campo_reconocido) {
+            // Si no hay ERTMS N2 instalado, se desactiva D0 tan pronto como la señal cambia a rojo
+            clear_timer(diferimetro_dai);
+            diferimetro_dai->action();
+        }
+    }
 }
 void ruta::message_cv(const id_elemento &id, estado_cv ecv)
 {
@@ -815,16 +835,26 @@ bool ruta::dai(bool anular_bloqueo)
     if (señal_inicio->frontera_salida != nullptr && !señal_inicio->frontera_salida->dai_salida_permitido()) return false;
     log(id, "dai", LOG_DEBUG);
     // Si la señal no llegó a abrir, la disolución es inmediata
-    if (!supervisada) {
+    // Si no hay secciones aseguradas por la ruta, ni un bloqueo tomado, no es necesario temporizar
+    if (!supervisada || (desactivar_diferimetro && !dependencias[estacion]->cerrada) || (secciones.size() == 0 && !bloqueo_salida)) {
         disolucion_parcial(anular_bloqueo);
         return true;
     }
     // Si la proximidad está libre, la disolución es inmediata
-    // Si no hay secciones aseguradas por la ruta, ni un bloqueo tomado, no es necesario temporizar
-    if ((num_zonas_proximidad > 0 && zona_proximidad == 0) || (secciones.size() == 0 && !bloqueo_salida) || (desactivar_diferimetro && !dependencias[estacion]->cerrada)) {
+    if ((num_zonas_proximidad > 0 && zona_proximidad == 0) && temporizador_dai0 == 0) {
         disolucion_parcial(anular_bloqueo);
     } else if (diferimetro_dai == nullptr) {
-        int64_t temporizador = zona_proximidad > 1 ? temporizador_dai2 : temporizador_dai1;
+        int64_t temporizador;
+        if (num_zonas_proximidad > 0 && zona_proximidad == 0) {
+            num_dai = 0;
+            temporizador = temporizador_dai0;
+        } else if (zona_proximidad > 1) {
+            num_dai = 2;
+            temporizador = temporizador_dai2;
+        } else {
+            num_dai = 1;
+            temporizador = temporizador_dai1;
+        }
         log(id, "diferimetro "+std::to_string(temporizador/1000), LOG_DEBUG);
         if (temporizador == 0) {
             disolucion_parcial(anular_bloqueo);

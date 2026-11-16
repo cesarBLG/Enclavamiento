@@ -470,6 +470,7 @@ void to_json(json &j, const estado_señal &estado)
     if (estado.desviada_propagada.velocidad < 200) j["Desviada"] = estado.desviada_propagada;
     if (estado.id_señal_focos.id != "") j["SeñalFocos"] = estado.id_señal_focos.id;
     if (estado.focos_mandados_mask > 0) j["Focos"] = estado.focos_mandados_mask;
+    j["AspectoCampoReconocido"] = estado.aspecto_campo_reconocido;
 }
 void from_json(const json &j, estado_señal &estado)
 {
@@ -481,6 +482,7 @@ void from_json(const json &j, estado_señal &estado)
     }
     estado.aspecto = (aspecto_extendido)j["Aspecto"];
     estado.aspecto_maximo_anterior_señal = (aspecto_extendido)j["AspectoAnterior"];
+    estado.aspecto_campo_reconocido = j.value("AspectoCampoReconocido", false);
     estado.desviada_propagada = j.value("Desviada", velocidad_agujas::max());
     estado.focos_mandados_mask = j.value("Focos", 0u);
     if (j.contains("SeñalFocos")) estado.id_señal_focos = id_elemento(j["SeñalFocos"]);
@@ -533,6 +535,7 @@ void from_json(const json &j, estado_fin_ruta &estado)
 }
 void from_json(const json &j, parametros_predeterminados &params)
 {
+    params.diferimetro_dai0 = j.value("DiferímetroDAI0", 20) * 1000;
     params.diferimetro_dai1 = j.value("DiferímetroDAI1", 30) * 1000;
     params.diferimetro_dai2 = j.value("DiferímetroDAI2", 2*60+30) * 1000;
     params.diferimetro_dei = j.value("DiferímetroDEI", 3*60) * 1000;

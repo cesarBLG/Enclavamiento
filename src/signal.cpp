@@ -561,7 +561,7 @@ void señal_impl::update()
                     aprec_reconocido = ReconocimientoAnuncioPrecaucion::Reconocido;
                 }
             }
-            if (get_milliseconds() - inicio_aprec > 10000) {
+            if (get_milliseconds() - inicio_aprec > 10000 && aspecto_campo_reconocido) {
                 aprec_reconocido = ReconocimientoAnuncioPrecaucion::Reconocido;
                 inicio_aprec = get_milliseconds();
             }
@@ -603,7 +603,11 @@ void señal_impl::update()
 
     paso_circulacion = false;
 
-    send_state(aspecto != prev_aspecto || prev_mask != focos_mandados_mask, estado_inicio != prev_estado_inicio);
+    bool asp_changed = aspecto != prev_aspecto || prev_mask != focos_mandados_mask;
+    if (asp_changed)
+        aspecto_campo_reconocido = estado_foco_señal.empty();
+
+    send_state(asp_changed, estado_inicio != prev_estado_inicio);
 }
 bool señal_impl::is_aspecto_disponible(aspecto_extendido asp)
 {
@@ -1006,5 +1010,8 @@ void señal_avanzada_sin_parada::update()
 
     if (aspecto_bloqueado < Aspecto::ViaLibre && aspecto < aspecto_bloqueado) aspecto_bloqueado = Aspecto::ViaLibre;
 
-    if (aspecto != prev_aspecto || prev_mask != focos_mandados_mask) send_state();
+    if (aspecto != prev_aspecto || prev_mask != focos_mandados_mask) {
+        aspecto_campo_reconocido = estado_foco_señal.empty();
+        send_state();
+    }
 }

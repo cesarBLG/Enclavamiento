@@ -102,6 +102,7 @@ public:
 
     bool anulacion_bloqueo_pendiente = false;
 protected:
+    int num_dai;
     std::shared_ptr<timer> diferimetro_dai;
     std::shared_ptr<timer> diferimetro_dei;
     std::shared_ptr<timer> diferimetro_deslizamiento;
@@ -116,6 +117,7 @@ protected:
     bool diferimetro_cancelado = false;
 
     bool desactivar_diferimetro;
+    int64_t temporizador_dai0;
     int64_t temporizador_dai1;
     int64_t temporizador_dai2;
     int64_t temporizador_dei;

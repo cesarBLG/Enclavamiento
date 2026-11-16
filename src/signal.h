@@ -166,6 +166,18 @@ public:
         for (int i=0; i<estado_pantalla.size(); i++) {
             estado_pantalla[i] = pantalla == i - 1 ? EstadoFocoSeñal::Encendido : EstadoFocoSeñal::Apagado;
         }
+        for (auto &comb : combinaciones_focos[aspecto.aspecto]) {
+            bool rec = true;
+            for (auto &[foco,estado] : comb) {
+                auto estado_campo = (EstadoFocoSeñal)((focos_mask>>(2*(int)foco)) & 3);
+                if (estado_campo == EstadoFocoSeñal::Apagado || estado_campo == EstadoFocoSeñal::Fundido)
+                    aspecto_campo_reconocido = true;
+            }
+            if (rec) {
+                aspecto_campo_reconocido = true;
+                break;
+            }
+        }
     }
     virtual RemotaSIG get_estado_remota_sig();
 };

@@ -226,7 +226,7 @@ public:
         r.BLQ_ACTC = (int)colateral.actc;
         r.BLQ_CSB = colateral.cierre_señales ? 2 : (cierre_señales ? 1 : 0);
         r.BLQ_NB = 0;//normalizado ? 0 : 1;
-        r.BLQ_ME = 0;
+        r.BLQ_ME = me_pendiente ? 1 : 0;
         r.BLQ_PROX = sonerias.find(TipoSoneria::OcupacionProximidad) != sonerias.end();
         return r;
     }

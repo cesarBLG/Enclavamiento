@@ -38,6 +38,7 @@ struct estado_señal
     aspecto_extendido aspecto;
     aspecto_extendido aspecto_maximo_anterior_señal;
     unsigned int focos_mandados_mask = 0;
+    bool aspecto_campo_reconocido=false;
     velocidad_agujas desviada_propagada = velocidad_agujas::max();
     bool sin_datos = false;
     id_elemento id_señal_focos;
