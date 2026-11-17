@@ -175,6 +175,7 @@ void señal_impl::determinar_aspecto()
     seccion_via* sec_act = seccion;
     seccion_via* sec_prv = seccion_prev;
     Lado dir = lado;
+    Lado dir_prev = lado_prev;
     EstadoCanton canton = EstadoCanton::Libre;
     // Señal siguiente, a continuación del canton
     sig_señal = nullptr;
@@ -207,15 +208,15 @@ void señal_impl::determinar_aspecto()
         EstadoCanton sec_ocup = sec_act->get_ocupacion(sec_prv, dir);
         canton = std::max(sec_ocup, canton);
         if (sec_act->get_cv() != nullptr && sec_act->get_cv()->is_btv()) prohibir_abrir = true;
-        Lado l = dir;
+        dir_prev = dir;
         seccion_via *next = sec_act->siguiente_seccion(sec_prv, dir);
         for (auto *pn : sec_act->pns) {
             if (!pn->is_protegido()) {
-                if (pn->get_tipo(l) != TipoPN::Automatico)
+                if (pn->get_tipo(dir_prev) != TipoPN::Automatico)
                     cerrar = true;
             }
         }
-        if ((sec_prv != nullptr && !sec_act->transitable(sec_prv, l)) || (sec_prv == nullptr && !sec_act->transitable(pin, l)))
+        if ((sec_prv != nullptr && !sec_act->transitable(sec_prv, dir_prev)) || (sec_prv == nullptr && !sec_act->transitable(pin, dir_prev)))
             cerrar = true;
         if (seccion_asegurada) {
             if (ruta_activa->get_ocupacion_maxima_secciones().find(sec_act)->second < sec_ocup) {
@@ -288,11 +289,31 @@ void señal_impl::determinar_aspecto()
         // Las señales avanzadas abren según el aspecto de la señal de entrada
         // Las pantallas virtuales no abren sin bloqueo establecido, pero la condición de cierre se establece más adelante
         cerrar_itinerario |= bloqueo_act.estado != (dir == Lado::Impar ? EstadoBloqueo::BloqueoImpar : EstadoBloqueo::BloqueoPar) && tipo != TipoSeñal::Avanzada && clase != ClaseSeñal::Virtual && (tipo == TipoSeñal::Intermedia || !abierta_desbloqueo || (bloqueo_act.estado != EstadoBloqueo::Desbloqueo && !abierta_bloqueo_receptor) || tipo_opp == TipoMovimiento::Itinerario);
+        // No permitir apertura señal de salida hasta que la colateral indique que su señal de salida está cerrada
+        cerrar_itinerario |= salida_trayecto && !abierta_desbloqueo && bloqueo_act.cerrar_salida[dir];
         // Cerrar el itinerario de salida si la estación colateral está realizando maniobras,
         // y no hay señales intermedias suficientes que puedan proteger la maniobra
         cerrar_itinerario |= tipo_opp == TipoMovimiento::Maniobra && bloqueo_act.maniobra_compatible[opp_lado(dir)] < CompatibilidadManiobra::Compatible;
         // No permitir la apertura en itinerario de la señal de salida con bloqueo prohibido o A/CTC denegada
         prohibir_abrir_itinerario |= salida_trayecto && (bloqueo_act.prohibido[dir] || bloqueo_act.actc[dir] == ACTC::Denegada || (!ruta_necesaria && bloqueo_act.prioridad_itinerario[dir] < bloqueo_act.prioridad_itinerario[opp_lado(dir)]));
+        // Requerir foco rojo luciendo en señal de entrada y avanzada para apertura de señal en maniobra
+        if (ruta_activa != nullptr && ruta_activa->tipo == TipoMovimiento::Maniobra && bloqueo_asociado_obj->deslizamiento_bloqueo && bloqueo_act.estado != (dir == Lado::Impar ? EstadoBloqueo::BloqueoImpar : EstadoBloqueo::BloqueoPar)) {
+            seccion_via *sec = sec_prv;
+            Lado l = dir_prev;
+            while (sec != nullptr && (sec_act == nullptr || sec_act->is_trayecto())) {
+                auto *señal = sec->señal_inicio(opp_lado(l), 0);
+                if (señal != nullptr) {
+                    if (señal->aspecto != Aspecto::Parada || !señal->aspecto_campo_reconocido) {
+                        cerrar = true;
+                        break;
+                    }
+                    if (señal->tipo == TipoSeñal::Avanzada)
+                        break;
+                }
+                sec = sec->siguiente_seccion(sec, l);
+                if (sec == nullptr || !sec->is_trayecto()) break;
+            }
+        }
     } else {
         bloqueo_asociado_obj = nullptr;
     }
@@ -440,6 +461,7 @@ void señal_fundamental_impl::determinar_focos()
 {
     if (estado_foco_señal.empty()) {
         focos_mandados_mask = 0;
+        aspecto_campo_reconocido = true;
         return;
     }
     bool fusion = false;
@@ -523,14 +545,31 @@ void señal_fundamental_impl::determinar_focos()
         focos_mandados_mask = mask;
         ultimo_cambio_focos = get_milliseconds();
     }
-    if (combinacion != nullptr && get_milliseconds() - ultimo_cambio_focos > 15000) {
-        for (auto &[foco, estado] : *combinacion) {
-            if (estado_foco_señal[foco] == EstadoFocoSeñal::Apagado) {
-                estado_foco_señal[foco] = EstadoFocoSeñal::Fundido;
+    if (combinacion != nullptr) {
+        if (ultimo_cambio_focos_campo > ultimo_cambio_focos) {
+            bool rec = true;
+            for (auto &[foco, estado] : *combinacion) {
+                if (estado_foco_señal[foco] == EstadoFocoSeñal::Apagado || estado_foco_señal[foco] == EstadoFocoSeñal::Fundido) {
+                    rec = false;
+                    break;
+                }
+            }
+            if (rec)
+                aspecto_campo_reconocido = true;
+        }
+        if (get_milliseconds() - ultimo_cambio_focos > 15000 || ultimo_cambio_focos_campo - ultimo_cambio_focos > 5000) {
+            for (auto &[foco, estado] : *combinacion) {
+                if (estado_foco_señal[foco] == EstadoFocoSeñal::Apagado) {
+                    estado_foco_señal[foco] = EstadoFocoSeñal::Fundido;
+                }
+            }
+            if (combinacion_pantalla > 0 && estado_pantalla[combinacion_pantalla - 1] == EstadoFocoSeñal::Apagado) {
+                estado_pantalla[combinacion_pantalla - 1] = EstadoFocoSeñal::Fundido;
             }
         }
-        if (combinacion_pantalla > 0 && estado_pantalla[combinacion_pantalla - 1] == EstadoFocoSeñal::Apagado) {
-            estado_pantalla[combinacion_pantalla - 1] = EstadoFocoSeñal::Fundido;
+        if (dependencias[id.dependencia]->cerrada && !deteccion_fusion_fria && get_milliseconds() - ultimo_cambio_focos > 30000) {
+            if (normalizar_fusion())
+                ultimo_cambio_focos = get_milliseconds();
         }
     }
 }
@@ -603,11 +642,7 @@ void señal_impl::update()
 
     paso_circulacion = false;
 
-    bool asp_changed = aspecto != prev_aspecto || prev_mask != focos_mandados_mask;
-    if (asp_changed)
-        aspecto_campo_reconocido = estado_foco_señal.empty();
-
-    send_state(asp_changed, estado_inicio != prev_estado_inicio);
+    send_state(aspecto != prev_aspecto || prev_mask != focos_mandados_mask, estado_inicio != prev_estado_inicio);
 }
 bool señal_impl::is_aspecto_disponible(aspecto_extendido asp)
 {
@@ -1010,8 +1045,6 @@ void señal_avanzada_sin_parada::update()
 
     if (aspecto_bloqueado < Aspecto::ViaLibre && aspecto < aspecto_bloqueado) aspecto_bloqueado = Aspecto::ViaLibre;
 
-    if (aspecto != prev_aspecto || prev_mask != focos_mandados_mask) {
-        aspecto_campo_reconocido = estado_foco_señal.empty();
+    if (aspecto != prev_aspecto || prev_mask != focos_mandados_mask)
         send_state();
-    }
 }

@@ -105,13 +105,14 @@ public:
         mando_estacion = mando;
         update();
     }
-    void set_ruta(TipoMovimiento tipo, CompatibilidadManiobra maniobra_compatible, bool anular_bloqueo, int prioridad_itinerario)
+    void set_ruta(TipoMovimiento tipo, CompatibilidadManiobra maniobra_compatible, bool anular_bloqueo, int prioridad_itinerario, bool cerrar_salida)
     {
-        if (tipo != ruta || maniobra_compatible != this->maniobra_compatible || prioridad_itinerario != this->prioridad_itinerario) {
+        if (tipo != ruta || maniobra_compatible != this->maniobra_compatible || prioridad_itinerario != this->prioridad_itinerario || cerrar_salida != this->cerrar_salida) {
             ruta = tipo;
             this->maniobra_compatible = maniobra_compatible;
             if (ruta == TipoMovimiento::Ninguno && anular_bloqueo && (estado == bloqueo_emisor || (estado == EstadoBloqueo::Desbloqueo && estado_objetivo == bloqueo_emisor)) && desbloqueo_permitido()) estado_objetivo = EstadoBloqueo::Desbloqueo;
             this->prioridad_itinerario = prioridad_itinerario;
+            this->cerrar_salida = cerrar_salida;
             update();
         }
     }

@@ -18,6 +18,7 @@ struct estado_bloqueo
     lados<CompatibilidadManiobra> maniobra_compatible;
     lados<estado_mando> mando_estacion;
     lados<bool> estacion_cerrada;
+    lados<bool> cerrar_salida;
 };
 struct estado_bloqueo_lado
 {
@@ -35,6 +36,7 @@ struct estado_bloqueo_lado
     bool normalizar_escape;
     bool bloqueo_siguiente = false;
     bool cerrada = false;
+    bool cerrar_salida = false;
     bool operator<=>(const estado_bloqueo_lado &o) const = default;
 };
 #ifndef WITHOUT_JSON

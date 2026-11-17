@@ -62,6 +62,7 @@ void dependencia::update()
     std::map<id_elemento, ruta*> movimiento_bloqueos;
     std::set<id_elemento> anular_bloqueos;
     std::set<id_elemento> solicitud_bloqueos;
+    std::set<id_elemento> señales_abiertas_bloqueo;
     // Para cada bloqueo de salida, indicar el itinerario o maniobra establecido
     for (auto *ruta : ::rutas) {
         if (ruta->estacion == id) ruta->update();
@@ -77,15 +78,22 @@ void dependencia::update()
             if (ruta->get_estado_fai() == EstadoFAI::Solicitud) solicitud_bloqueos.insert(*ruta->bloqueo_salida);
         }
     }
+    for (auto &[id,sig] : ::señal_impls) {
+        if (sig->ruta_necesaria || !sig->bloqueo_asociado || sig->bloqueo_asociado->dependencia != this->id || (sig->tipo != TipoSeñal::Salida && sig->tipo != TipoSeñal::Entrada))
+            continue;
+        if (sig->aspecto != Aspecto::Parada || !sig->aspecto_campo_reconocido)
+            señales_abiertas_bloqueo.insert(*sig->bloqueo_asociado);
+    }
     if (servicio_intermitente) servicio_intermitente->update();
     TipoSoneria son = TipoSoneria::Apagada;
     for (auto &[id, bloq] : bloqueos) {
         auto it = movimiento_bloqueos.find(id);
         int pri = solicitud_bloqueos.find(id) != solicitud_bloqueos.end() ? (cerrada ? 1 : 2) : 0;
+        bool sal = señales_abiertas_bloqueo.find(id) != señales_abiertas_bloqueo.end();
         if (it == movimiento_bloqueos.end()) {
-            bloq->set_ruta(TipoMovimiento::Ninguno, CompatibilidadManiobra::IncompatibleBloqueo, anular_bloqueos.find(id) != anular_bloqueos.end(), pri);
+            bloq->set_ruta(TipoMovimiento::Ninguno, CompatibilidadManiobra::IncompatibleBloqueo, anular_bloqueos.find(id) != anular_bloqueos.end(), pri, sal);
         } else {
-            bloq->set_ruta(it->second->tipo, it->second->maniobra_compatible, false, pri);
+            bloq->set_ruta(it->second->tipo, it->second->maniobra_compatible, false, pri, sal);
         }
         son = std::max(bloq->update_soneria(), son);
     }

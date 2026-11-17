@@ -70,6 +70,8 @@ protected:
     std::map<FocoSeñal,EstadoFocoSeñal> estado_foco_señal;
     std::vector<EstadoFocoSeñal> estado_pantalla;
     int64_t ultimo_cambio_focos = 0;
+    int64_t ultimo_cambio_focos_campo = 0;
+    bool deteccion_fusion_fria = false;
     bool apagada = false;
     std::set<Aspecto> aspectos_disponibles;
     std::vector<velocidad_agujas> aspectos_pantalla;
@@ -159,25 +161,15 @@ public:
     {
         for (auto &[foco, estado] : estado_foco_señal) {
             auto estado_campo = (EstadoFocoSeñal)((focos_mask>>(2*(int)foco)) & 3);
-            if (estado_campo > EstadoFocoSeñal::Apagado || estado != EstadoFocoSeñal::Fundido)
+            if (estado_campo == EstadoFocoSeñal::Fundido) deteccion_fusion_fria = true;
+            if (estado_campo > EstadoFocoSeñal::Apagado || estado != EstadoFocoSeñal::Fundido || deteccion_fusion_fria)
                 estado = estado_campo;
         }
         int pantalla = focos_mask>>(2*(int)FocoSeñal::Pantalla);
         for (int i=0; i<estado_pantalla.size(); i++) {
             estado_pantalla[i] = pantalla == i - 1 ? EstadoFocoSeñal::Encendido : EstadoFocoSeñal::Apagado;
         }
-        for (auto &comb : combinaciones_focos[aspecto.aspecto]) {
-            bool rec = true;
-            for (auto &[foco,estado] : comb) {
-                auto estado_campo = (EstadoFocoSeñal)((focos_mask>>(2*(int)foco)) & 3);
-                if (estado_campo == EstadoFocoSeñal::Apagado || estado_campo == EstadoFocoSeñal::Fundido)
-                    aspecto_campo_reconocido = true;
-            }
-            if (rec) {
-                aspecto_campo_reconocido = true;
-                break;
-            }
-        }
+        ultimo_cambio_focos_campo = get_milliseconds();
     }
     virtual RemotaSIG get_estado_remota_sig();
 };

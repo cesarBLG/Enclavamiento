@@ -316,7 +316,10 @@ void handle_message(const std::string &topic, const std::string &payload)
     if (std::regex_match(topic, match, signalFieldStatePattern)) {
         id_elemento id = id_elemento(id_from_mqtt(match[1]));
         auto it = señal_impls.find(id);
-        if (it != señal_impls.end()) it->second->message_señal_campo(json::parse(payload));
+        if (it != señal_impls.end()) {
+            json j = json::parse(payload);
+            it->second->message_señal_campo(j == "desconexion" ? 0u : (unsigned int)j);
+        }
         return;
     }
     std::regex bloqueoStatePattern(R"(^bloqueo/([a-zA-Z0-9_-]+/[a-zA-Z0-9_'-]+)/state$)");

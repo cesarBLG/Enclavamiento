@@ -126,6 +126,7 @@ void bloqueo::send_state()
         estado_completo.ruta[l] = e.ruta;
         estado_completo.prioridad_itinerario[l] = e.prioridad_itinerario;
         estado_completo.estacion_cerrada[l] = e.cerrada;
+        estado_completo.cerrar_salida[l] = o.cerrar_salida;
     }
     json j = *((estado_bloqueo_lado*)this);
     send_message(topic_colateral, j.dump());

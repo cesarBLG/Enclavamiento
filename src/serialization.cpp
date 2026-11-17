@@ -389,6 +389,7 @@ void to_json(json &j, const estado_bloqueo &estado)
     j["ManiobraCompatible"] = estado.maniobra_compatible;
     j["MandoEstación"] = estado.mando_estacion;
     j["EstaciónCerrada"] = estado.estacion_cerrada;
+    j["CerrarSalida"] = estado.cerrar_salida;
 }
 void from_json(const json &j, estado_bloqueo &estado)
 {
@@ -409,6 +410,7 @@ void from_json(const json &j, estado_bloqueo &estado)
     estado.maniobra_compatible = j["ManiobraCompatible"];
     estado.mando_estacion = j["MandoEstación"];
     estado.estacion_cerrada = j["EstaciónCerrada"];
+    estado.cerrar_salida = j["CerrarSalida"];
 }
 void to_json(json &j, const estado_bloqueo_lado &estado)
 {
@@ -426,6 +428,7 @@ void to_json(json &j, const estado_bloqueo_lado &estado)
     j["NormalizarEscape"] = estado.normalizar_escape;
     j["BloqueoSiguiente"] = estado.bloqueo_siguiente;
     j["Cerrada"] = estado.cerrada;
+    j["CerrarSalida"] = estado.cerrar_salida;
 }
 void from_json(const json &j, estado_bloqueo_lado &estado)
 {
@@ -447,6 +450,7 @@ void from_json(const json &j, estado_bloqueo_lado &estado)
     estado.normalizar_escape = j.value("NormalizarEscape", false);
     estado.bloqueo_siguiente = j["BloqueoSiguiente"];
     estado.cerrada = j["Cerrada"];
+    estado.cerrar_salida = j.value("CerrarSalida", false);
 }
 void to_json(json &j, const estado_mando &estado)
 {
