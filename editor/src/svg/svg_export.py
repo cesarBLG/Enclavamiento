@@ -316,7 +316,8 @@ def _fmv_group(item: Item) -> ElementTree.Element:
 	return group
 
 
-def _bloqueo_group(item: Bloqueo, cv: CvLineal | None) -> tuple[ElementTree.Element, ElementTree.Element, ElementTree.Element]:
+def _bloqueo_group(item: Bloqueo, cv: CvLineal | None,
+				   secciones=None) -> tuple[ElementTree.Element, ElementTree.Element, ElementTree.Element]:
 	inkscape_namespace = "http://www.inkscape.org/namespaces/inkscape"
 	link_namespace = "http://www.w3.org/1999/xlink"
 	svg_rotation = degrees(item.rotation.angle)
@@ -424,11 +425,21 @@ def _bloqueo_group(item: Bloqueo, cv: CvLineal | None) -> tuple[ElementTree.Elem
 	other_position, other_angle = cv.get_outs()[other_port]
 	inside = other_position - Point(cos(other_angle.angle) * 11, sin(other_angle.angle) * 11)
 	inside_local = (inside - item.position).get_rotated(-item.rotation.angle)
+	neighbor = None
+	neighbor_port = None
+	if secciones is not None:
+		neighbor, neighbor_port = get_conexiones(cv, secciones)[port]
 	fmv = simbolos["FMV"]
-	for label, center in (
-		("estacion", Point(11, 0)),
-		("trayecto", inside_local),
-	):
+	fmv_positions = [("trayecto", inside_local)]
+	if neighbor is not None:
+		neighbor_position, neighbor_angle = neighbor.get_outs()[neighbor_port]
+		station_position = neighbor_position - Point(
+			cos(neighbor_angle.angle) * 11,
+			sin(neighbor_angle.angle) * 11,
+		)
+		station_local = (station_position - item.position).get_rotated(-item.rotation.angle)
+		fmv_positions.append(("estacion", station_local))
+	for label, center in fmv_positions:
 		use = fmv.use()
 		use.set("transform", f"translate({center.x - fmv.width / 2:.15g} {center.y - fmv.height / 2:.15g})")
 		use.set(f"{{{inkscape_namespace}}}label", label)
@@ -525,7 +536,8 @@ def generate_item_svg_components(item: Item, related_items=()):
 			cv = next((candidate for candidate in related_items
 				if isinstance(candidate, CvLineal)
 				and candidate.matches(item.position, item.rotation + pi)), None)
-			lock, destination, fmv = _bloqueo_group(item, cv)
+			sections = [candidate for candidate in related_items if isinstance(candidate, SeccionVia)]
+			lock, destination, fmv = _bloqueo_group(item, cv, sections)
 			components.update(Bloqueo=[lock], Destino=[destination])
 			if len(fmv):
 				components["FMV"] = [fmv]

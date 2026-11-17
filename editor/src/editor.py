@@ -63,7 +63,6 @@ GRID_EXTENSION_TRIGGER = 2
 GRID_EXTENSION_CELLS = 10
 SIGNAL_ICON_PATH = Path(__file__).resolve().parent.parent / "symbols" / "signal.svg"
 IMV_ICON_PATH = Path(__file__).resolve().parent.parent / "symbols" / "IMV.svg"
-FMV_ICON_PATH = Path(__file__).resolve().parent.parent / "symbols" / "FMV.svg"
 BLOQUEO_ICON_PATH = Path(__file__).resolve().parent.parent / "symbols" / "bloqueo.svg"
 CSB_ICON_PATH = Path(__file__).resolve().parent.parent / "symbols" / "csb.svg"
 PROHIBIR_ICON_PATH = Path(__file__).resolve().parent.parent / "symbols" / "prohibirBloqueo.svg"
@@ -97,7 +96,6 @@ class SignalIcon:
 SIGNAL_ICON = SignalIcon(SIGNAL_ICON_PATH)
 IMV_ICON = SignalIcon(IMV_ICON_PATH, width=12, height=12)
 # Follow the FMV SVG's current viewport; it may be larger than 12x12.
-FMV_ICON = SignalIcon(FMV_ICON_PATH)
 BLOQUEO_ICON = SignalIcon(BLOQUEO_ICON_PATH)
 CSB_ICON = SignalIcon(CSB_ICON_PATH)
 PROHIBIR_ICON = SignalIcon(PROHIBIR_ICON_PATH)
@@ -2992,11 +2990,7 @@ class TrackEditor(QMainWindow):
                 "width": f"{symbol.width:.15g}",
                 "height": f"{symbol.height:.15g}",
             })
-        for layer_name, layer_elements in components.items():
-            # QtSvg expands the FMV source group's out-of-viewport geometry;
-            # add it from its native 12x12 renderer below, as the old canvas did.
-            if layer_name == "FMV":
-                continue
+        for layer_elements in components.values():
             for component in layer_elements:
                 component = deepcopy(component)
                 if labels_only:
@@ -3061,14 +3055,6 @@ class TrackEditor(QMainWindow):
         graphic = self.scene.addPixmap(pixmap)
         graphic.setPos(item.position.x - 200, item.position.y - 200)
         graphic.setZValue(2 if labels_only else 1)
-        self.item_graphics.append(graphic)
-
-    def _add_fmv_pixmap(self, center):
-        pixmap = FMV_ICON.pixmap()
-        graphic = self.scene.addPixmap(pixmap)
-        graphic.setOffset(-FMV_ICON.width / 2, -FMV_ICON.height / 2)
-        graphic.setPos(center.x, center.y)
-        graphic.setZValue(1)
         self.item_graphics.append(graphic)
 
     def _update_grid_bounds(self):
@@ -3148,36 +3134,6 @@ class TrackEditor(QMainWindow):
             pen.setJoinStyle(Qt.PenJoinStyle.MiterJoin if hasattr(Qt, "PenJoinStyle") else Qt.MiterJoin)
             if not isinstance(item, SECTION_TYPES):
                 self._draw_cached_svg(item, all_items, color)
-                if isinstance(item, Señal) and item.final_ruta:
-                    angle = item.rotation.angle
-                    self._add_fmv_pixmap(item.position - Point(cos(angle) * 11, sin(angle) * 11))
-                elif isinstance(item, Topera):
-                    angle = item.rotation.angle
-                    self._add_fmv_pixmap(item.position - Point(cos(angle) * 11, sin(angle) * 11))
-                elif isinstance(item, Bloqueo):
-                    section = next(
-                        (candidate for candidate in all_items
-                         if isinstance(candidate, CvLineal)
-                         and self.bloqueo_matches_section(item, candidate)),
-                        None,
-                    )
-                    if section is not None:
-                        port_index = next(
-                            index for index, (position, angle) in enumerate(section.get_outs())
-                            if position.close_to(item.position)
-                            and angle.close_to(item.rotation + Angle(pi))
-                        )
-                        other_position, other_angle = section.get_outs()[1 - port_index]
-                        inside = other_position - Point(
-                            cos(other_angle.angle) * 11, sin(other_angle.angle) * 11,
-                        )
-                        for local_center in (
-                            Point(11, 0),
-                            (inside - item.position).get_rotated(-item.rotation.angle),
-                        ):
-                            self._add_fmv_pixmap(
-                                item.position + local_center.get_rotated(item.rotation)
-                            )
                 continue
             self._draw_cached_svg(item, all_items, color, labels_only=True)
             if isinstance(item, CvLineal):

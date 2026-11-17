@@ -190,8 +190,25 @@ class Item:
                                  if isinstance(other, CvLineal)
                                  and other.matches(self.position, self.rotation + Angle(math.pi))), None)
             if connected_cv is not None:
-                related_key = (id(connected_cv), connected_cv.position.x,
-                               connected_cv.position.y, connected_cv._visual_state())
+                connected_port = next(
+                    index for index, (position, angle) in enumerate(connected_cv.get_outs())
+                    if position.close_to(self.position)
+                    and angle.close_to(self.rotation + Angle(math.pi))
+                )
+                close_position, close_angle = connected_cv.get_outs()[connected_port]
+                neighbors = tuple(sorted(
+                    (id(other), other.position.x, other.position.y, other._visual_state())
+                    for other in related_items
+                    if isinstance(other, SeccionVia) and other is not connected_cv
+                    and any(position.close_to(close_position)
+                            and angle.close_to(close_angle + Angle(math.pi))
+                            for position, angle in other.get_outs())
+                ))
+                related_key = (
+                    (id(connected_cv), connected_cv.position.x,
+                     connected_cv.position.y, connected_cv._visual_state()),
+                    neighbors,
+                )
         key = (self._visual_state(), related_key)
         if key != self._svg_components_key:
             from svg.svg_export import generate_item_svg_components
