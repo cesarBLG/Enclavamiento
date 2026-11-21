@@ -166,16 +166,16 @@ client = mqtt.Client()
 client.on_connect = on_connect
 client.on_message = on_message
 
-client.connect(BROKER, PORT)
-
 cfg_dependencias = dict()
 for filename in sys.argv[1:]:
     with open(filename, "r", encoding="utf-8") as f:
         data = json.load(f)
+        BROKER = data["MQTT"]["Host"]
         for dep_id, dependencia in data["Dependencias"].items():
             if dependencia.get("Controlada") is False or not dependencia.get("CVs"):
                 continue
             cfg_dependencias[dep_id] = dependencia
+client.connect(BROKER, PORT)
 
 for dep_id, dependencia in cfg_dependencias.items():
     for id, jcv in dependencia["CVs"].items():
