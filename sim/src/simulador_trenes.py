@@ -1,13 +1,15 @@
 import re
 import time
 import threading
+from pathlib import Path
 import paho.mqtt.client as mqtt
 import json
 import sys
-from editor.src.topology import connections_by_side, normalize_connection
+sys.path.append(str(Path(__file__).parent.parent.parent / "editor" / "src"))
+from topology import connections_by_side, normalize_connection
 
 # MQTT configuration
-BROKER = "127.0.0.1"
+BROKER = "10.194.70.1"
 PORT = 1883
 
 # MQTT callbacks
@@ -33,6 +35,7 @@ estado_señales = dict()
 secciones = dict()
 cvs = dict()
 trenes = dict()
+longitud_secciones = dict()
 class seccion:
     def __init__(self, id, jsec):
         self.id = id
@@ -85,8 +88,8 @@ class seccion:
         return conex["Id"], dir
     def set_señal(self, id, dir, pin):
         for i,c in enumerate(self.conexiones[opp_lado(dir)]):
-            if pin == i:
-                self.señales[(c["Id"], dir)] = id
+            if pin == i and c is not None:
+                self.señales[(secciones[c["Id"]].id, dir)] = id
                 break
     def señal_inicio(self, prev, dir):
         return self.señales.get((prev, dir))
@@ -109,13 +112,14 @@ class tren:
     def __init__(self, num, dir, pos):
         self.num = num
         self.dir = dir
-        self.posicion = pos
+        self.posicion = secciones[pos].id
         self.prev = None
         self.inicio_posicion = time.time()
-        self.tiempo_ocupacion = 5
         secciones[pos].ocupar_tren(num)
     def update(self):
-        if time.time() - self.inicio_posicion < self.tiempo_ocupacion:
+        if time.time() - self.inicio_posicion < longitud_secciones.get(self.posicion, 5):
+            return
+        if secciones[self.posicion].trenes.index(self.num) != 0:
             return
         next = secciones[self.posicion].siguiente_seccion(self.dir, self.prev)
         if next[0] == None:
@@ -127,13 +131,13 @@ class tren:
     def avance(self, seccion, dir):
         prev = self.posicion
         def delayed_free():
-            time.sleep(self.tiempo_ocupacion / 3)
+            time.sleep(5)
             secciones[prev].liberar_tren(self.num)
         threading.Thread(
             target=delayed_free,
             daemon=True
         ).start()
-        self.posicion = seccion
+        self.posicion = secciones[seccion].id
         self.prev = prev
         self.dir = dir
         self.inicio_posicion = time.time()
@@ -148,14 +152,15 @@ def on_message(client, userdata, msg):
         dep, id = match.groups()
         estado_agujas[id_from_mqtt(f'{dep}/{id}')] = msg.payload.decode('utf-8')
     if msg.topic == "simulador_trenes":
-        cmd = msg.payload.decode('utf-8').split(' ')
-        if len(cmd) < 2:
-            return
-        if cmd[0] == "T" and len(cmd) == 4:
-            trenes[cmd[1]] = tren(cmd[1], cmd[2], cmd[3])
-        elif cmd[0] == "D":
-            tr = trenes.pop(cmd[1])
-            secciones[tr.posicion].liberar_tren(tr.num)
+        for line in msg.payload.decode('utf-8').splitlines():
+            cmd = line.split(' ')
+            if len(cmd) < 2:
+                continue
+            if cmd[0] == "T" and len(cmd) == 4:
+                trenes[cmd[1]] = tren(cmd[1], cmd[2], cmd[3])
+            elif cmd[0] == "D":
+                tr = trenes.pop(cmd[1])
+                secciones[tr.posicion].liberar_tren(tr.num)
 # Create client
 client = mqtt.Client()
 client.on_connect = on_connect
@@ -176,10 +181,14 @@ for dep_id, dependencia in cfg_dependencias.items():
     for id, jcv in dependencia["CVs"].items():
         full_id = f"{dep_id}:{id}"
         cvs[full_id] = cv(full_id)
+        if jcv.get("Alias"):
+            cvs[jcv["Alias"]] = cvs[full_id]
 for dep_id, dependencia in cfg_dependencias.items():
     for id, jsec in dependencia["Secciones"].items():
         full_id = f"{dep_id}:{id}"
         secciones[full_id] = seccion(full_id, jsec)
+        if jsec.get("Alias"):
+            secciones[jsec["Alias"]] = secciones[full_id]
 for dep_id, dependencia in cfg_dependencias.items():
     for id, jsig in dependencia["Señales"].items():
         full_id = f"{dep_id}:{id}"
