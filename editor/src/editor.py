@@ -40,7 +40,7 @@ except ImportError:
     LEFT_BUTTON = Qt.LeftButton
 
 from items import (
-    Aguja, Angle, Bloqueo, Cruzamiento, CvLineal, Direccion, GEOMETRY_TOLERANCE, IdElemento, Lado, Point, Señal, TipoSeñal,
+    Aguja, Angle, Bloqueo, Cruzamiento, CvLineal, Dependencia, Direccion, GEOMETRY_TOLERANCE, IdElemento, Lado, Point, Señal, TipoSeñal,
     Topera, deserialize_layout, serialize_layout,
 )
 from export import generar_config_ence
@@ -114,6 +114,8 @@ def item_kind_name(item):
         return "Topera"
     if isinstance(item, Bloqueo):
         return "Bloqueo"
+    if isinstance(item, Dependencia):
+        return "Dependencia"
     return None
 
 
@@ -148,6 +150,8 @@ class AddItemCommand:
             self.text = f"Topera {item.id.id}"
         elif isinstance(item, Bloqueo):
             self.text = f"Bloqueo {item.id.id}"
+        elif isinstance(item, Dependencia):
+            self.text = f"Dependencia {item.id.id}"
         else:
             self.text = f"Señal {item.tipo_señal.name} {item.id.id}"
 
@@ -399,6 +403,8 @@ class EditItemCommand:
             state["aspectos_pantalla"] = list(item.aspectos_pantalla)
             state["inicio_ruta"] = item.inicio_ruta
             state["final_ruta"] = item.final_ruta
+        elif isinstance(item, Dependencia):
+            state.update(nombre=item.nombre, remoto=item.remoto)
         return state
 
     def apply(self, state):
@@ -417,6 +423,9 @@ class EditItemCommand:
             self.item.aspectos_pantalla = list(state["aspectos_pantalla"])
             self.item.inicio_ruta = state["inicio_ruta"]
             self.item.final_ruta = state["final_ruta"]
+        elif isinstance(self.item, Dependencia):
+            self.item.nombre = state["nombre"]
+            self.item.remoto = state["remoto"]
         self.editor.set_selection([self.item])
 
     def execute(self):
@@ -445,6 +454,8 @@ class ItemConfigPanel(QWidget):
         self.signal_route_end = None
         self.speed_list = None
         self.speed_edit = None
+        self.station_name_edit = None
+        self.remote_edit = None
 
         layout = QVBoxLayout(self)
         self.title_label = QLabel("Configuración del elemento", self)
@@ -488,6 +499,8 @@ class ItemConfigPanel(QWidget):
         self.signal_route_end = None
         self.speed_list = None
         self.speed_edit = None
+        self.station_name_edit = None
+        self.remote_edit = None
         self.current_kind = None
 
     def build_form(self, kind):
@@ -495,7 +508,10 @@ class ItemConfigPanel(QWidget):
         self.current_kind = kind
 
         self.name_edit = QLineEdit(self)
-        if kind == "Tramo de vía":
+        if kind == "Dependencia":
+            self.name_edit.setReadOnly(True)
+            self.form_layout.addRow("ID de estación:", self.name_edit)
+        elif kind == "Tramo de vía":
             self.form_layout.addRow("Nombre del CV:", self.name_edit)
         else:
             self.form_layout.addRow("Nombre:", self.name_edit)
@@ -510,6 +526,12 @@ class ItemConfigPanel(QWidget):
         position_layout.addWidget(self.position_x_edit)
         position_layout.addWidget(self.position_y_edit)
         self.form_layout.addRow("Posición (X, Y):", position_widget)
+
+        if kind == "Dependencia":
+            self.station_name_edit = QLineEdit(self)
+            self.remote_edit = QLineEdit(self)
+            self.form_layout.addRow("Nombre completo:", self.station_name_edit)
+            self.form_layout.addRow("PLO remoto:", self.remote_edit)
 
         if kind == "Cambio de agujas":
             self.cv_edit = QLineEdit(self)
@@ -595,6 +617,9 @@ class ItemConfigPanel(QWidget):
         self.name_edit.setText(item.id.id_corto)
         self.position_x_edit.setText(repr(item.position.x))
         self.position_y_edit.setText(repr(item.position.y))
+        if isinstance(item, Dependencia):
+            self.station_name_edit.setText(item.nombre)
+            self.remote_edit.setText(item.remoto)
 
         if isinstance(item, (CvLineal, Aguja)) and self.side_combo is not None:
             index = self.side_combo.findData(item.lado.name if item.lado else "")
@@ -656,6 +681,8 @@ class ItemConfigPanel(QWidget):
         self.editor.apply_item_configuration(
             item, short_id, cv_name, signal_type, side, focos, velocidades,
             cv_options, position, inicio_ruta, final_ruta,
+            nombre=self.station_name_edit.text() if self.station_name_edit else None,
+            remoto=self.remote_edit.text() if self.remote_edit else None,
         )
 
 
@@ -747,7 +774,12 @@ class GridView(QGraphicsView):
                     hits.append((distance, item))
                 continue
             if not isinstance(item, Señal):
-                if isinstance(item, Topera):
+                if isinstance(item, Dependencia):
+                    half_width = max(len(item.nombre) * 6, len(item.id.id_corto) * 5) + len(item.remoto) * 5 + 5
+                    if (abs(point.x() - item.position.x) <= half_width + PICK_TOLERANCE
+                            and -30 <= point.y() - item.position.y <= 16):
+                        hits.append((0, item))
+                elif isinstance(item, Topera):
                     angle = item.rotation.angle
                     ux, uy = cos(angle), sin(angle)
                     center_x = item.position.x + ux * 2
@@ -919,6 +951,8 @@ class GridView(QGraphicsView):
                     item, state, delta, move_port, fine_delta,
                     snap=not group_drag,
                 )
+                if isinstance(item, Dependencia):
+                    item.position = self.editor.snap_point_to_grid_corner(item.position)
             if group_drag:
                 self.editor.snap_group_to_grid(self.drag_items, point)
             for signal in () if group_drag else signals_moving_with_track:
@@ -1012,6 +1046,13 @@ class GridView(QGraphicsView):
                                 visible_points = [center - perpendicular, center + perpendicular]
                             elif isinstance(item, Bloqueo):
                                 visible_points = [item.position]
+                            elif isinstance(item, Dependencia):
+                                half_width = max(len(item.nombre) * 6,
+                                                len(item.id.id_corto) * 5) + len(item.remoto) * 5 + 5
+                                visible_points = [
+                                    Point(item.position.x - half_width, item.position.y - 30),
+                                    Point(item.position.x + half_width, item.position.y + 16),
+                                ]
                             elif isinstance(item, CvLineal):
                                 visible_points = [
                                     item.position + path_point.get_rotated(item.rotation)
@@ -1145,6 +1186,10 @@ class TrackEditor(QMainWindow):
         self.add_tool(tools, "Señal", "signal", None)
         self.add_tool(tools, "Topera", "topera", None)
         self.add_tool(tools, "Bloqueo", "bloqueo", None)
+        self.add_tool(tools, "Dependencia", "dependencia", None)
+        station_button = self.tool_buttons[-1][0]
+        station_button.setText("EST")
+        station_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly if hasattr(Qt, "ToolButtonStyle") else Qt.ToolButtonTextOnly)
         self.merge_button = QToolButton(self)
         self.merge_button.setIcon(self.make_icon("merge"))
         self.merge_button.setIconSize(QSize(36, 36))
@@ -1917,6 +1962,16 @@ class TrackEditor(QMainWindow):
             QMessageBox.warning(self, "Falta la dependencia", "Indica el nombre de la estación antes de añadir elementos.")
             self.dependency.setFocus()
             return
+        if kind == "dependencia":
+            if any(isinstance(item, Dependencia)
+                   for item in self.items_by_dependency.get(dependency, [])):
+                QMessageBox.warning(self, "Estación existente", "Esta dependencia ya tiene un rótulo de estación.")
+                return
+            item = Dependencia(IdElemento(dependency, dependency, canonical=True),
+                               self.snap_point_to_grid_corner(
+                                   Point(scene_point.x(), scene_point.y())))
+            self.run_command(AddItemCommand(self, item))
+            return
         if kind == "track":
             center = Point(scene_point.x(), scene_point.y())
             if value == 4:
@@ -2616,11 +2671,11 @@ class TrackEditor(QMainWindow):
             item.position = center
             self.set_aguja_rotation(item, best_rotation)
 
-    def apply_item_configuration(self, item, short_id, cv_name, signal_type, side, focos=None, velocidades=None, cv_options=None, position=None, inicio_ruta=True, final_ruta=True):
+    def apply_item_configuration(self, item, short_id, cv_name, signal_type, side, focos=None, velocidades=None, cv_options=None, position=None, inicio_ruta=True, final_ruta=True, nombre=None, remoto=None):
         if item is None:
             return False
         item_dependency = item.id.dep
-        if not short_id:
+        if not short_id and not isinstance(item, Dependencia):
             QMessageBox.warning(
                 self,
                 "Datos incompletos",
@@ -2628,7 +2683,7 @@ class TrackEditor(QMainWindow):
             )
             return False
         try:
-            new_id = IdElemento(short_id, item_dependency)
+            new_id = item.id if isinstance(item, Dependencia) else IdElemento(short_id, item_dependency)
             new_cv = IdElemento(cv_name, item_dependency) if isinstance(item, Aguja) else None
         except ValueError as exc:
             QMessageBox.warning(self, "Identificador inválido", str(exc))
@@ -2657,6 +2712,9 @@ class TrackEditor(QMainWindow):
             new_state["aspectos_pantalla"] = list(velocidades or [])
             new_state["inicio_ruta"] = inicio_ruta
             new_state["final_ruta"] = final_ruta
+        elif isinstance(item, Dependencia):
+            new_state["nombre"] = nombre or ""
+            new_state["remoto"] = remoto or ""
         self.run_command(EditItemCommand(self, item, new_state, f"Configurar {item.id.id}"))
         return True
 
@@ -2809,7 +2867,7 @@ class TrackEditor(QMainWindow):
         items = [item for dependency_items in self.items_by_dependency.values()
                  for item in dependency_items]
         try:
-            dependencies = generar_config_ence(deepcopy(items))
+            dependencies = generar_config_ence(items)
             output = {"Dependencias": dependencies}
 
              # Look for a matching template file
@@ -2849,7 +2907,7 @@ class TrackEditor(QMainWindow):
                 source = f"\n{origin.line.strip()}" if origin.line else ""
                 message = f"{location}{source}\n\n{exc}"
             else:
-                message = str(exc)
+                message = str(exc)+"foo"
             QMessageBox.critical(self, "Error al exportar", message)
             return
         self.statusBar().showMessage(f"Configuración exportada: {path}")
@@ -3104,6 +3162,10 @@ class TrackEditor(QMainWindow):
     def _grid_item_positions(item):
         if isinstance(item, SECTION_TYPES):
             return [position for position, _ in item.get_outs()]
+        if isinstance(item, Dependencia):
+            width = max(len(item.nombre) * 6, len(item.id.id_corto) * 5) + len(item.remoto) * 5 + 5
+            return [Point(item.position.x - width, item.position.y),
+                    Point(item.position.x + width, item.position.y)]
         return [item.position]
 
     def draw_items(self):

@@ -12,7 +12,7 @@ from rich_click import group
 from tomlkit import item
 
 from export import get_conexiones
-from items import Aguja, Bloqueo, Cruzamiento, CvLineal, Item, Point, Señal, SeccionVia, Topera
+from items import Aguja, Bloqueo, Cruzamiento, CvLineal, Dependencia, Item, Point, Señal, SeccionVia, Topera
 from label_positions import (
 	LABEL_FONT_SIZE, LABEL_SIDE_PADDING, SIGNAL_ICON_HEIGHT, SIGNAL_ICON_WIDTH,
 	label_anchor, label_angle, label_background_width, label_text_anchor,
@@ -136,7 +136,7 @@ def _track_group(item: CvLineal, points=None, *, include_label=True):
 	block.set("{http://www.inkscape.org/namespaces/inkscape}label", "bv")
 	group.append(block)
 	if include_label:
-		_add_item_label_group(group, "*0", label_center.x, label_center.y,
+		_add_item_label_group(group, "  *0  ", label_center.x, label_center.y,
 		                      label="numerador", angle=angle, top_offset=-7)
 		_add_item_label_group(group, "AVERÍA", label_center.x, label_center.y,
 		                      label="averia", angle=angle, top_offset=-7)
@@ -260,6 +260,21 @@ def _signal_group(item: Señal) -> tuple[ElementTree.Element, list[Point]]:
 		"transform": f"translate({item.position.x:.15g} {item.position.y:.15g})",
 		"{http://www.inkscape.org/namespaces/inkscape}label": item.id.id,
 	})
+	desc = ElementTree.Element("{http://www.w3.org/2000/svg}desc")
+	mandos = []
+	if item.inicio_ruta:
+		if item.tipo_señal != "Maniobra" and item.tipo_señal != "Retroceso":
+			mandos += ["I", "ID", "R"]
+		mandos += ["M", "DAI", "CS", "BS", "ABS"]
+	else:
+		mandos += ["CS","NPS"]
+	mando_defecto = mandos[0]
+	if item.final_ruta:
+		mandos += ["DEI","BD","ABD"]
+	if item.inicio_ruta:
+		mandos += ["SA", "ASA", "FAI", "AFA"]
+	desc.text = f"{mando_defecto};{','.join(mandos)}"
+	group.append(desc)
 	group.append(use)
 	angle_radians = label_angle(item)
 	label_transform = (
@@ -491,6 +506,39 @@ def _topera_group(item: Topera):
 	return group
 
 
+def _dependencia_group(item: Dependencia):
+	inkscape_namespace = "http://www.inkscape.org/namespaces/inkscape"
+	group = ElementTree.Element("{http://www.w3.org/2000/svg}g", {
+		f"{{{inkscape_namespace}}}label": item.id.id_corto,
+	})
+	def add_text(text, y, size, label):
+		node = ElementTree.SubElement(group, "{http://www.w3.org/2000/svg}text", {
+			"x": "0", "y": str(y), "text-anchor": "middle",
+			"dominant-baseline": "middle", "font-size": str(size),
+			"font-family": "sans-serif", f"{{{inkscape_namespace}}}label": label,
+			"fill": "#fff",
+		})
+		span = ElementTree.SubElement(node, "{http://www.w3.org/2000/svg}tspan")
+		span.text = text
+		return node
+	add_text(item.nombre, -15, 20, "nombre")
+	name_box = max(20, len(item.id.id_corto) * 10)
+	ElementTree.SubElement(group, "{http://www.w3.org/2000/svg}rect", {
+		"x": f"{-name_box / 2:.15g}", "y": "-8", "width": f"{name_box:.15g}",
+		"height": "20", "fill": "#1976d2", f"{{{inkscape_namespace}}}label": "fondo",
+	})
+	add_text(item.id.id_corto, 2, 16, "mnemonico")
+	node = ElementTree.SubElement(group, "{http://www.w3.org/2000/svg}text", {
+		"x": f"{name_box / 2 + 5:.15g}", "y": "2", "text-anchor": "start",
+		"dominant-baseline": "middle", "font-size": "16", "font-family": "sans-serif",
+		f"{{{inkscape_namespace}}}label": "remoto",
+		"fill": "#fff",
+	})
+	span = ElementTree.SubElement(node, "{http://www.w3.org/2000/svg}tspan")
+	span.text = item.remoto
+	return group
+
+
 def generate_item_svg_components(item: Item, related_items=()):
 	"""Devuelve elementos SVG locales agrupados por layer, listos para cachear."""
 	if isinstance(item, SeccionVia):
@@ -541,6 +589,8 @@ def generate_item_svg_components(item: Item, related_items=()):
 			components.update(Bloqueo=[lock], Destino=[destination])
 			if len(fmv):
 				components["FMV"] = [fmv]
+		elif isinstance(item, Dependencia):
+			components["Estación"] = [_dependencia_group(item)]
 	position = item.position
 	for layer, elements in components.items():
 		for element in elements:
@@ -560,6 +610,8 @@ def generate_item_svg_components(item: Item, related_items=()):
 					element[0].set("transform", f"translate({-cos(item.rotation.angle) * 11 - simbolos['FMV'].width / 2:.15g} {-sin(item.rotation.angle) * 11 - simbolos['FMV'].height / 2:.15g})")
 			elif isinstance(item, Bloqueo):
 				element.set("transform", f"rotate({degrees(item.rotation.angle):.15g})")
+			elif isinstance(item, Dependencia):
+				element.set("transform", "")
 	return components
 
 
@@ -579,6 +631,8 @@ def _export_cached_components(item, components):
 					component.set("transform", f"translate({item.position.x + cos(item.rotation.angle) * 11 - simbolos['IMV'].width / 2:.15g} {item.position.y + sin(item.rotation.angle) * 11 - simbolos['IMV'].height / 2:.15g})")
 			elif isinstance(item, Bloqueo):
 				component.set("transform", f"translate({item.position.x:.15g} {item.position.y:.15g}) rotate({degrees(item.rotation.angle):.15g})")
+			elif isinstance(item, Dependencia):
+				component.set("transform", f"translate({item.position.x:.15g} {item.position.y:.15g})")
 	return result
 
 
@@ -592,7 +646,7 @@ def export_svg(items: Iterable[Item]) -> str:
 	items = list(items)
 	secciones = [item for item in items if isinstance(item, SeccionVia)]
 	connections = {id(item): get_conexiones(item, secciones) for item in secciones}
-	layers = {"CV": [], "Aguja": [], "Cruzamientos": [], "Señal": [], "IMV": [], "FMV": [], "Destino": [], "Bloqueo": []}
+	layers = {"CV": [], "Aguja": [], "Cruzamientos": [], "Señal": [], "IMV": [], "FMV": [], "Destino": [], "Bloqueo": [], "Estación": []}
 	bounds = [None,None,None,None]
 	def update_bounds(points):
 		if isinstance(points, Point):
@@ -671,6 +725,11 @@ def export_svg(items: Iterable[Item]) -> str:
 				item.position - Point(cos(angle) * 11, sin(angle) * 11),
 				simbolos["FMV"].width, simbolos["FMV"].height,
 			)
+		elif isinstance(item, Dependencia):
+			layers["Estación"].extend(_export_cached_components(item, cached)["Estación"])
+			width = max(len(item.nombre) * 12, len(item.id.id_corto) * 10) + len(item.remoto) * 9.5 + 10
+			update_bounds([Point(item.position.x - width / 2, item.position.y - 27),
+			               Point(item.position.x + width / 2, item.position.y + 12)])
 		elif isinstance(item, Aguja):
 			absolute = [item.position]
 			absolute.extend(

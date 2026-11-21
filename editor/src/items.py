@@ -19,6 +19,7 @@ class TipoElemento(Enum):
     TOPERA = 4
     SEÑAL = 5
     BLOQUEO = 6
+    DEPENDENCIA = 7
 
 class Lado(Enum):
     Par = 0
@@ -140,7 +141,12 @@ class TipoSeñal(Enum):
 
 
 class IdElemento:
-    def __init__(self, id: str, dep: str = None):
+    def __init__(self, id: str, dep: str = None, canonical: bool = False):
+        if canonical:
+            if dep is None:
+                raise ValueError(f"Dependencia desconocida para {id}")
+            self.id, self.dep, self.id_corto = id, dep, id
+            return
         idx = id.find(":")
         if idx != -1:
             self.id, self.dep, self.id_corto = id, id[:idx], id[idx + 1:]
@@ -253,7 +259,8 @@ class Item:
                         "Cruzamiento": Cruzamiento.deserialize,
                         "Señal": Señal.deserialize,
                         "Topera": Topera.deserialize,
-                        "Bloqueo": Bloqueo.deserialize}
+                        "Bloqueo": Bloqueo.deserialize,
+                        "Dependencia": Dependencia.deserialize}
         kind = data.get("tipo")
         if kind not in constructors:
             raise ValueError(f"Tipo de elemento desconocido: {kind!r}.")
@@ -605,6 +612,33 @@ class Bloqueo(Item):
             raise ValueError(f"Orientación visual inválida para {ident.id}.")
         item.volteado = volteado
         return item
+
+
+class Dependencia(Item):
+    """Rótulo de estación asociado a la dependencia de trabajo."""
+    def __init__(self, id: IdElemento, position: Point, nombre: str = "",
+                 remoto: str = ""):
+        super().__init__(id, TipoElemento.DEPENDENCIA, position)
+        self.nombre = str(nombre)
+        self.remoto = str(remoto)
+
+    def serialize(self):
+        return {**super().serialize(), "tipo": "Dependencia",
+                "nombre": self.nombre, "remoto": self.remoto}
+
+    @classmethod
+    def deserialize(cls, data, dependency):
+        if not isinstance(data.get("id"), str):
+            raise ValueError("Falta el identificador del elemento.")
+        station_id = data["id"]
+        if station_id == f"{dependency}:{dependency}":
+            station_id = dependency  # Normalize layouts saved by the earlier editor build.
+        ident = IdElemento(station_id, dependency, canonical=True)
+        position = Point.deserialize(data.get("posicion"))
+        nombre, remoto = data.get("nombre", ""), data.get("remoto", "")
+        if not isinstance(nombre, str) or not isinstance(remoto, str):
+            raise ValueError(f"Datos de estación inválidos para {ident.id}.")
+        return cls(ident, position, nombre, remoto)
 
 def _validate_layout(dependencies):
     # Los elementos pueden compartir coordenadas o cruzarse; las relaciones de

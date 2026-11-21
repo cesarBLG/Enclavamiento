@@ -1,7 +1,7 @@
 """Exporta el grafo geométrico de vías al formato de enclavamiento."""
 
 from typing import List
-from items import Aguja, Cruzamiento, CvLineal, Lado, Señal, SeccionVia, Bloqueo, Topera
+from items import Item, Aguja, Cruzamiento, CvLineal, Lado, Señal, SeccionVia, Bloqueo, Topera
 
 def conectados(first, second):
     p1, a1 = first
@@ -116,7 +116,7 @@ def get_seccion_pin_lado(out, sec, conexiones):
     return None, None, None
 
 
-def generar_config_ence(itemlist: List[SeccionVia]):
+def generar_config_ence(itemlist: List[Item]):
     secciones = [item for item in itemlist if isinstance(item, SeccionVia)]
     conexiones = {item: get_conexiones(item, secciones) for item in secciones}
     asignar_lado(secciones, conexiones)
@@ -197,6 +197,8 @@ def generar_config_ence(itemlist: List[SeccionVia]):
         elif isinstance(item, Topera):
             get_config(item.id.dep, "DestinosRuta")[item.id.id_corto] = {"Tipo": "FinalVía"}
         elif isinstance(item, Bloqueo):
+            get_config(item.id.dep, "DestinosRuta")[item.id.id_corto] = {"Tipo": "Colateral"}
+            continue
             for sec in secciones:
                 for out, pos in enumerate(sec.get_outs()):
                     if conectados(item.get_outs()[0], pos):
@@ -223,5 +225,4 @@ def generar_config_ence(itemlist: List[SeccionVia]):
                         if len(via) > 0:
                             bloqueo_config["Vía"] = via
                         get_config_list(item.id.dep, "Bloqueos").append(bloqueo_config)
-            get_config(item.id.dep, "DestinosRuta")[item.id.id_corto] = {"Tipo": "Colateral"}
     return config

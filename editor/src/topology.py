@@ -58,9 +58,8 @@ def connections_by_side(section, dependency):
         if not isinstance(value, list):
             value = [value]
         result[side] = [
-            normalized
+            normalize_connection(item, dependency)
             for item in value
-            if (normalized := normalize_connection(item, dependency)) is not None
         ]
     return result
 
