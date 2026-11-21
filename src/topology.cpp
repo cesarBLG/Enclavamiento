@@ -197,7 +197,7 @@ bool seccion_via::afectada_galibo(lados<int> outs)
             // Posición actual desconocida
             int in2 = sec->active_outs[opp_lado(pt.pin_ajeno->first)][pt.pin_ajeno->second];
             for (auto &[in3,out3] : sec->active_outs[pt.pin_ajeno->first]) {
-                if ((out3 < 0 && in2 == in3) || out3 == pt.pin_ajeno->second)
+                if ((out3 < 0 && in2 == in3) || (out3 == pt.pin_ajeno->second && sec->ocupacion_outs[opp_lado(pt.pin_ajeno->first)] == in3))
                     return true;
             }
         }
@@ -226,7 +226,7 @@ std::optional<Lado> seccion_via::get_lado_movimiento()
         if (bloqueo_act.estado == EstadoBloqueo::BloqueoImpar)
             return Lado::Impar;
         if (bloqueo_act.estado == EstadoBloqueo::BloqueoPar)
-            return Lado::Impar;
+            return Lado::Par;
     }
     return {};
 }
@@ -258,8 +258,14 @@ void seccion_via::message_cv(const id_elemento &id, estado_cv ev)
                 auto &secs = siguientes_secciones[opp_lado(*l)];
                 if (secs.size() == 1) {
                     auto *sec = secciones[secs[0].id];
-                    if (sec->bloqueo_asociado && sec->get_cv() != nullptr && cv_libre(sec->get_cv()->get_state()))
-                        intempestiva = true;
+                    bool prev_intempestiva = sec->get_cv() != nullptr && (cv_libre(sec->get_cv()->get_state()) || sec->get_cv()->ocupacion_intempestiva);
+                    if (sec->bloqueo_asociado) {
+                        if (bloqueo_act.estado == EstadoBloqueo::Desbloqueo || prev_intempestiva)
+                            intempestiva = true;
+                    } else if (!bloqueo_act.estacion_cerrada[*l]) {
+                        if (bloqueo_act.estado == EstadoBloqueo::Desbloqueo || (prev_intempestiva && !sec->is_estacionamiento()))
+                            intempestiva = true;
+                    }
                 }
             }
         } else {
@@ -469,11 +475,11 @@ RemotaCVX cruzamiento::get_estado_remota()
 
 punto_negro::punto_negro(seccion_via *sec, const json &j) : seccion_afectada(sec)
 {
-    seccion_causante = id_elemento::from_default_dep(sec->id.dependencia, j["Id"]);
+    seccion_causante = id_elemento::from_default_dep(j["Id"], sec->id.dependencia);
     if (j.contains("Afectado"))
         pin_propio = {j["Afectado"]["Lado"], j["Afectado"]["Pin"]};
     if (j.contains("Causante"))
-        pin_propio = {j["Causante"]["Lado"], j["Causante"]["Pin"]};
+        pin_ajeno = {j["Causante"]["Lado"], j["Causante"]["Pin"]};
 }
 flanco::flanco(seccion_via *sec, const json &j)
 {

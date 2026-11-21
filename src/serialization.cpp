@@ -417,6 +417,7 @@ void to_json(json &j, const estado_bloqueo_lado &estado)
     j["Estado"] = estado.estado;
     j["EstadoObjetivo"] = estado.estado_objetivo;
     j["EstadoCVs"] = estado.estado_cvs;
+    j["Normalizado"] = estado.normalizado;
     j["Prohibido"] = estado.prohibido;
     j["Ruta"] = estado.ruta;
     j["Prioridad"] = estado.prioridad_itinerario;
@@ -426,6 +427,7 @@ void to_json(json &j, const estado_bloqueo_lado &estado)
     j["ManiobraCompatible"] = estado.maniobra_compatible;
     j["MandoEstación"] = estado.mando_estacion;
     j["NormalizarEscape"] = estado.normalizar_escape;
+    j["NormalizarBloqueo"] = estado.normalizar_bloqueo;
     j["BloqueoSiguiente"] = estado.bloqueo_siguiente;
     j["Cerrada"] = estado.cerrada;
     j["CerrarSalida"] = estado.cerrar_salida;
@@ -439,6 +441,7 @@ void from_json(const json &j, estado_bloqueo_lado &estado)
     estado.estado = j["Estado"];
     estado.estado_objetivo = j["EstadoObjetivo"];
     estado.estado_cvs = j["EstadoCVs"];
+    estado.normalizado = j["Normalizado"];
     estado.prohibido = j["Prohibido"];
     estado.ruta = j["Ruta"];
     estado.prioridad_itinerario = j.value("Prioridad", 0);
@@ -448,6 +451,7 @@ void from_json(const json &j, estado_bloqueo_lado &estado)
     estado.maniobra_compatible = j["ManiobraCompatible"];
     estado.mando_estacion = j["MandoEstación"];
     estado.normalizar_escape = j.value("NormalizarEscape", false);
+    estado.normalizar_bloqueo = j.value("NormalizarBloqueo", false);
     estado.bloqueo_siguiente = j["BloqueoSiguiente"];
     estado.cerrada = j["Cerrada"];
     estado.cerrar_salida = j.value("CerrarSalida", false);

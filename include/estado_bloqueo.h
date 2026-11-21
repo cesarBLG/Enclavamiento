@@ -2,6 +2,7 @@
 #include "enums.h"
 #include "lado.h"
 #include "estado_mando.h"
+#include "estado_cv.h"
 
 struct estado_bloqueo
 {
@@ -23,6 +24,7 @@ struct estado_bloqueo
 struct estado_bloqueo_lado
 {
     std::map<std::string,EstadoCV> estado_cvs;
+    bool normalizado = true;
     bool prohibido=false;
     bool escape=false;
     ACTC actc=ACTC::NoNecesaria;
@@ -34,6 +36,7 @@ struct estado_bloqueo_lado
     EstadoBloqueo estado=EstadoBloqueo::SinDatos;
     EstadoBloqueo estado_objetivo=EstadoBloqueo::SinDatos;
     bool normalizar_escape;
+    bool normalizar_bloqueo;
     bool bloqueo_siguiente = false;
     bool cerrada = false;
     bool cerrar_salida = false;

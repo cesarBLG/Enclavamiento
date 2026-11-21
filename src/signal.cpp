@@ -208,6 +208,7 @@ void señal_impl::determinar_aspecto()
         EstadoCanton sec_ocup = sec_act->get_ocupacion(sec_prv, dir);
         canton = std::max(sec_ocup, canton);
         if (sec_act->get_cv() != nullptr && sec_act->get_cv()->is_btv()) prohibir_abrir = true;
+        if (sec_act->get_cv() != nullptr && sec_act->get_cv()->is_perdida_secuencia()) cerrar = true;
         dir_prev = dir;
         seccion_via *next = sec_act->siguiente_seccion(sec_prv, dir);
         for (auto *pn : sec_act->pns) {
@@ -464,7 +465,7 @@ void señal_fundamental_impl::determinar_focos()
         aspecto_campo_reconocido = true;
         return;
     }
-    bool fusion = false;
+    fusion = false;
     std::map<FocoSeñal, EstadoFocoSeñal> *combinacion = nullptr;
     int combinacion_pantalla = 0;
     while (!combinacion) {
@@ -534,6 +535,12 @@ void señal_fundamental_impl::determinar_focos()
         }
     }
     dependencias[id.dependencia]->set_alarma(TipoAlarma::SE, this, apagada ? 2 : (fusion ? 1 : 0), true);
+    if (bloqueo_asociado && (tipo == TipoSeñal::Intermedia || tipo == TipoSeñal::Avanzada) && fusion) {
+        auto *blq = bloqueos[*bloqueo_asociado];
+        if (blq->is_normalizado()) {
+            blq->update();
+        }
+    }
     unsigned int mask = 0;
     if (combinacion != nullptr) {
         for (auto &[foco, estado] : *combinacion) {

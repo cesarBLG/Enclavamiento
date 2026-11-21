@@ -73,6 +73,7 @@ protected:
     int64_t ultimo_cambio_focos_campo = 0;
     bool deteccion_fusion_fria = false;
     bool apagada = false;
+    bool fusion = false;
     std::set<Aspecto> aspectos_disponibles;
     std::vector<velocidad_agujas> aspectos_pantalla;
     int pajarita;
@@ -153,8 +154,9 @@ protected:
         return (--aspectos_maximos_anterior_señal[id].upper_bound(asp))->second;
     }
     void determinar_focos();
-    bool normalizar_fusion();
 public:
+    bool normalizar_fusion();
+    bool is_fundida() { return fusion; }
     void message_señal(estado_señal est) override {}
     void message_inicio(estado_inicio_ruta est) override {}
     void message_señal_campo(unsigned int focos_mask)

@@ -60,6 +60,12 @@ public:
         return aceptado;
     }
 
+    virtual void set_perdida_secuencia(bool perdida)
+    {
+        if (perdida_secuencia == perdida) return;
+        send_message("cv/"+id_to_mqtt(id.id)+"/action", perdida ? "PérdidaSecuencia" : "NormalizarSecuencia");
+    }
+
     RemotaCV get_estado_remota();
     RemotaCVA get_estado_remota_agujas();
 };
@@ -83,8 +89,8 @@ public:
     }
     virtual void message_cv(const std::string &msg)
     {
-        if (msg == "NormalizarSecuencia") perdida_secuencia = false;
-        else if (msg == "PérdidaSecuencia") perdida_secuencia = true;
+        if (msg == "NormalizarSecuencia") set_perdida_secuencia(false);
+        else if (msg == "PérdidaSecuencia") set_perdida_secuencia(true);
     }
     RespuestaMando mando(const std::string &cmd, int me) override
     {
@@ -115,6 +121,13 @@ public:
             }
         }
         return aceptado;
+    }
+    void set_perdida_secuencia(bool perdida) override
+    {
+        if (perdida_secuencia == perdida) return;
+        if (!perdida && !cv_libre(estado)) return;
+        perdida_secuencia = perdida;
+        send_state();
     }
 };
 class cv_impl_cv : public cv_impl

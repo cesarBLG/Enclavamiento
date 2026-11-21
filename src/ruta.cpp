@@ -405,7 +405,11 @@ bool ruta::establecer(bool msg)
             return false;
         }
         clear_timer(diferimetro_dai);
+        clear_timer(diferimetro_dei);
+        clear_timer(diferimetro_deslizamiento);
         diferimetro_dai = nullptr;
+        diferimetro_dei = nullptr;
+        diferimetro_deslizamiento = nullptr;
         for (auto  &sig : señales) {
             sig->ruta_mandada(this);
         }
@@ -418,8 +422,12 @@ bool ruta::establecer(bool msg)
         if (destino->ruta_activa == this) destino->ruta_activa = nullptr;
         return false;
     }
+    clear_timer(diferimetro_dai);
     clear_timer(diferimetro_dei);
+    clear_timer(diferimetro_deslizamiento);
+    diferimetro_dai = nullptr;
     diferimetro_dei = nullptr;
+    diferimetro_deslizamiento = nullptr;
     return true;
 }
 void movimiento::update()
@@ -635,7 +643,7 @@ void ruta::update()
                 inicio_temporizacion_fai = 0;
             }
         }
-        if (aut_salida && solicitud_fai && prioridad >= 0 && get_milliseconds() - inicio_temporizacion_fai > tiempo_espera_fai) {
+        if (estado_fai != EstadoFAI::Cancelado && aut_salida && solicitud_fai && prioridad >= 0 && get_milliseconds() - inicio_temporizacion_fai > tiempo_espera_fai) {
             estado_fai = EstadoFAI::Solicitud;
             inicio_temporizacion_fai = get_milliseconds();
         }
@@ -841,7 +849,7 @@ bool ruta::dai(bool anular_bloqueo)
         return true;
     }
     // Si la proximidad está libre, la disolución es inmediata
-    if ((num_zonas_proximidad > 0 && zona_proximidad == 0) && temporizador_dai0 == 0) {
+    if ((num_zonas_proximidad > 0 && zona_proximidad == 0) && (temporizador_dai0 == 0 || !señal_inicio->ruta_necesaria)) {
         disolucion_parcial(anular_bloqueo);
     } else if (diferimetro_dai == nullptr) {
         int64_t temporizador;
@@ -1056,7 +1064,7 @@ RespuestaMando ruta::mando(const std::string &inicio, const std::string &fin, co
     if (cmd == "I" || cmd == "ER" || cmd == "R" || cmd == "M") return establecer(true) ? RespuestaMando::Aceptado : RespuestaMando::OrdenRechazada;
     else if (cmd == "ID") {
         if (establecer(true)) return RespuestaMando::Aceptado;
-        if (!fai_disparo_unico && (estado_fai == EstadoFAI::Cancelado || estado_fai == EstadoFAI::EnEspera)) {
+        if (!fai_disparo_unico && (estado_fai == EstadoFAI::Cancelado || estado_fai == EstadoFAI::EnEspera) && (señal_inicio->ruta_fai == this || señal_inicio->ruta_fai == nullptr)) {
             fai_disparo_unico = true;
             señal_inicio->ruta_fai = this;
             estado_fai = EstadoFAI::Solicitud;

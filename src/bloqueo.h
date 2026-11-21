@@ -23,6 +23,7 @@ public:
     señal_impl *señal_entrada = nullptr;
     bool deslizamiento_bloqueo;
     bool normalizacion_escape_auto = false;
+    bool supervisar_secuencia = false;
 protected:
     Lado sentido_preferente;
     EstadoBloqueo estado_inicial;
@@ -68,6 +69,7 @@ public:
         }
     }
     void update();
+    void update_normalizacion();
     TipoSoneria update_soneria()
     {
         auto it = sonerias.find(TipoSoneria::EstablecimientoBloqueo);
@@ -97,6 +99,8 @@ public:
             update();
         }
     }
+    bool normalizar();
+    bool is_normalizado() { return normalizado && colateral.normalizado; }
     void cambio_mando(const estado_mando &mando)
     {
         if (!mando.central) actc = ACTC::NoNecesaria; // Paso a ML
@@ -187,15 +191,16 @@ public:
                 return RespuestaMando::Aceptado;
             }
         } else if (cmd == "NB") {
-            /*if (!normalizado && !ocupado) {
+            if (!normalizado && !ocupado.par && !ocupado.impar) {
                 if (me == 1) {
-                    log(id, "normalizado", LOG_DEBUG);
-                    normalizado = true;
-                    aceptado = RespuestaMando::Aceptado;
+                    if (normalizar()) {
+                        normalizar_bloqueo = true;
+                        aceptado = RespuestaMando::Aceptado;
+                    }
                 } else {
                     return RespuestaMando::MandoEspecialNecesario;
                 }
-            }*/
+            }
         }
         if (aceptado != RespuestaMando::OrdenRechazada) update();
         return aceptado;
@@ -226,7 +231,7 @@ public:
         r.BLQ_COL_MAN = colateral.mando_estacion.central ? 0 : 1;
         r.BLQ_ACTC = (int)colateral.actc;
         r.BLQ_CSB = colateral.cierre_señales ? 2 : (cierre_señales ? 1 : 0);
-        r.BLQ_NB = 0;//normalizado ? 0 : 1;
+        r.BLQ_NB = is_normalizado() ? 0 : 1;
         r.BLQ_ME = me_pendiente ? 1 : 0;
         r.BLQ_PROX = sonerias.find(TipoSoneria::OcupacionProximidad) != sonerias.end();
         return r;

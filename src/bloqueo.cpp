@@ -113,6 +113,7 @@ void bloqueo::send_state()
     cerrada = dependencias[estacion]->cerrada;
     estado_completo.estado = estado;
     estado_completo.ocupado = ocupado.impar || ocupado.par;
+    estado_completo.normalizado = is_normalizado();
     for (int i=0; i<2; i++) {
         Lado l = i == 0 ? lado : opp_lado(lado);
         estado_bloqueo_lado &e = i == 0 ? *((estado_bloqueo_lado*)this) : colateral;
@@ -170,8 +171,8 @@ void bloqueo::message_cv(const id_elemento &id, estado_cv ecv)
                 esc = true;
             }
             // Ocupación del primer circuito de trayecto
-            if (index == 0 && (ecv.evento || (cv_entrada != nullptr && cv_entrada->get_state() > EstadoCV::Prenormalizado))) {
-                // No se produce escape si está establecida maniobra que incluye el CV de trayecto
+            if (index == 0 && (ecv.evento || (cv_entrada != nullptr && cv_entrada->get_state() > EstadoCV::Prenormalizado && (señal_entrada == nullptr || !señal_entrada->seccion->get_ruta_asegurada() || señal_entrada->seccion->get_ruta_asegurada()->lado != señal_entrada->lado)))) {
+                // No se produce escape si está establecida maniobra que incluye el CV de trayecto o en caso de ruta de entrada
                 if (ruta != TipoMovimiento::Maniobra || !cvs[index]->is_asegurada()) {
                     esc = true;
                 }
@@ -205,6 +206,33 @@ void bloqueo::message_cv(const id_elemento &id, estado_cv ecv)
          && (prev_est != (lado == Lado::Impar ? EstadoCV::OcupadoImpar : EstadoCV::OcupadoPar))
          && (!ecv.evento || ecv.evento->lado == lado))
             liberar = true;
+
+    // Supervisión secuencia ocupaciones
+    if (supervisar_secuencia) {
+        auto *sec = cvs[index];
+        auto *cv = sec->get_cv();
+        if (cv->ocupacion_intempestiva) cv->set_perdida_secuencia(true);
+        else if (!cv_libre(ecv.estado)) cv->set_perdida_secuencia(false);
+        if ((ecv.evento && !ecv.evento->ocupacion || (!ecv.evento && !cv_libre(ecv.estado_previo))) && cv_libre(ecv.estado)) {
+            if (!sec->get_ruta_asegurada()) {
+                auto *sec_sig = sec->num_outs(lado) == 1 ? sec->get_seccion_in(opp_lado(lado), 0).first : nullptr;
+                // No comprobar el primer circuito de trayecto de la colateral si está activa la maniobra
+                if ((sec_sig != nullptr && sec_sig->bloqueo_asociado) || colateral.ruta != TipoMovimiento::Maniobra) {
+                    std::optional<Lado> l;
+                    if (estado == EstadoBloqueo::BloqueoImpar) l = Lado::Impar;
+                    else if (estado == EstadoBloqueo::BloqueoPar) l = Lado::Par;
+                    if (l) {
+                        sec_sig = sec->num_outs(*l) == 1 ? sec->get_seccion_in(opp_lado(*l), 0).first : nullptr;
+                        if (sec_sig != nullptr && sec_sig->get_cv() != nullptr && cv_libre(sec_sig->get_cv()->get_state())) {
+                            if (sec_sig->bloqueo_asociado)
+                                sec_sig->get_cv()->set_perdida_secuencia(true);
+                            cv->set_perdida_secuencia(true);
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     estado_cvs[cvs[index]->id.id] = est_cv;
     calcular_ocupacion();
@@ -304,6 +332,26 @@ void bloqueo::vincular(const id_elemento &id, bool propagacion_completa)
     update();
     bloqueo_vinculado->update();
 }
+bool bloqueo::normalizar()
+{
+    if (ocupado.impar || ocupado.par || normalizado) return false;
+    for (auto *sec : cvs) {
+        auto *cv = sec->get_cv();
+        if (cv != nullptr && cv->is_perdida_secuencia()) {
+            cv->set_perdida_secuencia(false);
+        }
+    }
+    for (auto &[id,sig] : señal_impls) {
+        if (sig->bloqueo_asociado == id && (sig->tipo == TipoSeñal::Intermedia || sig->tipo == TipoSeñal::Avanzada))
+            sig->normalizar_fusion();
+    }
+    for (auto &[id,sig] : avanzadas) {
+        if (sig->bloqueo_asociado == id)
+            sig->normalizar_fusion();
+    }
+    update_normalizacion();
+    return true;
+}
 void bloqueo::update()
 {
     // Bloqueo sin datos
@@ -374,6 +422,7 @@ void bloqueo::update()
             bloqueo_vinculado->update();
         }
     }
+    update_normalizacion();
     // Gestionar petición de bloqueo por la estación colateral
     if (colateral.estado_objetivo != estado) {
         if (colateral.estado_objetivo == EstadoBloqueo::Desbloqueo) {
@@ -420,4 +469,45 @@ void bloqueo::update()
         }
     }
     send_state();
+}
+void bloqueo::update_normalizacion()
+{
+    if (colateral.normalizar_bloqueo) {
+        normalizar();
+        return;
+    }
+
+    bool normalizado = true;
+    for (auto *sec : cvs) {
+        auto *cv = sec->get_cv();
+        if (cv != nullptr && cv->is_perdida_secuencia()) {
+            normalizado = false;
+            break;
+        }
+    }
+    if (normalizado && (ocupado.par || ocupado.impar) && !is_normalizado()) normalizado = false;
+    for (auto &[id,sig] : señal_impls) {
+        if (sig->bloqueo_asociado == id && (sig->tipo == TipoSeñal::Intermedia || sig->tipo == TipoSeñal::Avanzada) && sig->is_fundida()) {
+            normalizado = false;
+            break;
+        }
+    }
+    for (auto &[id,sig] : avanzadas) {
+        if (sig->bloqueo_asociado == id && sig->is_fundida()) {
+            normalizado = false;
+            break;
+        }
+    }
+
+    if (this->normalizado != normalizado) {
+        this->normalizado = normalizado;
+        if (colateral.normalizado == normalizado) {
+            if (normalizado) log(this->id, "normalizado");
+            else log(this->id, "no normalizado");
+        }
+    }
+    dependencias[id.dependencia]->set_alarma(TipoAlarma::NB, this, is_normalizado() ? 2 : 0, true);
+
+    if (normalizar_bloqueo && normalizado)
+        normalizar_bloqueo = false;
 }
