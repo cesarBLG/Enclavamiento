@@ -527,7 +527,8 @@ class Señal(Item):
     def __init__(self, id: IdElemento, position: Point, tipo: TipoSeñal,
                  offset_pie: float = 6.0, rotation: Angle = None,
                  focos=None, aspectos_pantalla=None,
-                 inicio_ruta: bool = True, final_ruta: bool = True):
+                 inicio_ruta: bool = True, final_ruta: bool = True,
+                 posicion_etiqueta: str = "izquierda"):
         super().__init__(id, TipoElemento.SEÑAL, position, rotation)
         self.tipo_señal = tipo
         self.offset_pie = float(offset_pie)
@@ -535,6 +536,7 @@ class Señal(Item):
         self.aspectos_pantalla = list(aspectos_pantalla or [])
         self.inicio_ruta = inicio_ruta
         self.final_ruta = final_ruta
+        self.posicion_etiqueta = posicion_etiqueta
 
     def get_outs(self):
         return [(self.position, self.rotation)]
@@ -546,7 +548,8 @@ class Señal(Item):
                 "focos": self.focos,
                 "aspectos_pantalla": self.aspectos_pantalla,
                 "inicio_ruta": self.inicio_ruta,
-                "final_ruta": self.final_ruta}
+                "final_ruta": self.final_ruta,
+                "posicion_etiqueta": self.posicion_etiqueta}
 
     @classmethod
     def deserialize(cls, data, dependency):
@@ -562,14 +565,17 @@ class Señal(Item):
         aspectos = data.get("aspectos_pantalla", [])
         inicio_ruta = data.get("inicio_ruta", True)
         final_ruta = data.get("final_ruta", True)
+        posicion_etiqueta = data.get("posicion_etiqueta", "izquierda")
         if not isinstance(focos, list) or any(foco not in ("V", "R", "B", "Az", "A") for foco in focos):
             raise ValueError(f"Focos inválidos para {ident.id}.")
         if not isinstance(aspectos, list) or any(not isinstance(v, str) for v in aspectos):
             raise ValueError(f"Velocidades de pantalla inválidas para {ident.id}.")
         if not isinstance(inicio_ruta, bool) or not isinstance(final_ruta, bool):
             raise ValueError(f"Opciones de ruta inválidas para {ident.id}.")
+        if posicion_etiqueta not in ("izquierda", "derecha", "encima", "debajo"):
+            raise ValueError(f"Posición de etiqueta inválida para {ident.id}.")
         return cls(ident, position, signal_type, offset, rotation, focos, aspectos,
-                   inicio_ruta, final_ruta)
+                   inicio_ruta, final_ruta, posicion_etiqueta)
 
 class Topera(Item):
     def __init__(self, id: IdElemento, position: Point, rotation: Angle = None):

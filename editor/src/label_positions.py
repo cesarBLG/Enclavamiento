@@ -18,13 +18,21 @@ def signal_foot_position(item):
 
 
 def signal_label_anchor(item):
-    """Return the left edge / vertical center of the signal name label."""
+    """Return the name anchor in the signal's local symbol coordinates."""
     angle = item.rotation.angle
     ux, uy = cos(angle), sin(angle)
     foot = signal_foot_position(item)
+    position = getattr(item, "posicion_etiqueta", "izquierda")
+    offsets = {
+        "derecha": (SIGNAL_ICON_WIDTH, -SIGNAL_ICON_HEIGHT / 2),
+        "izquierda": (0, -SIGNAL_ICON_HEIGHT / 2),
+        "encima": (SIGNAL_ICON_WIDTH / 2, -SIGNAL_ICON_HEIGHT),
+        "debajo": (SIGNAL_ICON_WIDTH / 2, 0),
+    }
+    local_x, local_y = offsets[position]
     return (
-        foot.x + ux * SIGNAL_ICON_WIDTH + uy * SIGNAL_ICON_HEIGHT / 2,
-        foot.y + uy * SIGNAL_ICON_WIDTH - ux * SIGNAL_ICON_HEIGHT / 2,
+        foot.x + ux * local_x - uy * local_y,
+        foot.y + uy * local_x + ux * local_y,
     )
 
 
@@ -64,7 +72,27 @@ def label_text_anchor(item):
     raw_angle = item.rotation.angle
     normalized_angle = label_angle(item)
     angle_delta = (raw_angle - normalized_angle) % (2 * pi)
-    return "end" if abs(angle_delta - pi) <= 1e-9 else "start"
+    position = getattr(item, "posicion_etiqueta", "izquierda")
+    flipped = abs(angle_delta - pi) <= 1e-9
+    if position == "izquierda":
+        return "start" if flipped else "end"
+    if position == "derecha":
+        return "end" if flipped else "start"
+    # Above and below, center the label on the symbol's width.
+    return "middle"
+
+
+def signal_label_vertical_offset(item):
+    """Return the label background's top edge relative to its anchor."""
+    position = getattr(item, "posicion_etiqueta", "izquierda")
+    raw_angle = item.rotation.angle
+    normalized_angle = label_angle(item)
+    flipped = abs(((raw_angle - normalized_angle) % (2 * pi)) - pi) <= 1e-9
+    if (position == "encima") != flipped and position in ("encima", "debajo"):
+        return -SIGNAL_ICON_HEIGHT
+    if position in ("encima", "debajo"):
+        return 0
+    return -SIGNAL_ICON_HEIGHT / 2
 
 
 def label_background_width(text):

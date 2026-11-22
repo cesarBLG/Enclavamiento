@@ -47,6 +47,7 @@ from export import generar_config_ence
 from label_positions import (
     SIGNAL_ICON_HEIGHT, SIGNAL_ICON_WIDTH, label_anchor, label_angle,
     label_text_anchor, signal_foot_position, signal_label_anchor,
+    signal_label_vertical_offset,
 )
 from svg.svg_export import export_svg, simbolos
 from svg.generate_junction import get_junction_bounds
@@ -403,6 +404,7 @@ class EditItemCommand:
             state["aspectos_pantalla"] = list(item.aspectos_pantalla)
             state["inicio_ruta"] = item.inicio_ruta
             state["final_ruta"] = item.final_ruta
+            state["posicion_etiqueta"] = item.posicion_etiqueta
         elif isinstance(item, Dependencia):
             state.update(nombre=item.nombre, remoto=item.remoto)
         return state
@@ -423,6 +425,7 @@ class EditItemCommand:
             self.item.aspectos_pantalla = list(state["aspectos_pantalla"])
             self.item.inicio_ruta = state["inicio_ruta"]
             self.item.final_ruta = state["final_ruta"]
+            self.item.posicion_etiqueta = state["posicion_etiqueta"]
         elif isinstance(self.item, Dependencia):
             self.item.nombre = state["nombre"]
             self.item.remoto = state["remoto"]
@@ -446,6 +449,7 @@ class ItemConfigPanel(QWidget):
         self.position_y_edit = None
         self.cv_edit = None
         self.signal_type = None
+        self.signal_label_position = None
         self.side_combo = None
         self.cv_type = None
         self.cv_offset = None
@@ -491,6 +495,7 @@ class ItemConfigPanel(QWidget):
         self.position_y_edit = None
         self.cv_edit = None
         self.signal_type = None
+        self.signal_label_position = None
         self.side_combo = None
         self.cv_type = None
         self.cv_offset = None
@@ -559,6 +564,11 @@ class ItemConfigPanel(QWidget):
             for signal_type in TipoSeñal:
                 self.signal_type.addItem(signal_type.name, signal_type)
             self.form_layout.addRow("Tipo de señal:", self.signal_type)
+            self.signal_label_position = QComboBox(self)
+            for value, label in (("izquierda", "Izquierda"), ("derecha", "Derecha"),
+                                 ("encima", "Encima"), ("debajo", "Debajo")):
+                self.signal_label_position.addItem(label, value)
+            self.form_layout.addRow("Posición de etiqueta:", self.signal_label_position)
             self.signal_route_start = QCheckBox("Inicio de ruta", self)
             self.signal_route_start.setChecked(True)
             self.form_layout.addRow(self.signal_route_start)
@@ -636,6 +646,9 @@ class ItemConfigPanel(QWidget):
             index = self.signal_type.findData(item.tipo_señal)
             if index >= 0:
                 self.signal_type.setCurrentIndex(index)
+            position_index = self.signal_label_position.findData(item.posicion_etiqueta)
+            if position_index >= 0:
+                self.signal_label_position.setCurrentIndex(position_index)
             for code, checkbox in self.signal_lamps.items():
                 checkbox.setChecked(code in item.focos)
             self.signal_route_start.setChecked(item.inicio_ruta)
@@ -667,6 +680,8 @@ class ItemConfigPanel(QWidget):
         velocidades = [self.speed_list.item(i).text() for i in range(self.speed_list.count())] if self.speed_list else []
         inicio_ruta = self.signal_route_start.isChecked() if self.signal_route_start else True
         final_ruta = self.signal_route_end.isChecked() if self.signal_route_end else True
+        posicion_etiqueta = (self.signal_label_position.currentData()
+                             if self.signal_label_position else "izquierda")
         cv_options = None
         if isinstance(item, CvLineal):
             try:
@@ -681,6 +696,7 @@ class ItemConfigPanel(QWidget):
         self.editor.apply_item_configuration(
             item, short_id, cv_name, signal_type, side, focos, velocidades,
             cv_options, position, inicio_ruta, final_ruta,
+            posicion_etiqueta=posicion_etiqueta,
             nombre=self.station_name_edit.text() if self.station_name_edit else None,
             remoto=self.remote_edit.text() if self.remote_edit else None,
         )
@@ -821,7 +837,16 @@ class GridView(QGraphicsView):
                 continue
             label_anchor = signal_label_anchor(item)
             label_dx, label_dy = point.x() - label_anchor[0], point.y() - label_anchor[1]
-            if 0 <= label_dx <= 2 * text_half_width and abs(label_dy) <= SIGNAL_ICON.height / 2:
+            signal_label_angle = label_angle(item)
+            local_dx = label_dx * cos(signal_label_angle) + label_dy * sin(signal_label_angle)
+            local_dy = -label_dx * sin(signal_label_angle) + label_dy * cos(signal_label_angle)
+            text_anchor = label_text_anchor(item)
+            left = -2 * text_half_width if text_anchor == "end" else (
+                -text_half_width if text_anchor == "middle" else 0
+            )
+            label_top = signal_label_vertical_offset(item)
+            if (left <= local_dx <= left + 2 * text_half_width
+                    and label_top <= local_dy <= label_top + SIGNAL_ICON.height):
                 hits.append((0, item))
         return min(hits, key=lambda hit: hit[0])[1] if hits else None
 
@@ -1167,11 +1192,15 @@ class TrackEditor(QMainWindow):
         dep_row.addWidget(self.dependency, 1)
         left_layout.addLayout(dep_row)
 
+        tools_container = QVBoxLayout()
         tools = QHBoxLayout()
+        tools_container.addLayout(tools)
         self.tool_buttons = []
         self.add_tool(tools, "Seleccionar", "select", None)
         self.work_angle = 45.0
-        tools.addWidget(QLabel("Ángulo:"))
+        angle_label = QLabel("Ángulo:")
+        angle_label.setFixedWidth(48)
+        tools.addWidget(angle_label)
         self.angle_edit = QLineEdit(self)
         self.angle_edit.setText("45")
         self.angle_edit.setFixedWidth(52)
@@ -1180,8 +1209,8 @@ class TrackEditor(QMainWindow):
         tools.addWidget(self.angle_edit)
         self.add_tool(tools, "Sección angular", "track", 3)
         self.add_tool(tools, "Recta 180°", "track", 4)
-        self.add_tool(tools, "Aguja a izquierdas", "switch", 1)
-        self.add_tool(tools, "Aguja a derechas", "switch", -1)
+        self.add_tool(tools, "Aguja a derechas", "switch", 1)
+        self.add_tool(tools, "Aguja a izquierdas", "switch", -1)
         self.add_tool(tools, "Alargar vía", "extend", None)
         self.add_tool(tools, "Señal", "signal", None)
         self.add_tool(tools, "Topera", "topera", None)
@@ -1190,6 +1219,9 @@ class TrackEditor(QMainWindow):
         station_button = self.tool_buttons[-1][0]
         station_button.setText("EST")
         station_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly if hasattr(Qt, "ToolButtonStyle") else Qt.ToolButtonTextOnly)
+        tools.addStretch(1)
+        tools = QHBoxLayout()
+        tools_container.addLayout(tools)
         self.merge_button = QToolButton(self)
         self.merge_button.setIcon(self.make_icon("merge"))
         self.merge_button.setIconSize(QSize(36, 36))
@@ -1199,7 +1231,7 @@ class TrackEditor(QMainWindow):
         self.merge_button.setEnabled(False)
         tools.addWidget(self.merge_button)
         self.junction_button = QToolButton(self)
-        self.junction_button.setIcon(self.make_icon("switch"))
+        self.junction_button.setIcon(self.make_icon("junction"))
         self.junction_button.setIconSize(QSize(36, 36))
         self.junction_button.setFixedSize(46, 42)
         self.junction_button.setToolTip("Generar junction entre dos vías seleccionadas")
@@ -1207,7 +1239,7 @@ class TrackEditor(QMainWindow):
         self.junction_button.setEnabled(False)
         tools.addWidget(self.junction_button)
         self.travesia_button = QToolButton(self)
-        self.travesia_button.setIcon(self.make_icon("crossing"))
+        self.travesia_button.setIcon(self.make_icon("travesia"))
         self.travesia_button.setIconSize(QSize(36, 36))
         self.travesia_button.setFixedSize(46, 42)
         self.travesia_button.setToolTip("Convertir la aguja seleccionada en travesía")
@@ -1311,7 +1343,7 @@ class TrackEditor(QMainWindow):
         tools.addWidget(zoom_in)
         tools.addWidget(zoom_reset)
         tools.addStretch(1)
-        left_layout.addLayout(tools)
+        left_layout.addLayout(tools_container)
         left_layout.addWidget(self.view, 1)
 
         splitter = QSplitter(Qt.Orientation.Horizontal if hasattr(Qt, "Orientation") else Qt.Horizontal, self)
@@ -1382,7 +1414,7 @@ class TrackEditor(QMainWindow):
                 QPointF(25, 40), QPointF(30, 38), QPointF(25, 26),
                 QPointF(36, 26),
             ]))
-        elif kind in ("track", "switch"):
+        elif kind in ("track", "switch", "junction"):
             dirs = (0, (value or 0) % 8)
             if kind == "track":
                 path = QPainterPath(endpoint(dirs[0]))
@@ -1392,8 +1424,20 @@ class TrackEditor(QMainWindow):
             else:
                 tip = (0 + 4) % 8
                 segment(endpoint(dirs[0]), center)
-                segment(endpoint(dirs[1]), center)
+                branch = 1 if kind == "junction" else dirs[1]
+                segment(endpoint(branch), center)
                 segment(endpoint(tip), center)
+        elif kind == "travesia":
+            crossing_angle = 70 * pi / 180
+            horizontal_start = QPointF(6, center.y())
+            horizontal_end = QPointF(42, center.y())
+            diagonal_dx = 21 * cos(crossing_angle)
+            diagonal_dy = 21 * sin(crossing_angle)
+            segment(horizontal_start, horizontal_end)
+            segment(
+                QPointF(center.x() - diagonal_dx, center.y() - diagonal_dy),
+                QPointF(center.x() + diagonal_dx, center.y() + diagonal_dy),
+            )
         elif kind == "crossing":
             segment(QPointF(8, 8), QPointF(40, 40))
             segment(QPointF(40, 8), QPointF(8, 40))
@@ -1464,9 +1508,9 @@ class TrackEditor(QMainWindow):
             painter.drawEllipse(14, 14, 20, 20)
             painter.drawEllipse(20, 20, 8, 8)
             for angle in range(0, 360, 45):
-                radians = angle * pi / 180
-                inner = QPointF(24 + 11 * cos(radians), 24 + 11 * sin(radians))
-                outer = QPointF(24 + 18 * cos(radians), 24 + 18 * sin(radians))
+                angle_radians = angle * pi / 180
+                inner = QPointF(24 + 11 * cos(angle_radians), 24 + 11 * sin(angle_radians))
+                outer = QPointF(24 + 18 * cos(angle_radians), 24 + 18 * sin(angle_radians))
                 segment(inner, outer)
         elif kind == "delete":
             painter.drawLine(QPointF(12, 12), QPointF(36, 12))
@@ -2671,7 +2715,7 @@ class TrackEditor(QMainWindow):
             item.position = center
             self.set_aguja_rotation(item, best_rotation)
 
-    def apply_item_configuration(self, item, short_id, cv_name, signal_type, side, focos=None, velocidades=None, cv_options=None, position=None, inicio_ruta=True, final_ruta=True, nombre=None, remoto=None):
+    def apply_item_configuration(self, item, short_id, cv_name, signal_type, side, focos=None, velocidades=None, cv_options=None, position=None, inicio_ruta=True, final_ruta=True, nombre=None, remoto=None, posicion_etiqueta="izquierda"):
         if item is None:
             return False
         item_dependency = item.id.dep
@@ -2712,6 +2756,7 @@ class TrackEditor(QMainWindow):
             new_state["aspectos_pantalla"] = list(velocidades or [])
             new_state["inicio_ruta"] = inicio_ruta
             new_state["final_ruta"] = final_ruta
+            new_state["posicion_etiqueta"] = posicion_etiqueta
         elif isinstance(item, Dependencia):
             new_state["nombre"] = nombre or ""
             new_state["remoto"] = remoto or ""

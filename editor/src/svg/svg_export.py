@@ -16,6 +16,7 @@ from items import Aguja, Bloqueo, Cruzamiento, CvLineal, Dependencia, Item, Poin
 from label_positions import (
 	LABEL_FONT_SIZE, LABEL_SIDE_PADDING, SIGNAL_ICON_HEIGHT, SIGNAL_ICON_WIDTH,
 	label_anchor, label_angle, label_background_width, label_text_anchor,
+	signal_label_vertical_offset,
 )
 
 
@@ -284,16 +285,16 @@ def _signal_group(item: Señal) -> tuple[ElementTree.Element, list[Point]]:
 	)
 	width = label_background_width(item.id.id_corto)
 	text_anchor = label_text_anchor(item)
-	label_left = -width if text_anchor == "end" else 0
+	label_left = -width if text_anchor == "end" else (-width / 2 if text_anchor == "middle" else 0)
 	background = ElementTree.Element("{http://www.w3.org/2000/svg}rect", {
-		"x": f"{label_left:.15g}", "y": f"{-SIGNAL_ICON_HEIGHT / 2:.15g}",
+		"x": f"{label_left:.15g}", "y": f"{signal_label_vertical_offset(item):.15g}",
 		"width": f"{width:.15g}", "height": f"{SIGNAL_ICON_HEIGHT:.15g}",
 		"style": "fill:#fff",
 		"transform": label_transform,
 		"{http://www.inkscape.org/namespaces/inkscape}label": "fondo_nombre",
 	})
 	text = ElementTree.Element("{http://www.w3.org/2000/svg}text", {
-		"x": "0", "y": "0", "text-anchor": text_anchor,
+		"x": "0", "y": f"{signal_label_vertical_offset(item) + SIGNAL_ICON_HEIGHT / 2:.15g}", "text-anchor": text_anchor,
 		"dominant-baseline": "middle", "font-size": str(LABEL_FONT_SIZE),
 		"font-family": "sans-serif",
 		"textLength": f"{width - LABEL_SIDE_PADDING:.15g}",
@@ -312,7 +313,8 @@ def _imv_group(item: Señal) -> ElementTree.Element:
 	center = item.position + Point(cos(angle) * 11, sin(angle) * 11)
 	imv = simbolos["IMV"]
 	use = imv.use()
-	use.set("transform", f"translate({center.x - imv.width / 2:.15g} {center.y - imv.height / 2:.15g})")
+	x, y = center.x - imv.width / 2, center.y - imv.height / 2
+	use.set("transform", f"rotate({degrees(angle):.15g} {center.x:.15g} {center.y:.15g}) translate({x:.15g} {y:.15g})")
 	use.set("{http://www.inkscape.org/namespaces/inkscape}label", item.id.id)
 	return use
 
@@ -322,7 +324,8 @@ def _fmv_group(item: Item) -> ElementTree.Element:
 	center = item.position - Point(cos(angle) * 11, sin(angle) * 11)
 	fmv = simbolos["FMV"]
 	use = fmv.use()
-	use.set("transform", f"translate({center.x - fmv.width / 2:.15g} {center.y - fmv.height / 2:.15g})")
+	x, y = center.x - fmv.width / 2, center.y - fmv.height / 2
+	use.set("transform", f"rotate({degrees(angle):.15g} {center.x:.15g} {center.y:.15g}) translate({x:.15g} {y:.15g})")
 	use.set("{http://www.inkscape.org/namespaces/inkscape}label", "señal")
 	group = ElementTree.Element("{http://www.w3.org/2000/svg}g", {
 		"{http://www.inkscape.org/namespaces/inkscape}label": item.id.id,
@@ -600,14 +603,20 @@ def generate_item_svg_components(item: Item, related_items=()):
 				if layer == "Señal":
 					element.set("transform", "")
 				elif layer == "IMV":
-					element.set("transform", f"translate({cos(item.rotation.angle) * 11 - simbolos['IMV'].width / 2:.15g} {sin(item.rotation.angle) * 11 - simbolos['IMV'].height / 2:.15g})")
+					center = Point(cos(item.rotation.angle) * 11, sin(item.rotation.angle) * 11)
+					x, y = center.x - simbolos["IMV"].width / 2, center.y - simbolos["IMV"].height / 2
+					element.set("transform", f"rotate({degrees(item.rotation.angle):.15g} {center.x:.15g} {center.y:.15g}) translate({x:.15g} {y:.15g})")
 				elif layer == "FMV":
-					element[0].set("transform", f"translate({-cos(item.rotation.angle) * 11 - simbolos['FMV'].width / 2:.15g} {-sin(item.rotation.angle) * 11 - simbolos['FMV'].height / 2:.15g})")
+					center = Point(-cos(item.rotation.angle) * 11, -sin(item.rotation.angle) * 11)
+					x, y = center.x - simbolos["FMV"].width / 2, center.y - simbolos["FMV"].height / 2
+					element[0].set("transform", f"rotate({degrees(item.rotation.angle):.15g} {center.x:.15g} {center.y:.15g}) translate({x:.15g} {y:.15g})")
 			elif isinstance(item, Topera):
 				if layer == "Destino":
 					element.set("transform", "")
 				else:
-					element[0].set("transform", f"translate({-cos(item.rotation.angle) * 11 - simbolos['FMV'].width / 2:.15g} {-sin(item.rotation.angle) * 11 - simbolos['FMV'].height / 2:.15g})")
+					center = Point(-cos(item.rotation.angle) * 11, -sin(item.rotation.angle) * 11)
+					x, y = center.x - simbolos["FMV"].width / 2, center.y - simbolos["FMV"].height / 2
+					element[0].set("transform", f"rotate({degrees(item.rotation.angle):.15g} {center.x:.15g} {center.y:.15g}) translate({x:.15g} {y:.15g})")
 			elif isinstance(item, Bloqueo):
 				element.set("transform", f"rotate({degrees(item.rotation.angle):.15g})")
 			elif isinstance(item, Dependencia):
@@ -626,9 +635,13 @@ def _export_cached_components(item, components):
 				if layer == "Señal" or (layer == "Destino" and isinstance(item, Topera)):
 					component.set("transform", f"translate({item.position.x:.15g} {item.position.y:.15g})")
 				elif layer == "FMV":
-					component[0].set("transform", f"translate({item.position.x - cos(item.rotation.angle) * 11 - simbolos['FMV'].width / 2:.15g} {item.position.y - sin(item.rotation.angle) * 11 - simbolos['FMV'].height / 2:.15g})")
+					center = item.position - Point(cos(item.rotation.angle) * 11, sin(item.rotation.angle) * 11)
+					x, y = center.x - simbolos["FMV"].width / 2, center.y - simbolos["FMV"].height / 2
+					component[0].set("transform", f"rotate({degrees(item.rotation.angle):.15g} {center.x:.15g} {center.y:.15g}) translate({x:.15g} {y:.15g})")
 				elif layer == "IMV":
-					component.set("transform", f"translate({item.position.x + cos(item.rotation.angle) * 11 - simbolos['IMV'].width / 2:.15g} {item.position.y + sin(item.rotation.angle) * 11 - simbolos['IMV'].height / 2:.15g})")
+					center = item.position + Point(cos(item.rotation.angle) * 11, sin(item.rotation.angle) * 11)
+					x, y = center.x - simbolos["IMV"].width / 2, center.y - simbolos["IMV"].height / 2
+					component.set("transform", f"rotate({degrees(item.rotation.angle):.15g} {center.x:.15g} {center.y:.15g}) translate({x:.15g} {y:.15g})")
 			elif isinstance(item, Bloqueo):
 				component.set("transform", f"translate({item.position.x:.15g} {item.position.y:.15g}) rotate({degrees(item.rotation.angle):.15g})")
 			elif isinstance(item, Dependencia):
@@ -677,10 +690,10 @@ def export_svg(items: Iterable[Item]) -> str:
 			anchor_x, anchor_y = label_anchor(item)
 		if isinstance(item, Señal):
 			text_anchor = label_text_anchor(item)
-			x_offset = -width if text_anchor == "end" else 0
+			x_offset = -width if text_anchor == "end" else (-width / 2 if text_anchor == "middle" else 0)
 			update_rotated_rect(
-				Point(anchor_x, anchor_y), width, height, label_angle(item),
-				x_offset=x_offset, y_offset=-height / 2,
+				Point(anchor_x, anchor_y), width, SIGNAL_ICON_HEIGHT, label_angle(item),
+				x_offset=x_offset, y_offset=signal_label_vertical_offset(item),
 			)
 		else:
 			update_rotated_rect(
