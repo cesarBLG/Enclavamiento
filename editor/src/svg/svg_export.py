@@ -305,6 +305,46 @@ def _signal_group(item: Señal) -> tuple[ElementTree.Element, list[Point]]:
 	tspan = ElementTree.SubElement(text, "{http://www.w3.org/2000/svg}tspan")
 	tspan.text = item.id.id_corto
 	group.extend((background, text))
+	# Operational annotations are anchored to the signal's upper-left corner in
+	# its own coordinates, so they follow the symbol when it is rotated.
+	annotation_angle = label_angle(item)
+	annotation_flipped = abs(
+		((item.rotation.angle - annotation_angle) % (2 * pi)) - pi
+	) <= 1e-9
+	annotation_transform = lambda x, y: (
+		f"matrix({cos(annotation_angle):.15g} {sin(annotation_angle):.15g} "
+		f"{-sin(annotation_angle):.15g} {cos(annotation_angle):.15g} "
+		f"{x:.15g} {y:.15g})"
+	)
+	for caption, label, advance in (
+		("F", "f", 0),
+		("S", "s", 10),
+	):
+		position = item.posicion_automatismos
+		right_position = position == "derecha"
+		corner_x = SIGNAL_ICON_WIDTH if right_position else 0
+		corner_y = ( -signal.height / 2 if right_position else
+			0 if position.startswith("inferior") else -signal.height)
+		local_x = corner_x + advance
+		x = sin(item.rotation.angle) * item.offset_pie + cos(item.rotation.angle) * local_x - sin(item.rotation.angle) * corner_y
+		y = -cos(item.rotation.angle) * item.offset_pie + sin(item.rotation.angle) * local_x + cos(item.rotation.angle) * corner_y
+		flipped = annotation_flipped
+		right_side = right_position
+		text_anchor = ("start" if right_side else "end")
+		if flipped:
+			text_anchor = "end" if right_side else "start"
+		below = position.startswith("inferior") != flipped
+		annotation = ElementTree.Element("{http://www.w3.org/2000/svg}text", {
+			"x": "0", "y": "0" if right_position else "10" if below else "0",
+			"text-anchor": text_anchor,
+			"dominant-baseline": "central" if right_position else "auto",
+			"font-size": "10pt",
+			"font-family": "sans-serif", "fill": "#0f0",
+			"transform": annotation_transform(x, y),
+			"{http://www.inkscape.org/namespaces/inkscape}label": label,
+		})
+		ElementTree.SubElement(annotation, "{http://www.w3.org/2000/svg}tspan").text = caption
+		group.append(annotation)
 	return group, absolute
 
 
@@ -326,7 +366,7 @@ def _fmv_group(item: Item) -> ElementTree.Element:
 	use = fmv.use()
 	x, y = center.x - fmv.width / 2, center.y - fmv.height / 2
 	use.set("transform", f"rotate({degrees(angle):.15g} {center.x:.15g} {center.y:.15g}) translate({x:.15g} {y:.15g})")
-	use.set("{http://www.inkscape.org/namespaces/inkscape}label", "señal")
+	use.set("{http://www.inkscape.org/namespaces/inkscape}label", "señal" if isinstance(item, Señal) else "final")
 	group = ElementTree.Element("{http://www.w3.org/2000/svg}g", {
 		"{http://www.inkscape.org/namespaces/inkscape}label": item.id.id,
 	})

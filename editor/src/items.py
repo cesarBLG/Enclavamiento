@@ -528,7 +528,8 @@ class Señal(Item):
                  offset_pie: float = 6.0, rotation: Angle = None,
                  focos=None, aspectos_pantalla=None,
                  inicio_ruta: bool = True, final_ruta: bool = True,
-                 posicion_etiqueta: str = "izquierda"):
+                 posicion_etiqueta: str = "izquierda",
+                 posicion_automatismos: str = "superior_izquierda"):
         super().__init__(id, TipoElemento.SEÑAL, position, rotation)
         self.tipo_señal = tipo
         self.offset_pie = float(offset_pie)
@@ -537,6 +538,7 @@ class Señal(Item):
         self.inicio_ruta = inicio_ruta
         self.final_ruta = final_ruta
         self.posicion_etiqueta = posicion_etiqueta
+        self.posicion_automatismos = posicion_automatismos
 
     def get_outs(self):
         return [(self.position, self.rotation)]
@@ -549,7 +551,8 @@ class Señal(Item):
                 "aspectos_pantalla": self.aspectos_pantalla,
                 "inicio_ruta": self.inicio_ruta,
                 "final_ruta": self.final_ruta,
-                "posicion_etiqueta": self.posicion_etiqueta}
+                "posicion_etiqueta": self.posicion_etiqueta,
+                "posicion_automatismos": self.posicion_automatismos}
 
     @classmethod
     def deserialize(cls, data, dependency):
@@ -566,6 +569,9 @@ class Señal(Item):
         inicio_ruta = data.get("inicio_ruta", True)
         final_ruta = data.get("final_ruta", True)
         posicion_etiqueta = data.get("posicion_etiqueta", "izquierda")
+        posicion_automatismos = data.get("posicion_automatismos", "superior_izquierda")
+        if posicion_automatismos in ("superior_derecha", "inferior_derecha"):
+            posicion_automatismos = "derecha"
         if not isinstance(focos, list) or any(foco not in ("V", "R", "B", "Az", "A") for foco in focos):
             raise ValueError(f"Focos inválidos para {ident.id}.")
         if not isinstance(aspectos, list) or any(not isinstance(v, str) for v in aspectos):
@@ -574,8 +580,11 @@ class Señal(Item):
             raise ValueError(f"Opciones de ruta inválidas para {ident.id}.")
         if posicion_etiqueta not in ("izquierda", "derecha", "encima", "debajo"):
             raise ValueError(f"Posición de etiqueta inválida para {ident.id}.")
+        annotation_positions = ("superior_izquierda", "inferior_izquierda", "derecha")
+        if posicion_automatismos not in annotation_positions:
+            raise ValueError(f"Posición de automatismos inválida para {ident.id}.")
         return cls(ident, position, signal_type, offset, rotation, focos, aspectos,
-                   inicio_ruta, final_ruta, posicion_etiqueta)
+                   inicio_ruta, final_ruta, posicion_etiqueta, posicion_automatismos)
 
 class Topera(Item):
     def __init__(self, id: IdElemento, position: Point, rotation: Angle = None):

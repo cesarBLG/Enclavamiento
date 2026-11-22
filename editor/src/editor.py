@@ -405,6 +405,7 @@ class EditItemCommand:
             state["inicio_ruta"] = item.inicio_ruta
             state["final_ruta"] = item.final_ruta
             state["posicion_etiqueta"] = item.posicion_etiqueta
+            state["posicion_automatismos"] = item.posicion_automatismos
         elif isinstance(item, Dependencia):
             state.update(nombre=item.nombre, remoto=item.remoto)
         return state
@@ -426,6 +427,7 @@ class EditItemCommand:
             self.item.inicio_ruta = state["inicio_ruta"]
             self.item.final_ruta = state["final_ruta"]
             self.item.posicion_etiqueta = state["posicion_etiqueta"]
+            self.item.posicion_automatismos = state["posicion_automatismos"]
         elif isinstance(self.item, Dependencia):
             self.item.nombre = state["nombre"]
             self.item.remoto = state["remoto"]
@@ -450,6 +452,7 @@ class ItemConfigPanel(QWidget):
         self.cv_edit = None
         self.signal_type = None
         self.signal_label_position = None
+        self.signal_automation_position = None
         self.side_combo = None
         self.cv_type = None
         self.cv_offset = None
@@ -496,6 +499,7 @@ class ItemConfigPanel(QWidget):
         self.cv_edit = None
         self.signal_type = None
         self.signal_label_position = None
+        self.signal_automation_position = None
         self.side_combo = None
         self.cv_type = None
         self.cv_offset = None
@@ -569,6 +573,15 @@ class ItemConfigPanel(QWidget):
                                  ("encima", "Encima"), ("debajo", "Debajo")):
                 self.signal_label_position.addItem(label, value)
             self.form_layout.addRow("Posición de etiqueta:", self.signal_label_position)
+            annotation_positions = (
+                ("superior_izquierda", "Superior izquierda"),
+                ("inferior_izquierda", "Inferior izquierda"),
+                ("derecha", "Derecha"),
+            )
+            self.signal_automation_position = QComboBox(self)
+            for value, label in annotation_positions:
+                self.signal_automation_position.addItem(label, value)
+            self.form_layout.addRow("Posición automatismos:", self.signal_automation_position)
             self.signal_route_start = QCheckBox("Inicio de ruta", self)
             self.signal_route_start.setChecked(True)
             self.form_layout.addRow(self.signal_route_start)
@@ -649,6 +662,8 @@ class ItemConfigPanel(QWidget):
             position_index = self.signal_label_position.findData(item.posicion_etiqueta)
             if position_index >= 0:
                 self.signal_label_position.setCurrentIndex(position_index)
+            self.signal_automation_position.setCurrentIndex(
+                max(0, self.signal_automation_position.findData(item.posicion_automatismos)))
             for code, checkbox in self.signal_lamps.items():
                 checkbox.setChecked(code in item.focos)
             self.signal_route_start.setChecked(item.inicio_ruta)
@@ -682,6 +697,8 @@ class ItemConfigPanel(QWidget):
         final_ruta = self.signal_route_end.isChecked() if self.signal_route_end else True
         posicion_etiqueta = (self.signal_label_position.currentData()
                              if self.signal_label_position else "izquierda")
+        posicion_automatismos = (self.signal_automation_position.currentData()
+                                 if self.signal_automation_position else "superior_izquierda")
         cv_options = None
         if isinstance(item, CvLineal):
             try:
@@ -697,6 +714,7 @@ class ItemConfigPanel(QWidget):
             item, short_id, cv_name, signal_type, side, focos, velocidades,
             cv_options, position, inicio_ruta, final_ruta,
             posicion_etiqueta=posicion_etiqueta,
+            posicion_automatismos=posicion_automatismos,
             nombre=self.station_name_edit.text() if self.station_name_edit else None,
             remoto=self.remote_edit.text() if self.remote_edit else None,
         )
@@ -2715,7 +2733,7 @@ class TrackEditor(QMainWindow):
             item.position = center
             self.set_aguja_rotation(item, best_rotation)
 
-    def apply_item_configuration(self, item, short_id, cv_name, signal_type, side, focos=None, velocidades=None, cv_options=None, position=None, inicio_ruta=True, final_ruta=True, nombre=None, remoto=None, posicion_etiqueta="izquierda"):
+    def apply_item_configuration(self, item, short_id, cv_name, signal_type, side, focos=None, velocidades=None, cv_options=None, position=None, inicio_ruta=True, final_ruta=True, nombre=None, remoto=None, posicion_etiqueta="izquierda", posicion_automatismos="superior_izquierda"):
         if item is None:
             return False
         item_dependency = item.id.dep
@@ -2757,6 +2775,7 @@ class TrackEditor(QMainWindow):
             new_state["inicio_ruta"] = inicio_ruta
             new_state["final_ruta"] = final_ruta
             new_state["posicion_etiqueta"] = posicion_etiqueta
+            new_state["posicion_automatismos"] = posicion_automatismos
         elif isinstance(item, Dependencia):
             new_state["nombre"] = nombre or ""
             new_state["remoto"] = remoto or ""
