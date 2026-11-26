@@ -27,6 +27,7 @@ señal_fundamental_impl::señal_fundamental_impl(const id_elemento &id, const js
     }
     if (j.contains("Aspectos")) aspectos_disponibles = j["Aspectos"].get<std::set<Aspecto>>();
     pajarita = j.value("Pajarita", 30);
+    velocidad_tramo = j.value("VelocidadTramo", 200);
     if (j.contains("AspectosPantalla")) aspectos_pantalla = j["AspectosPantalla"];
     for (int i=0; i<aspectos_pantalla.size(); i++) {
         if (estado_pantalla.size() <= i) estado_pantalla.push_back(EstadoFocoSeñal::Apagado);
@@ -360,7 +361,7 @@ void señal_impl::determinar_aspecto()
         // Aspecto máximo permitido para cumplir las órdenes de la señal siguiente
         aspecto = std::min(aspecto, aspecto_requerido_siguiente);
         // Itinerarios por vía desviada
-        if (agujas.velocidad < 200) {
+        if (agujas.velocidad < velocidad_tramo) {
             bool fin_itinerario;
             if (ruta_fin != nullptr && ruta_fin->tipo == TipoMovimiento::Maniobra)
                 fin_itinerario = false;
@@ -447,7 +448,7 @@ void señal_impl::determinar_aspecto()
         aspecto_maximo_anterior_señal = std::min(aspecto_maximo_anterior_señal, aspecto);
     }
     // En caso de ruta a desviada, mostrar anuncio de precaución en señal anterior
-    if (agujas.velocidad < 200 && aprec_anterior && tipo != TipoSeñal::Maniobra && tipo != TipoSeñal::Retroceso && clase != ClaseSeñal::Virtual) {
+    if (agujas.velocidad < velocidad_tramo && aprec_anterior && tipo != TipoSeñal::Maniobra && tipo != TipoSeñal::Retroceso && clase != ClaseSeñal::Virtual) {
         aspecto_maximo_anterior_señal = std::min(aspecto_maximo_anterior_señal, {Aspecto::AnuncioPrecaucion, agujas});
     }
 
@@ -549,6 +550,7 @@ void señal_fundamental_impl::determinar_focos()
     }
     mask |= combinacion_pantalla<<(2*(int)FocoSeñal::Pantalla);
     if (mask != focos_mandados_mask) {
+        aspecto_campo_reconocido = false;
         focos_mandados_mask = mask;
         ultimo_cambio_focos = get_milliseconds();
     }

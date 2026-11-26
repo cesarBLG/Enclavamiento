@@ -243,7 +243,9 @@ void seccion_via::message_cv(const id_elemento &id, estado_cv ev)
     }
     bool intempestiva = false;
     if ((ev.evento && ev.evento->ocupacion || (!ev.evento && cv_libre(ev.estado_previo))) && !cv_libre(ev.estado)) {
-        if (bloqueo_asociado && !ruta_asegurada_cv) {
+        if (ev.averia) {
+            intempestiva = true;
+        } if (bloqueo_asociado && !ruta_asegurada_cv) {
             std::optional<Lado> l;
             if (bloqueo_act.estado == EstadoBloqueo::BloqueoImpar) l = Lado::Impar;
             else if (bloqueo_act.estado == EstadoBloqueo::BloqueoPar) l = Lado::Par;

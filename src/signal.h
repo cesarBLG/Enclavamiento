@@ -77,6 +77,7 @@ protected:
     std::set<Aspecto> aspectos_disponibles;
     std::vector<velocidad_agujas> aspectos_pantalla;
     int pajarita;
+    int velocidad_tramo;
     std::map<Aspecto, std::vector<std::map<FocoSeñal, EstadoFocoSeñal>>> combinaciones_focos;
     ReconocimientoAnuncioPrecaucion aprec_reconocido;
     señal_fundamental *sig_señal=nullptr;
