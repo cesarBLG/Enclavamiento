@@ -70,6 +70,7 @@ señal_fundamental_impl::señal_fundamental_impl(const id_elemento &id, const js
         }
     }
     combinaciones_focos = parametros.combinaciones_focos;
+    deteccion_fusion_fria = j.value("DetecciónFusiónFría", false);
 
     if (aspectos_disponibles.empty()) {
         if (clase == ClaseSeñal::Avanzada) {
@@ -568,11 +569,11 @@ void señal_fundamental_impl::determinar_focos()
         }
         if (get_milliseconds() - ultimo_cambio_focos > 15000 || ultimo_cambio_focos_campo - ultimo_cambio_focos > 5000) {
             for (auto &[foco, estado] : *combinacion) {
-                if (estado_foco_señal[foco] == EstadoFocoSeñal::Apagado) {
+                if (estado_foco_señal[foco] == EstadoFocoSeñal::Apagado && !deteccion_fusion_fria) {
                     estado_foco_señal[foco] = EstadoFocoSeñal::Fundido;
                 }
             }
-            if (combinacion_pantalla > 0 && estado_pantalla[combinacion_pantalla - 1] == EstadoFocoSeñal::Apagado) {
+            if (combinacion_pantalla > 0 && estado_pantalla[combinacion_pantalla - 1] == EstadoFocoSeñal::Apagado && !deteccion_fusion_fria) {
                 estado_pantalla[combinacion_pantalla - 1] = EstadoFocoSeñal::Fundido;
             }
         }
